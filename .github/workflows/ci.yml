@@ -29,8 +29,8 @@ jobs:
           python-version: '3.12'
       - name: Check skill registration
         run: bash scripts/list-skills.sh
-      - name: Test evaluation runner
-        run: node --test sdlc-runtime/evals/runner.test.mjs
+      - name: Test evaluation runner and create-pr tools
+        run: node --test sdlc-runtime/evals/runner.test.mjs skills/sdlc/create-pr/evals/tools.test.mjs
       - name: Test scoring and reports
         run: python3 -m unittest discover -s skills/eval/agent-eval/scripts -p 'test_*.py'
       - name: Test artifacts and runtime

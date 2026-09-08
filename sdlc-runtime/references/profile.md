@@ -25,6 +25,10 @@
 | `adr_dir` | 결정 기록 위치. **없으면 이 레포엔 ADR이 없고 관련 검사를 전부 건너뛴다** | 없음 |
 | `adr_repo` | 결정이 다른 레포에 살 때 `<owner>/<repo>`. 핀은 `<repo>#ADR-NNN@<sha>` | 없음 — 같은 레포 |
 | `adr_index` | 결정 로그. `adr-index.mjs`가 만든다 | `<adr_dir>/index.md` |
+| `pr_base` | `/create-pr` 의 기본 베이스 브랜치 | `main` |
+| `pr_workspace_dirs` | 영역을 두 단계로 묶을 최상위 디렉터리(`apps packages`) | 최상위 디렉터리 이름만 |
+| `pr_split_dir` · `pr_split_hint` | 이 접두 아래가 둘 이상이면 분할 여부를 먼저 묻는다 | 없음 — 묻지 않는다 |
+| `pr_review_focus` | `<정규식> => <이름>` 목록. 걸리면 diff 를 직접 읽히고 Risks 섹션을 강제한다 | 없음 — 경로 기반 검사를 건너뛴다 |
 
 ## 생성 원칙
 
@@ -44,6 +48,20 @@ spec_dir: ".sdlc/specs"
 repo: "acme/backend"       # 여러 레포로 갈렸을 때만 필요하다
 upstream_repo: "acme/docs" # intent·spec 을 끌어올 곳. 단일 레포면 지운다
 adr_dir: "docs/adr"        # 결정을 남길 곳. 이 레포에서 안 쓰면 지운다
+```
+
+PR 키는 `/create-pr` 만 읽는다. `pr_review_focus` 는 **블록 시퀀스로** 적는다 — 규칙 하나가 한 줄로
+서야 어느 규칙이 걸렸는지 출력에서 갈린다.
+
+```yaml
+pr_base: "main"
+pr_workspace_dirs: "apps packages"
+pr_split_dir: "apps"
+pr_split_hint: "앱 2개 이상 변경 — 배포 라벨이 정확히 1개여야 CI 를 통과한다"
+pr_review_focus:
+  - "^packages/db/ => DB 스키마"
+  - "(authz|permission|role|session|jwt) => 권한·세션"
+  - "(secret|credential|password) => 자격증명·secret 처리"
 ```
 
 문서 레포(상류) 쪽은 반대로 적는다.

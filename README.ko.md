@@ -140,9 +140,13 @@ claude plugin install restart-harness
 | `/implement-spec` | 계획을 레벨 단위로 실행할 때 |
 | `/iterate-spec` | 피드백 · 리뷰로 명세가 달라져야 할 때 |
 | `/create-adr` | 되돌리기 어려운 결정이라 변경보다 오래 살아야 할 때 |
+| `/create-pr` | 브랜치를 PR 로 올릴 때 — 본문의 «왜» 를 diff 가 아니라 사슬에서 가져온다 |
 
 `/implement-spec` 은 같은 레벨의 작업을 각자의 git 워크트리에서 병렬로 돌리고, 합류점마다
 전체 검증을 돌린다.
+
+`/create-pr` 은 밖으로 나가는 유일한 스킬이라 요청했을 때만 돈다. `/implement-spec` 은 커밋과
+병합까지만 하고 push·PR 은 하지 않는다.
 
 ### `eval` — 에이전트를 잰다
 
@@ -158,7 +162,7 @@ claude plugin install restart-harness
 ```
 .claude-plugin/     plugin.json (skills 배열이 정본) · marketplace.json
 skills/             스킬만 산다 — 여기 있는 것은 전부 SKILL.md 를 가진다
-  sdlc/<이름>/      SKILL.md · assets/ · evals/
+  sdlc/<이름>/      SKILL.md · assets/ · references/ · scripts/ · evals/
   eval/agent-eval/  SKILL.md · rubrics/ · scripts/ · cases/
 sdlc-runtime/       규약 · 검사기 · 참조 문서. 스킬 · 훅 · CI 가 함께 쓴다
 agents/             eval-case-author · eval-grader
@@ -202,7 +206,8 @@ CI 러너에는 플러그인도 홈 디렉터리도 없으니, 검사기를 머�
 claude plugin validate .
 claude plugin details restart-harness           # 컴포넌트와 토큰 비용
 node sdlc-runtime/evals/run.mjs                 # 검사기 · 런타임 스위트
-node --test sdlc-runtime/evals/runner.test.mjs   # 평가 러너 회귀 테스트
+node --test sdlc-runtime/evals/runner.test.mjs \
+  skills/sdlc/create-pr/evals/tools.test.mjs      # 러너 + create-pr 스크립트 회귀
 python3 -m unittest discover -s skills/eval/agent-eval/scripts -p 'test_*.py'
 ```
 
@@ -227,7 +232,7 @@ GitHub Actions는 push·PR마다 Linux와 macOS에서 위 회귀 테스트와 �
 ./scripts/list-skills.sh
 claude plugin validate .
 node sdlc-runtime/evals/run.mjs
-node --test sdlc-runtime/evals/runner.test.mjs
+node --test sdlc-runtime/evals/runner.test.mjs skills/sdlc/create-pr/evals/tools.test.mjs
 python3 -m unittest discover -s skills/eval/agent-eval/scripts -p 'test_*.py'
 # 3. 밀면 끝
 git push

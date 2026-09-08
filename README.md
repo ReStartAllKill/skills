@@ -150,9 +150,13 @@ repositories that never asked for it. `intent.md` and `plan.md` are common filen
 | `/implement-spec` | Executing the plan, level by level |
 | `/iterate-spec` | Feedback or review changed what the spec should say |
 | `/create-adr` | A decision is hard to reverse and must outlive the change |
+| `/create-pr` | Turning the branch into a pull request — the body cites the chain rather than re-deriving it |
 
 `/implement-spec` runs same-level tasks in parallel, each in its own git worktree,
 and runs full verification at every join point.
+
+`/create-pr` is the one skill that writes outward. It only runs when you ask for it:
+`/implement-spec` commits and merges, but never pushes or opens a pull request.
 
 ### `eval` — measuring the agents
 
@@ -169,7 +173,7 @@ that prompt change help?" with a number rather than an impression.
 ```
 .claude-plugin/     plugin.json (the skills array is authoritative) · marketplace.json
 skills/             skills only — everything here has a SKILL.md
-  sdlc/<name>/      SKILL.md · assets/ · evals/
+  sdlc/<name>/      SKILL.md · assets/ · references/ · scripts/ · evals/
   eval/agent-eval/  SKILL.md · rubrics/ · scripts/ · cases/
 sdlc-runtime/       conventions, checkers, reference docs — used by skills, hooks and CI
 agents/             eval-case-author · eval-grader
@@ -214,7 +218,8 @@ in the plugin cache, which does not move until `claude plugin update`.
 claude plugin validate .
 claude plugin details restart-harness           # components and token cost
 node sdlc-runtime/evals/run.mjs                 # checker + runtime suites
-node --test sdlc-runtime/evals/runner.test.mjs   # evaluation runner regression tests
+node --test sdlc-runtime/evals/runner.test.mjs \
+  skills/sdlc/create-pr/evals/tools.test.mjs      # runner + create-pr script regressions
 python3 -m unittest discover -s skills/eval/agent-eval/scripts -p 'test_*.py'
 ```
 
@@ -241,7 +246,7 @@ reports "already at the latest version".
 ./scripts/list-skills.sh
 claude plugin validate .
 node sdlc-runtime/evals/run.mjs
-node --test sdlc-runtime/evals/runner.test.mjs
+node --test sdlc-runtime/evals/runner.test.mjs skills/sdlc/create-pr/evals/tools.test.mjs
 python3 -m unittest discover -s skills/eval/agent-eval/scripts -p 'test_*.py'
 # 3. Push
 git push

@@ -19,6 +19,9 @@ description: '저장소에 SDLC 프로필·승인 가드·산출물 검사·CI �
    `.claude/agents`에서 역할을 조사한다. 근거를 찾지 못한 값은 비우고 필요한 판단을 묻는다.
    `spec_dir`는 기본 `.sdlc/specs`이며 문서와 검증 로그는 커밋할 수 있어야 한다.
    초안을 보여주고 사용자 확인 후 `.claude/spec-profile.yml`에 저장한다.
+   PR 키(`pr_base`·`pr_workspace_dirs`·`pr_split_dir`·`pr_split_hint`·`pr_review_focus`)는
+   `/create-pr`을 쓸 때만 필요하다. 워크스페이스 설정과 CI의 라벨·경로 규칙에서 근거를 찾고,
+   찾지 못하면 비운다 — 없으면 해당 신호를 내지 않을 뿐 스킬은 돈다.
 2. **레포 경계:** 문서와 코드가 다른 저장소로 갈리는지 확인한다. 갈리면 `repo`를 적고,
    코드 저장소에는 `upstream_repo`를, 문서 저장소에는 `spec_consumers`를 적는다
    (규약 「변경이 여러 레포에 걸치면」). 갈리지 않으면 세 키 모두 두지 않는다 —

@@ -20,6 +20,7 @@
     "hook",
     "ci",
     "eval",
+    "pr",
     "agent",
     "rubric"
   ],
@@ -27,6 +28,7 @@
     "./skills/sdlc/create-intent",
     "./skills/sdlc/create-spec",
     "./skills/sdlc/create-plan",
+    "./skills/sdlc/create-pr",
     "./skills/sdlc/create-adr",
     "./skills/sdlc/create-finding",
     "./skills/sdlc/iterate-spec",

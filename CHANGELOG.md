@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **`/create-pr`** — writes the pull request title and body for the current branch and opens it
+  with `gh`. Where a branch touched a chain, the body's Intent and Problem are taken from the
+  approved `intent.md` and `spec.md` and cite their IDs, rather than being re-derived from the
+  diff; the linter refuses a body that touched a chain and cites nothing. Repository-specific
+  facts — workspace layout, the split rule, the paths worth a second look — live in the profile
+  as `pr_base` · `pr_workspace_dirs` · `pr_split_dir` · `pr_split_hint` · `pr_review_focus`, so
+  the skill itself carries no repository's facts.
+- **The skill owns its tools.** `scripts/` (context, body lint, body sync), `references/`
+  (body rules, stacked PRs), `assets/pr-body-template.md` and `evals/tools.test.mjs` all sit
+  under `skills/sdlc/create-pr/`, not in the runtime — nothing but this skill calls them, and
+  the runtime is where hooks and CI look. The body linter enforces what a
+  script can see — noise, style, hard wraps, a missing Risks section on a path the profile marked
+  risky — and says `lang-unsupported` on a non-Korean body so an unchecked body is never mistaken
+  for a clean one.
+
 ## 0.1.1 — 2026-09-08
 
 ### Fixed
