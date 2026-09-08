@@ -77,7 +77,10 @@ if (isTemplate(docs)) {
 const TEMPLATE = isTemplate(docs)
 
 const tokens = (s) => new Set(String(s).toLowerCase().match(/[가-힣a-z0-9]{2,}/g) ?? [])
-const sentences = (s) => (stripComments(s).match(/[^.!?\n]*(?:다\.|[.!?])/g) ?? []).filter((x) => x.trim().length > 4).length
+// 문장을 끝내는 마침표는 **뒤에 공백이나 줄 끝이 오는 것**뿐이다. 붙어 있는 마침표는 소수점이거나
+// 파일 확장자다 — «2.2 배» 와 «prose.md» 가 각각 두 문장으로 세어진다. 한국어 산문에는 둘 다 드물어
+// 영문 산출물을 쓰기 전까지 드러나지 않았다.
+const sentences = (s) => (stripComments(s).replace(/\.(?=\S)/g, '').match(/[^.!?\n]*(?:다\.|[.!?])/g) ?? []).filter((x) => x.trim().length > 4).length
 
 const ADR_ONLY = Object.values(docs).every((d) => d.kind === 'adr')
 const TIER = docs.intent?.fm?.tier ?? docs.finding?.fm?.tier ?? (ADR_ONLY ? '—' : 'standard')

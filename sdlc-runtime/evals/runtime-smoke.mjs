@@ -1072,6 +1072,41 @@ test('node 를 못 찾으면 가드는 조용히 통과하지 않고 말한다',
   assert(/node 를 못 찾았다/.test(missing.stderr ?? ''), `node 가 없는데 아무 말도 없이 통과했다:\n${missing.stderr}`)
 })
 
+test('문장 수는 종결부호만 센다 — 소수점과 확장자는 문장을 끝내지 않는다', () => {
+  /** «2.2 배» 와 «prose.md» 가 각각 두 문장으로 세어지면, 세 문장짜리 항목이 아홉 문장이 된다.
+   *  한국어 산문에는 소수와 확장자가 드물어 영문 산출물을 쓰기 전까지 드러나지 않았다. */
+  const d = temp('sdlc-sentences')
+  put(join(d, '.claude/spec-profile.yml'), 'sdlc_version: 5\nspec_dir: "."\n')
+  const body = 'The ratio is 2.16 on average, 2.21 at the median, and it ranges from 1.90 to 2.49. '
+    + 'It is recorded in locales/en.mjs and in references/prose.md. Nothing else uses it.'
+  put(join(d, 'intent.md'), `---
+artifact: intent
+id: "CHG-2026-001"
+title: "Measure it"
+status: draft
+tier: light
+owner: "someone"
+created: 2026-09-08
+updated: 2026-09-08
+generated_by: "test"
+---
+
+# Intent: Measure it
+
+## Problem \`[required · all tiers]\`
+
+The numbers are not written down anywhere a reader can find them.
+
+## Outcomes \`[required · all tiers]\`
+
+### OUT-001 — The ratio is recorded beside the values \`Must\`
+
+${body}
+`)
+  const r = run(process.execPath, [tool('lint-prose.mjs'), d])
+  assert(!/long-item/.test(r.out), `세 문장짜리 항목을 길다고 했다 — 마침표를 종결부호로 세고 있다:\n${r.out}`)
+})
+
 console.log('\n런타임 스모크 평가\n')
 for (const r of results) {
   console.log(`  ${r.ok ? '통과' : '✗ 실패'}  ${r.name}`)
