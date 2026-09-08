@@ -39,6 +39,7 @@ import {
   loadDir, isTemplate, idsIn, stripComments, report, P_ALT, SDLC_VERSION, ADR_FILENAME, loadAdrDir,
   SUPPORTED_SCHEMA_VERSIONS, schemaVersion,
 } from './artifact-parse.mjs'
+import { loadLock } from './upstream.mjs'
 
 const argv = process.argv.slice(2)
 if (argv.includes('--version')) {
@@ -133,6 +134,20 @@ const docs = (() => {
   if (found.length) return Object.fromEntries(found.map((d) => [d.name, d]))
   return isDir ? loadDir(DIR) : {}
 })()
+// 벤더한 사본은 상류에서 이미 린트됐다. 여기서 또 보면 고칠 수 없는 자리를 계속 지적한다.
+const VENDOR = (() => {
+  const isDir = existsSync(DIR) && statSync(DIR).isDirectory()
+  const lock = isDir ? loadLock(DIR) : null
+  return lock && !lock.broken ? new Set(Object.keys(lock.files)) : new Set()
+})()
+const vendored = Object.keys(docs).filter((k) => VENDOR.has(docs[k].name)).map((k) => ({ k, name: docs[k].name }))
+for (const v of vendored) delete docs[v.k]
+if (vendored.length) notes.push(`벤더한 사본 ${vendored.map((v) => v.name).join(' · ')} 은 상류가 린트한다 — 여기서는 건너뛴다.`)
+// 아직 plan 을 쓰기 전이면 남는 문서가 없다. 그것은 오류가 아니다.
+if (Object.keys(docs).length === 0 && vendored.length) {
+  console.log(`\n산문 린트 — ${basename(DIR)}\n  · 벤더한 사본뿐이다 — 상류가 린트한다.`)
+  process.exit(0)
+}
 if (Object.keys(docs).length === 0) {
   console.error(`산출물이 없다 — ${DIR} 에 intent.md / spec.md / plan.md / finding.md / ADR-*.md 가 하나도 없다.`)
   process.exit(1)

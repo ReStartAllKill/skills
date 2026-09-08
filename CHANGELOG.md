@@ -4,6 +4,16 @@
 
 첫 배포.
 
+- **스키마 v6 — 레포 경계** — 문서 레포가 상류이고 코드 레포가 소비자인 구조를 검사기가 안다.
+  spec 은 시스템 하나에 한 벌이고, 수용 기준마다 `` `scope: <repo>` `` 로 어느 레포가 만드는지
+  적는다. 코드 레포는 자기 몫만 덮고, 배정되지 않은 Must 는 상류에서 막힌다.
+- **`pull-spec.mjs` 와 `upstream.lock.json`** — 승인된 상류 문서를 끌어오고 상류 경로·커밋·내용
+  해시를 락에 찍는다. 사본을 손으로 고치면 해시가 막고, 상류가 앞서가면 검사기가 잡는다.
+  `spec_version` 의 대조 상대가 사본의 로컬 커밋에서 **락의 상류 커밋** 으로 바뀐다 — 레포
+  경계를 넘지 못하던 핀이 이제 넘는다.
+- **프로필 키 셋** — `repo` · `upstream_repo` · `spec_consumers`. 단일 레포는 셋 다 비우면
+  v5 와 똑같이 동작한다.
+
 - **사슬 스킬 8개** — `sdlc-init` · `create-finding` · `create-intent` · `create-spec` ·
   `create-plan` · `implement-spec` · `iterate-spec` · `create-adr`
 - **런타임** — 산출물 규약, 검사기, 참조 문서. 스킬 · 훅 · CI 가 함께 쓴다

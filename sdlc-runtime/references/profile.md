@@ -19,6 +19,9 @@
 | `bands` | 탐지 밴드 등록부 | `.claude/bands.yml` |
 | `extra_gates` | 레포 전용 게이트 | 없음 |
 | `verify_log_dir` | 합류점 verify 로그 위치. 커밋한다 | `.sdlc/verify` |
+| `repo` | 이 레포의 `<owner>/<name>`. 범위 배정과 ADR scope의 «내 자리/남의 자리»를 가른다 | 없음 — 경계 검사를 건너뛴다 |
+| `upstream_repo` | intent·spec을 끌어올 문서 레포. 이 레포는 소비 레포가 된다 | 없음 — 단일 레포 |
+| `spec_consumers` | 이 레포의 spec을 소비하는 코드 레포 목록. 적으면 이 레포가 **상류**다 | 없음 — 상류가 아니다 |
 | `adr_dir` | 결정 기록 위치. **없으면 이 레포엔 ADR이 없고 관련 검사를 전부 건너뛴다** | 없음 |
 | `adr_repo` | 결정이 다른 레포에 살 때 `<owner>/<repo>`. 핀은 `<repo>#ADR-NNN@<sha>` | 없음 — 같은 레포 |
 | `adr_index` | 결정 로그. `adr-index.mjs`가 만든다 | `<adr_dir>/index.md` |
@@ -38,7 +41,21 @@ sdlc_version: 5
 # sdlc_runtime 은 벤더했을 때만 적는다 — 안 적으면 플러그인 사본을 찾아 쓴다
 # sdlc_runtime: ".claude/sdlc"
 spec_dir: ".sdlc/specs"
+repo: "acme/backend"       # 여러 레포로 갈렸을 때만 필요하다
+upstream_repo: "acme/docs" # intent·spec 을 끌어올 곳. 단일 레포면 지운다
 adr_dir: "docs/adr"        # 결정을 남길 곳. 이 레포에서 안 쓰면 지운다
+```
+
+문서 레포(상류) 쪽은 반대로 적는다.
+
+```yaml
+sdlc_version: 6
+spec_dir: "docs/specs"
+repo: "acme/docs"
+spec_consumers:            # 이 목록이 있으면 상류다 — 배정되지 않은 Must 를 막는다
+  - acme/backend
+  - acme/web
+adr_dir: "docs/adr"        # 결정은 여기 모은다. 코드 레포는 adr_repo 로 핀만 건다
 ```
 
 - 검증 명령은 `package.json`·`Makefile`·`justfile`·CI 워크플로에서 찾는다. CI가 정본이다.
@@ -49,6 +66,11 @@ adr_dir: "docs/adr"        # 결정을 남길 곳. 이 레포에서 안 쓰면 �
 - `adr_dir`는 **gitignore하지 않는다.** 사슬은 이번 변경의 계약이라 지워도 되지만 ADR은 시스템이
   지고 있는 제약이고, 사라지면 기각한 대안이 사라진다. 결정을 다른 레포에 모으기로 했으면
   `adr_dir` 대신 `adr_repo`를 적는다.
+- `upstream_repo`를 적은 레포에서는 `spec_dir`를 **gitignore하지 않는다.** 벤더한 사본과
+  `upstream.lock.json`이 커밋돼야 상류 핀이 성립한다. 사본은 손으로 고치지 않는다 —
+  `pull-spec.mjs`가 만들고 해시가 지킨다.
+- `spec_consumers`에 적은 이름은 소비 레포의 `repo`와 마지막 경로 요소로 비교한다. 오타는
+  «등록되지 않은 레포» 오류로 선다.
 - `spec_dir`를 `.claude/` 아래에 두면 Claude Code가 «자기 설정 편집»으로 보고 Write·Edit마다
   묻는다. 허용 규칙도 훅의 allow도 이를 끄지 못한다. 대화형에서는 편집마다
   다이얼로그, 자율 경로에서는 거부다. 기존 프로필이 `.claude/specs`면 `.sdlc/specs`로 옮길 것을 권한다.

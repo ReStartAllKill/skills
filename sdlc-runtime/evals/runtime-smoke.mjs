@@ -818,6 +818,129 @@ test('자율 실행은 자기 로그만 제외하고 다른 변경은 차단한�
   assert(readFileSync(log, 'utf8').trim().split('\n').length === 2, '사용자 변경이 있는데 실행했다')
 })
 
+
+// 두 레포를 실제로 갈라 세운다. 이 하네스에서 가장 오래 «코드로만 읽고 돌려보지 않은» 자리다.
+const CASES = resolve(ROOT, '../skills/sdlc/create-plan/evals/cases/clean-light/docs')
+
+function seedRepo(dir, profile) {
+  put(join(dir, '.claude/spec-profile.yml'), profile)
+  git(dir, 'init', '-q'); git(dir, 'config', 'user.name', 'eval'); git(dir, 'config', 'user.email', 'eval@local')
+}
+const edit = (path, fn) => writeFileSync(path, fn(readFileSync(path, 'utf8')))
+
+/** 상류 문서 레포 하나와 소비 코드 레포 하나를 세우고, 사본을 끌어온 상태까지 만든다. */
+function twoRepos() {
+  const slug = '2026-09-08-archive'
+  const up = temp('sdlc-docs')
+  seedRepo(up, 'sdlc_version: 5\nspec_dir: docs/specs\nrepo: "acme/docs"\nspec_consumers:\n  - acme/backend\n  - acme/web\n')
+  const upChain = join(up, 'docs/specs', slug)
+  mkdirSync(upChain, { recursive: true })
+  for (const f of ['intent.md', 'spec.md']) {
+    cpSync(join(CASES, f), join(upChain, f))
+    edit(join(upChain, f), (s) => s.replace('schema_version: 3', 'schema_version: 6'))
+  }
+  // 수용 기준을 레포별로 배정한다 — 상류 spec 한 벌이 여러 레포의 몫을 함께 진다.
+  edit(join(upChain, 'spec.md'), (s) => s
+    .replace('- [ ] AC-001 — 보관 문서와 일반 문서가 함께 걸리는 질의에서 일반 문서만 반환된다',
+      '- [ ] AC-001 — 보관 문서와 일반 문서가 함께 걸리는 질의에서 일반 문서만 반환된다 `scope: acme/backend`')
+    .replace('- [ ] AC-002 — 보관 필드가 없는 문서는 결과에 그대로 남는다',
+      '- [ ] AC-002 — 보관 필드가 없는 문서는 결과에 그대로 남는다 `scope: acme/web`')
+    .replace('- [ ] AC-003 — 플래그가 켜지면 보관 문서와 일반 문서가 모두 반환된다',
+      '- [ ] AC-003 — 플래그가 켜지면 보관 문서와 일반 문서가 모두 반환된다 `scope: acme/backend`'))
+  git(up, 'add', '-A'); git(up, 'commit', '-qm', 'intent')
+  const intentSha = git(up, 'log', '-1', '--format=%h', '--', `docs/specs/${slug}/intent.md`)
+  edit(join(upChain, 'spec.md'), (s) => s.replace('@INTENT_SHA@', intentSha))
+  git(up, 'add', '-A'); git(up, 'commit', '-qm', 'spec')
+
+  const code = temp('sdlc-backend')
+  seedRepo(code, 'sdlc_version: 5\nspec_dir: .sdlc/specs\nrepo: "acme/backend"\nupstream_repo: "acme/docs"\n')
+  const chain = join(code, '.sdlc/specs', slug)
+  mkdirSync(chain, { recursive: true })
+  return { up, upChain, code, chain, slug }
+}
+
+const check = (dir, up) => run(process.execPath, [tool('check-artifacts.mjs'), dir],
+  { env: { ...process.env, ...(up ? { SDLC_UPSTREAM: up } : {}) } })
+
+test('pull-spec 은 승인된 상류만 끌어오고 락에 상류 커밋을 찍는다', () => {
+  const { up, upChain, chain } = twoRepos()
+  edit(join(upChain, 'spec.md'), (s) => s.replace('status: accepted', 'status: in_review'))
+  git(up, 'add', '-A'); git(up, 'commit', '-qm', 'unapprove')
+  let r = run(process.execPath, [tool('pull-spec.mjs'), chain, '--from', up])
+  assert(r.code !== 0 && r.out.includes('승인된 것만'), `승인 전 spec 을 끌어왔다: ${r.out}`)
+
+  edit(join(upChain, 'spec.md'), (s) => s.replace('status: in_review', 'status: accepted'))
+  git(up, 'add', '-A'); git(up, 'commit', '-qm', 'approve')
+  r = run(process.execPath, [tool('pull-spec.mjs'), chain, '--from', up])
+  assert(r.code === 0, `pull-spec 이 실패했다: ${r.out}`)
+  const lock = JSON.parse(readFileSync(join(chain, 'upstream.lock.json'), 'utf8'))
+  assert(lock.repo === 'acme/docs', '락이 상류 레포를 적지 않았다')
+  assert(lock.files['spec.md'].sha === git(up, 'log', '-1', '--format=%H', '--', lock.files['spec.md'].path),
+    '락의 SHA 가 상류의 마지막 커밋이 아니다')
+  assert(existsSync(join(chain, 'spec.md')) && existsSync(join(chain, 'intent.md')), '사본이 놓이지 않았다')
+})
+
+test('소비 레포는 자기 scope 의 Must 만 덮으면 된다', () => {
+  const { up, chain } = twoRepos()
+  run(process.execPath, [tool('pull-spec.mjs'), chain, '--from', up])
+  const lock = JSON.parse(readFileSync(join(chain, 'upstream.lock.json'), 'utf8'))
+  cpSync(join(CASES, 'plan.md'), join(chain, 'plan.md'))
+  edit(join(chain, 'plan.md'), (s) => s.replace('schema_version: 3', 'schema_version: 6'))
+  // WP-001 은 AC-001 만 문다. AC-002 는 acme/web 몫이라 이 레포에서 비어 있어도 된다.
+  edit(join(chain, 'plan.md'), (s) => s
+    .replace('@SPEC_SHA@', lock.files['spec.md'].sha.slice(0, 7))
+    .replace('covers: FR-001 (AC-001, AC-002)', 'covers: AC-001'))
+  git(chain, 'add', '-A')
+
+  const r = check(chain, up)
+  assert(!r.out.includes('AC-002'), `다른 레포 몫인 AC-002 를 이 레포에 물렸다:\n${r.out}`)
+  assert(r.code === 0, `두 레포로 갈린 정상 사슬이 실패했다:\n${r.out}`)
+
+  // 남의 몫을 덮으면 막는다 — 두 레포가 같은 기준을 만들면 합류에서 갈린다.
+  edit(join(chain, 'plan.md'), (s) => s.replace('covers: AC-001', 'covers: AC-001, AC-002'))
+  const foreign = check(chain, up)
+  assert(foreign.code !== 0 && foreign.out.includes('다른 레포 몫'), `남의 몫을 덮는 작업을 통과시켰다:\n${foreign.out}`)
+})
+
+test('사본을 손으로 고치면 해시가 막고, 상류가 앞서가면 검사기가 잡는다', () => {
+  const { up, upChain, chain } = twoRepos()
+  run(process.execPath, [tool('pull-spec.mjs'), chain, '--from', up])
+  const lock = JSON.parse(readFileSync(join(chain, 'upstream.lock.json'), 'utf8'))
+  cpSync(join(CASES, 'plan.md'), join(chain, 'plan.md'))
+  edit(join(chain, 'plan.md'), (s) => s.replace('schema_version: 3', 'schema_version: 6'))
+  edit(join(chain, 'plan.md'), (s) => s
+    .replace('@SPEC_SHA@', lock.files['spec.md'].sha.slice(0, 7))
+    .replace('covers: FR-001 (AC-001, AC-002)', 'covers: AC-001'))
+
+  edit(join(chain, 'spec.md'), (s) => s.replace('보관된 문서를 결과에서 제외한다', '보관된 문서를 살짝 다르게 제외한다'))
+  const tampered = check(chain, up)
+  assert(tampered.code !== 0 && tampered.out.includes('락의 해시와 다르다'), `사본 변조를 통과시켰다:\n${tampered.out}`)
+
+  run(process.execPath, [tool('pull-spec.mjs'), chain, '--from', up])
+  assert(check(chain, up).code === 0, '다시 끌어왔는데도 실패한다')
+
+  // 상류에서 spec 이 한 번 더 바뀌면 사본은 낡은다. 이것이 사본 규약이 못 잡던 붕괴다.
+  edit(join(upChain, 'spec.md'), (s) => s.replace('## 오류와 경계', '## 오류와 경계'))
+  edit(join(upChain, 'spec.md'), (s) => s.replace('빈 결과를 그대로 낸다', '빈 결과를 그대로 낸다. 경고 문구를 함께 낸다'))
+  git(up, 'add', '-A'); git(up, 'commit', '-qm', 'spec 개정')
+  const stale = check(chain, up)
+  assert(stale.code !== 0 && stale.out.includes('상류가 이 사본보다 앞서 있다'), `상류 드리프트를 놓쳤다:\n${stale.out}`)
+})
+
+test('상류 문서 레포는 배정되지 않은 Must 수용 기준을 막는다', () => {
+  const { up, upChain } = twoRepos()
+  assert(check(upChain).code === 0, `배정이 끝난 상류 spec 이 실패했다:\n${check(upChain).out}`)
+
+  edit(join(upChain, 'spec.md'), (s) => s.replace(' `scope: acme/backend`\n- [ ] AC-002', '\n- [ ] AC-002'))
+  const unassigned = check(upChain)
+  assert(unassigned.code !== 0 && unassigned.out.includes('`scope` 가 없다'), `아무에게도 배정되지 않은 Must 를 통과시켰다:\n${unassigned.out}`)
+
+  edit(join(upChain, 'spec.md'), (s) => s.replace('- [ ] AC-001 — 보관 문서와 일반 문서가 함께 걸리는 질의에서 일반 문서만 반환된다',
+    '- [ ] AC-001 — 보관 문서와 일반 문서가 함께 걸리는 질의에서 일반 문서만 반환된다 `scope: acme/mobile`'))
+  const stray = check(upChain)
+  assert(stray.code !== 0 && stray.out.includes('등록되지 않은 레포'), `등록되지 않은 소비 레포를 통과시켰다:\n${stray.out}`)
+})
+
 console.log('\n런타임 스모크 평가\n')
 for (const r of results) {
   console.log(`  ${r.ok ? '통과' : '✗ 실패'}  ${r.name}`)

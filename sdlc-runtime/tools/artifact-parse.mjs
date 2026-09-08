@@ -142,6 +142,14 @@ export function fieldsOf(lines) {
 
 export const sectionOf = (hs, line) => [...hs].reverse().find((h) => h.depth === 2 && h.line <= line)?.title ?? null
 
+/** 인라인 범위 표기. AC 는 한 줄이라 필드 줄을 달 자리가 없어 제목 끝에 붙인다. */
+export const SCOPE_TAG = /`scope:\s*([^`]+)`/i
+export const scopeList = (raw) => String(raw ?? '')
+  .split(/[,·]/).map((s) => s.trim().replace(/^["'`]|["'`]$/g, '')).filter(Boolean)
+
+/** 항목의 유효 범위. 자기 것이 없으면 상위 요구사항에서 물려받는다. */
+export const scopeOf = (e, parent) => (e?.scope?.length ? e.scope : parent?.scope ?? [])
+
 /** 엔티티를 모은다. `onDup` 은 중복 정의를 어떻게 보고할지 부르는 쪽이 정한다 —
  *  검사기는 오류로, 린터는 무시한다(같은 사실을 두 도구가 두 번 말하지 않는다). */
 export function entities(doc, onDup = () => {}) {
@@ -154,10 +162,12 @@ export function entities(doc, onDup = () => {}) {
     if (!m) continue
     const prio = /`(Must|Should|Could|Won't)`/i.exec(m[3])
     const body = lines.slice(h.line + 1, h.allEnd).filter((_, k) => live[h.line + 1 + k])
+    const fields = fieldsOf(body)
     add({
       id: `${m[1]}-${m[2]}`, title: m[3].replace(/`[^`]*`/g, '').trim(),
       priority: prio ? prio[1] : null, line: h.line, kind: 'heading',
-      fields: fieldsOf(body), bodyLines: body, body: body.join('\n'), section: sectionOf(hs, h.line),
+      scope: scopeList(fields.get('scope') ?? SCOPE_TAG.exec(m[3])?.[1]),
+      fields, bodyLines: body, body: body.join('\n'), section: sectionOf(hs, h.line),
     })
   }
   lines.forEach((line, i) => {
@@ -169,14 +179,16 @@ export function entities(doc, onDup = () => {}) {
         if (lines[j].trim()) body.push(lines[j])
       }
       add({ id: wp[1], title: wp[2].trim(), priority: null, line: i, kind: 'wp', done: /\[[xX]\]/.test(line),
-        fields: fieldsOf(body), bodyLines: body, body: body.join('\n'), section: sectionOf(hs, i) })
+        scope: [], fields: fieldsOf(body), bodyLines: body, body: body.join('\n'), section: sectionOf(hs, i) })
       return
     }
     const ac = /^\s*[-*]\s+\[[ xX]\]\s+(AC-\d{1,4})\s*[—–-]\s*(.+?)\s*$/.exec(line)
     if (ac) {
       const owner = [...out.values()].filter((e) => e.kind === 'heading' && e.line < i && /^(FR|NFR)-/.test(e.id)).pop()
-      add({ id: ac[1], title: ac[2].trim(), priority: null, line: i, kind: 'ac', parent: owner?.id ?? null,
-        fields: new Map(), bodyLines: [], body: ac[2], section: sectionOf(hs, i) })
+      const tag = SCOPE_TAG.exec(ac[2])
+      const title = ac[2].replace(SCOPE_TAG, '').trim()
+      add({ id: ac[1], title, priority: null, line: i, kind: 'ac', parent: owner?.id ?? null,
+        scope: scopeList(tag?.[1]), fields: new Map(), bodyLines: [], body: title, section: sectionOf(hs, i) })
     }
   })
   return out

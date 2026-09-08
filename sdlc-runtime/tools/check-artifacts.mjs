@@ -36,8 +36,9 @@ import {
   PREFIXES, FILES, WP_FIELDS, P_ALT, idsIn, stripComments, isNull, frontmatter,
   loadDir, isTemplate, report, SDLC_VERSION,
   SUPPORTED_SCHEMA_VERSIONS, schemaVersion,
- levelsOf, wpFiles, ADR_FILENAME, loadAdrDir, CHAIN_FILES } from './artifact-parse.mjs'
+ levelsOf, wpFiles, ADR_FILENAME, loadAdrDir, CHAIN_FILES, scopeOf } from './artifact-parse.mjs'
 import { adrSeam, checkAdr, checkPins } from './adr-check.mjs'
+import { LOCK_FILE, upstreamSeam, loadLock, verifyLock, findUpstream, headOf, sameRepo } from './upstream.mjs'
 import { loadBands, revisedBy } from './bands.mjs'
 import { loadPolicy, routeActive, STAGES } from './autonomy.mjs'
 
@@ -92,6 +93,7 @@ const REPO_ROOT = (() => {
   return null
 })()
 const SEAM = { ...adrSeam(REPO_ROOT), root: REPO_ROOT }
+const UP = upstreamSeam(REPO_ROOT)
 
 // ─────────────────────────────────────────── 0. 결정 기록 모드
 // 입력이 ADR 파일 하나이거나 `adr_dir` 이면 사슬 검사를 돌리지 않는다. ADR 은 폴더가 아니라
@@ -407,24 +409,58 @@ if (docs.intent && !isNull(docs.intent.fm.from_finding)) {
 /** `intent_version` · `spec_version` 은 «어느 시점의 상위를 보고 썼나» 다. 대조하지
  *  않으면 적어 두기만 한 글자이고, 대조하는 순간 이 사슬에서 가장 흔한 붕괴가 잡힌다 —
  *  상위가 몰래 바뀐 채 하위가 진행되는 것. */
+// 상류가 다른 레포면 그 사실이 폴더 안에 파일로 있어야 검사기가 본다. 락이 그 파일이다.
+const LOCK = TEMPLATE ? null : loadLock(DIR)
+if (LOCK?.broken) {
+  err(LOCK_FILE, `락을 읽을 수 없다 — ${LOCK.broken}`, '`pull-spec.mjs` 로 다시 끌어오면 새로 만든다.')
+} else if (LOCK) {
+  // 사본이 락과 다르면 손을 탄 것이다. 정본이 둘이 되는 것을 규율이 아니라 해시가 막는다.
+  for (const pr of verifyLock(DIR, LOCK)) problems.push(pr)
+  if (!UP.self) {
+    err(LOCK_FILE, '상류에서 끌어왔는데 프로필에 `repo` 가 없다',
+      '`repo: "<owner>/<name>"` 이 없으면 어느 수용 기준이 이 레포 몫인지 가를 수 없어, 남의 몫까지 이 레포에 물린다.')
+  }
+  if (UP.self && sameRepo(UP.self, LOCK.repo)) {
+    err(LOCK_FILE, `상류(${LOCK.repo})가 이 레포다`, '자기 자신에서 끌어오면 사본과 정본이 같은 자리에 산다. 락을 지운다.')
+  }
+  // 신선도는 옆에 받아둔 체크아웃이 있을 때만 본다 — 검사기는 네트워크를 쓰지 않는다.
+  const upRoot = findUpstream(LOCK, REPO_ROOT, null)
+  if (!upRoot) {
+    notes.push(`${LOCK.repo} 체크아웃이 없다 — 사본의 무결성만 봤다. CI 는 상류를 체크아웃하고 \`SDLC_UPSTREAM\` 으로 가리킨다.`)
+  } else {
+    for (const [name, e] of Object.entries(LOCK.files)) {
+      if (!e?.sha || !e?.path) continue
+      const head = headOf(upRoot, e.path)
+      if (!head || head === e.sha) continue
+      err(name, `상류가 이 사본보다 앞서 있다 (락 ${String(e.sha).slice(0, 7)} != 상류 ${head.slice(0, 7)})`,
+        `${LOCK.repo} 의 ${e.path} 가 바뀌었다. \`pull-spec.mjs ${basename(DIR)}\` 로 다시 끌어오고 바뀐 내용에 맞춰 plan 을 고친다.`)
+    }
+  }
+}
+
+// intent_version·spec_version을 상위 문서의 커밋과 대조한다. 락이 있으면 대조 상대는
+// 사본이 아니라 락이 가리키는 상류 커밋이다 — 그래야 핀이 레포 경계를 넘는다.
 const inGit = (() => { try { execFileSync('git', ['-C', DIR, 'rev-parse', '--git-dir'], { stdio: 'ignore' }); return true } catch { return false } })()
 const lastCommit = (f) => {
   try { return execFileSync('git', ['-C', DIR, 'log', '-1', '--format=%H', '--', f], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null }
   catch { return null }
 }
-if (!inGit) notes.push('git 저장소가 아니다 — 버전 고정 검사만 건너뛴다.')
+// git 도 락도 없으면 대조할 상대가 없다 — 형식 검사까지 통째로 건너뛴다.
+if (!inGit && !LOCK?.files) notes.push('git 저장소가 아니다 — 버전 고정 검사만 건너뛴다.')
 else if (!TEMPLATE) {
   for (const [d, key, up] of [[docs.spec, 'intent_version', 'intent.md'], [docs.plan, 'spec_version', 'spec.md']]) {
     if (!d || isNull(d.fm[key])) continue
     const decl = String(d.fm[key])
     if (/^\d{4}-\d{2}-\d{2}$/.test(decl)) { warn(d.name, `\`${key}\` 가 날짜다`, '커밋 SHA 를 쓰면 기계가 대조할 수 있다.'); continue }
     if (!/^[0-9a-f]{7,40}$/i.test(decl)) { err(d.name, `\`${key}: ${decl}\` 는 커밋 SHA 도 날짜도 아니다`, `${up} 을 마지막으로 바꾼 커밋의 SHA 를 적는다.`); continue }
-    const actual = lastCommit(up)
+    const pinned = LOCK?.files?.[up]?.sha ?? null
+    const actual = pinned ?? (inGit ? lastCommit(up) : null)
     if (!actual) { warn(d.name, `${up} 의 커밋 이력을 못 읽었다`, '아직 커밋되지 않았을 수 있다.'); continue }
-    if (!actual.startsWith(decl.toLowerCase())) {
-      err(d.name, `\`${key}\` 가 ${up} 의 현재 커밋과 다르다 (선언 ${decl} != 실제 ${actual.slice(0, 7)})`,
-        `${up} 이 이 문서를 쓴 뒤에 바뀌었다. 바뀐 내용을 읽고 이 문서를 갱신한 다음 ${key} 를 다시 찍는다.`)
-    }
+    if (actual.startsWith(decl.toLowerCase())) continue
+    err(d.name, `\`${key}\` 가 ${pinned ? `${LOCK.repo} 의 ${up}` : up} 의 현재 커밋과 다르다 (선언 ${decl} != 실제 ${actual.slice(0, 7)})`,
+      pinned
+        ? '락이 가리키는 상류 커밋을 적는다. 상류가 바뀌었으면 `pull-spec.mjs` 로 다시 끌어온 뒤 찍는다.'
+        : `${up} 이 이 문서를 쓴 뒤에 바뀌었다. 바뀐 내용을 읽고 이 문서를 갱신한 다음 ${key} 를 다시 찍는다.`)
   }
 }
 
@@ -545,16 +581,74 @@ for (const w of wps) {
   if (idsIn(field(w, 'covers')).some((x) => /^(FR|NFR|AC)-/.test(x))) continue
   err('plan.md', `${w.id} 이 어느 요구사항도 가리키지 않는다`, '어디에도 안 걸린 작업은 이 변경의 일이 아니다. covers 를 채우거나 작업을 뺀다.')
 }
-// 5-5. 모든 Must 수용 기준은 작업이 덮는다.
+// 소비 레포는 상류 spec 의 자기 `scope` 몫만 덮는다. 단일 레포면 경계가 없어 전부가 내 몫이다.
+const CONSUMER = !!(LOCK && !LOCK.broken && UP.self)
+const MINE = (e, parent) => {
+  if (!CONSUMER) return true
+  const sc = scopeOf(e, parent)
+  // 범위가 없는 기준은 «아무의 몫도 아님» 이 아니라 «모두의 몫» 으로 읽는다. 조용히 빠지는 것보다 낫다.
+  return sc.length === 0 || sc.some((s) => sameRepo(s, UP.self))
+}
+
+// 5-5. 모든 Must 수용 기준은 작업이 덮는다 — 상류에서 왔으면 이 레포에 배정된 것만.
 if (docs.plan && docs.spec) {
   const done = new Set(wps.flatMap((w) => idsIn(field(w, 'covers'))))
   for (const a of acs) {
     const parent = a.parent ? ent(a.parent) : null
     if (!parent || !isMust(parent)) continue
     if (done.has(a.id) || done.has(a.parent)) continue
+    if (!MINE(a, parent)) continue
     err('plan.md', `${a.id}(${a.parent} 의 수용 기준) 을 덮는 작업이 없다`, '수용 기준이 있는데 그것을 만드는 작업이 없으면 그 기준은 아무도 통과시키지 않는다.')
   }
+  // 남의 몫을 덮는 작업은 이 레포의 일이 아니다 — 두 레포가 같은 기준을 만들면 합류에서 갈린다.
+  if (CONSUMER) {
+    for (const w of wps) {
+      const foreign = idsIn(field(w, 'covers')).map((id) => ent(id)).filter((e) => {
+        if (!e || e.kind === 'wp') return false
+        const owner = e.kind === 'ac' && e.parent ? ent(e.parent) : null
+        return !MINE(e, owner)
+      })
+      if (!foreign.length) continue
+      err('plan.md', `${w.id} 이 다른 레포 몫을 덮는다: ${foreign.map((e) => `${e.id}(${scopeOf(e, e.kind === 'ac' && e.parent ? ent(e.parent) : null).join('·')})`).join(' · ')}`,
+        `이 레포는 \`${UP.self}\` 다. 범위가 틀렸으면 상류 spec 의 \`scope\` 를 고치고 다시 끌어온다.`)
+    }
+  }
 }
+// `scope` 는 v6 문법이다. 옛 스키마로 선언한 문서에 쓰면 옛 런타임이 제목의 일부로 읽고
+// 배정이 조용히 사라진다 — 버전을 올려야 그 사실이 드러난다.
+if (docs.spec && !TEMPLATE && schemaVersion(docs.spec.fm) < 6) {
+  const scoped = [...docs.spec.ents.values()].filter((e) => e.scope?.length)
+  if (scoped.length) {
+    err('spec.md', `\`scope\` 를 썼는데 \`schema_version: ${docs.spec.fm.schema_version ?? '(없음)'}\` 이다: ${scoped.map((e) => e.id).join(' · ')}`,
+      'AC·요구사항의 레포 배정은 v6 부터다. 프런트매터의 schema_version 을 6 으로 올린다.')
+  }
+}
+
+// 상류 문서 레포는 배정을 진다 — 모든 Must 수용 기준이 어느 소비 레포엔가 걸려야 한다.
+// 소비 레포는 자기 몫만 보므로, 아무에게도 배정되지 않은 기준은 여기서만 보인다.
+if (UP.isUpstream && docs.spec && !TEMPLATE) {
+  const known = (s) => UP.consumers.some((c) => sameRepo(c, s))
+  for (const a of acs) {
+    const parent = a.parent ? ent(a.parent) : null
+    if (!parent || !isMust(parent)) continue
+    const sc = scopeOf(a, parent)
+    if (!sc.length) {
+      err('spec.md', `${a.id}(Must) 에 \`scope\` 가 없다`,
+        `이 레포는 ${UP.consumers.join(' · ')} 의 상류다. 어느 레포가 만드는지 없으면 아무도 자기 몫으로 읽지 않는다. AC 줄 끝에 \`\`scope: <repo>\`\` 를 붙이거나 상위 요구사항에 \`scope:\` 줄을 둔다.`)
+      continue
+    }
+    const stray = sc.filter((s) => !known(s))
+    if (stray.length) {
+      err('spec.md', `${a.id} 의 \`scope\` 가 등록되지 않은 레포를 가리킨다: ${stray.join(' · ')}`,
+        `프로필의 \`spec_consumers\` 에 있는 레포만 쓴다 — 지금은 ${UP.consumers.join(' · ')} 다.`)
+    }
+  }
+  if (docs.plan) {
+    warn('plan.md', '상류 문서 레포에 plan 이 있다',
+      '계획과 실행은 코드 레포가 진다. 여기 두면 워크트리·검증·증거가 코드와 다른 레포에서 돈다.')
+  }
+}
+
 // 5-6. 모든 가설은 관측을 가리킨다 — finding 의 척추다.
 for (const h of of('finding', 'HYP')) {
   if (idsIn(field(h, '근거')).some((x) => x.startsWith('EV-'))) continue
