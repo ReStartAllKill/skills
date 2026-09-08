@@ -153,10 +153,32 @@ test('pr-body-lint 는 Git 저장소 밖에서도 형식 검사만으로 돈다'
   assert.ok(r.out.includes('[문체]'), `형식 검사가 안 돌았다:\n${r.out}`)
 })
 
+test('pr-body-lint 는 프로필의 lang 으로 문체 규칙을 고른다', (t) => {
+  /** 영문 본문에 한국어 목록을 대면 하나도 안 걸리는데, 안 걸리는 것은 통과와 구분되지 않는다. */
+  const d = temp(t, 'pr-tools-lang')
+  git(d, 'init', '-q', '-b', 'main'); git(d, 'config', 'user.email', 'eval@local'); git(d, 'config', 'user.name', 'eval')
+  put(join(d, 'a.txt'), 'x\n')
+  git(d, 'add', '-A'); git(d, 'commit', '-qm', 'base')
+  const body = join(d, 'body.md')
+  put(body, '## 🎯 Intent\n\nAfter some discussion we changed it.\n\nIn order to fix it we utilize a cache.\n')
+  const lint = () => run('bash', [script('pr-body-lint.sh'), body], { cwd: d })
+
+  put(join(d, '.claude/spec-profile.yml'), 'sdlc_version: 5\nlang: ko\n')
+  const asKo = lint()
+  assert.equal(asKo.code, 0, `한국어 규칙이 영문 본문에 걸렸다:\n${asKo.out}`)
+
+  put(join(d, '.claude/spec-profile.yml'), 'sdlc_version: 5\nlang: en\n')
+  const asEn = lint()
+  assert.equal(asEn.code, 1, `lang: en 인데 영어 규칙이 안 돌았다:\n${asEn.out}`)
+  assert.ok(asEn.out.includes('[경위]'), `영어 경위 서술을 안 잡는다 — 대소문자일 수 있다:\n${asEn.out}`)
+  assert.ok(asEn.out.includes('[군더더기]'), `영어 군더더기를 안 잡는다:\n${asEn.out}`)
+  assert.ok(!asEn.out.includes('우리말로'), `영문 본문에 «우리말로 바꾼다» 라고 지적했다:\n${asEn.out}`)
+})
+
 test('assets 의 본문 템플릿은 안내 주석을 지워야 통과한다', (t) => {
   const d = temp(t, 'pr-tools-template')
   const raw = join(d, 'raw.md')
-  const template = join(SKILL, 'assets/pr-body-template.md')
+  const template = join(SKILL, 'assets/ko/pr-body-template.md')
   const body = spawnSync('cat', [template], { encoding: 'utf8' }).stdout
   writeFileSync(raw, body)
   const r = run('bash', [script('pr-body-lint.sh'), raw], { cwd: d })

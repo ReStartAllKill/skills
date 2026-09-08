@@ -16,6 +16,10 @@ disable-model-invocation: false
 검증·초기화 명령, 경로, 브랜치는 프로필과 plan에 정의된 값을 사용한다.
 설계 배경이 필요할 때만 이 스킬의 `references/rationale.md`를 읽는다.
 
+보고 형식은 `assets/<언어>/report-templates.md`를 쓰되, 고르는 기준이 산출물과 다르다 —
+**보고는 대화 언어, 산출물은 프로필의 `lang`이다.** 보고는 커밋되지 않고 지금 읽는 사람만 보지만,
+산출물은 커밋되는 계약이라 레포의 모두가 같은 것을 읽어야 한다(`<adr_dir>` 의 ADR-001).
+
 ## 0. 입력과 실행 순서 확인
 
 1. `.claude/spec-profile.yml`을 읽는다. 없으면 `/sdlc-init`을 안내하고 중단한다.
@@ -52,7 +56,7 @@ node <sdlc_runtime>/tools/plan-progress.mjs <명세 디렉터리>
 - 완료로 표시됐지만 귀속 커밋이 없으면 중단하고 병합 결과·트레일러·체크박스를 확인한다.
 
 `plan-levels`가 표시하는 다음 실행 레벨에서 시작하거나 재개한다.
-`assets/report-templates.md`의 「진행 상태」 형식으로 보고하고, 첫 미완료 레벨을 실행하기 전에
+`assets/<대화 언어>/report-templates.md`의 「진행 상태」 형식으로 보고하고, 첫 미완료 레벨을 실행하기 전에
 plan의 상태를 `in_progress`로 변경해 커밋한다.
 
 ## 2. 실행 레벨별 구현
@@ -144,7 +148,7 @@ node <sdlc_runtime>/tools/plan-check.mjs <명세 디렉터리> commit --level <N
 
 ### 2f. 진행 보고와 외부 반영
 
-`assets/report-templates.md`의 「레벨 완료」 형식으로 보고한다. 필수 수동 검증이 남아 있어도
+`assets/<대화 언어>/report-templates.md`의 「레벨 완료」 형식으로 보고한다. 필수 수동 검증이 남아 있어도
 다음 자동 작업은 진행할 수 있지만, plan을 `completed`로 바꾸거나 구현 완료로 보고하지 않는다.
 
 대상 브랜치로의 커밋과 병합은 구현 절차에 포함된다. `git push`와 PR 생성은 사용자가 이번 실행에서
@@ -163,6 +167,6 @@ node <sdlc_runtime>/tools/plan-check.mjs <명세 디렉터리> commit --level <N
 감사 에이전트가 없거나 구현 에이전트와 같으면 감사를 생략하고 보고에 명시한다.
 감사 결과와 자체 대조 결과가 다른 AC는 미확인으로 보고한다. 미충족 기준이 있으면 완료 처리하지 않는다.
 
-`assets/report-templates.md`의 「완료 보고」 형식으로 각 `AC-*`를 충족하는 코드와 테스트를
+`assets/<대화 언어>/report-templates.md`의 「완료 보고」 형식으로 각 `AC-*`를 충족하는 코드와 테스트를
 `file:line`으로 제시한다. 근거를 제시할 수 없는 기준은 미확인으로 보고하고 완료 처리하지 않는다.
 모든 자동 검증과 필수 수동 검증을 마친 뒤에만 plan을 `completed`로 변경하고 커밋한다.

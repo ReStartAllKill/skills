@@ -4,6 +4,15 @@
 
 ### Added
 
+- **The PR body and the progress reports follow a language too, and not the same one.** A PR body
+  is read by reviewers and stays with the repository, so it follows the profile's `lang`: the
+  template moves to `assets/<lang>/` and `pr-body-lint.sh` selects its word lists from that key.
+  A progress report is printed into the conversation and committed nowhere, so it follows the
+  conversation's language instead — the same axis ADR-001 draws between what a repository owns and
+  what a reader does. English gets its own rules rather than a translation: no register check,
+  because Korean speech levels have no English counterpart, and the script's header says which
+  checks are per-language so an empty one reads as «does not exist» rather than «was skipped».
+
 - **English templates, and the rule that says which one to use.** Every artifact template moves to
   `assets/<lang>/`, `en` versions sit beside the Korean ones, and the shared skill procedure now
   states that artifacts are written in the profile's `lang` and never in the conversation's

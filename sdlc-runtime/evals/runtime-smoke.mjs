@@ -1114,14 +1114,18 @@ test('템플릿의 언어판은 같은 구조여야 한다 — 한쪽만 고치�
     .filter((l) => /^#{2,3} /.test(l))
     .map((l) => `${l.match(/^#+/)[0]} ${(l.match(/\b(OUT|CON|Q|SCN|FR|NFR|EDGE|SQ|SD|TD|WP|RISK|PQ|EV|HYP|FQ|ALT|RV|ASM)-\d+/) ?? ['prose'])[0]}`)
 
-  for (const [skill, name] of [['create-intent', 'intent'], ['create-spec', 'spec'], ['create-plan', 'plan'],
-                               ['create-adr', 'adr'], ['create-finding', 'finding']]) {
+  for (const [skill, file] of [['create-intent', 'intent-template.md'], ['create-spec', 'spec-template.md'],
+                               ['create-plan', 'plan-template.md'], ['create-adr', 'adr-template.md'],
+                               ['create-finding', 'finding-template.md'],
+                               // 사슬 산출물은 아니지만 같은 이유로 언어판이 갈린다 — 보고 형식은
+                               // 대화 언어가, PR 본문은 프로필의 lang 이 고른다.
+                               ['implement-spec', 'report-templates.md'], ['create-pr', 'pr-body-template.md']]) {
     const dir = join(findSkill(skill, HERE), 'assets')
-    const langs = readdirSync(dir).filter((l) => existsSync(join(dir, l, `${name}-template.md`)))
-    assert(langs.includes('ko'), `${skill}: ko 템플릿이 없다`)
-    const base = shape(join(dir, 'ko', `${name}-template.md`))
+    const langs = readdirSync(dir).filter((l) => existsSync(join(dir, l, file)))
+    assert(langs.includes('ko'), `${skill}: ko 의 ${file} 이 없다`)
+    const base = shape(join(dir, 'ko', file))
     for (const lang of langs) {
-      const other = shape(join(dir, lang, `${name}-template.md`))
+      const other = shape(join(dir, lang, file))
       assert(base.length === other.length && base.every((v, i) => v === other[i]),
         `${skill} 의 ko 와 ${lang} 이 어긋난다 (${base.length}절 vs ${other.length}절):\n  ko  ${base.join(' | ')}\n  ${lang}  ${other.join(' | ')}`)
     }

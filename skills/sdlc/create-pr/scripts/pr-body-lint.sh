@@ -14,13 +14,42 @@ set -uo pipefail
 FILE="${1:?usage: pr-body-lint.sh <body-file>}"
 [[ -f "$FILE" ]] || { echo "no such file: $FILE" >&2; exit 2; }
 
+# 프로필을 먼저 읽는다 — 아래 문체 검사가 lang 으로 갈린다.
+pr_repo_profile || PROFILE=""
+BODY_LANG="ko"
+[ -n "$PROFILE" ] && BODY_LANG="$(pr_yml lang "$PROFILE")"
+BODY_LANG="${BODY_LANG:-ko}"
+
+# 언어에 묶인 검사는 여기 다 있다. 빈 값이면 그 언어에 그 규칙이 없다는 뜻이다 —
+# «건너뛴다» 가 아니라 «없다» 이고, 어느 것이 그런지는 이 표가 말한다.
+#   narrative  작업 경위 서술          ko/en 둘 다
+#   register   합쇼체                  ko 만 — 영어에는 대응하는 화계가 없다
+#   noise      «변경 없음» 표 행        ko/en 둘 다
+#   asking     Reviewer Focus 안의 질문 ko/en 둘 다
+#   wordy      번역체·군더더기          ko/en 둘 다
+if [ "$BODY_LANG" = "en" ]; then
+  RE_NARRATIVE='Phase [0-9]|thoughts/|as discussed|after (some )?discussion|[0-9](st|nd|rd|th) (attempt|try)|while (working|debugging)|it turned out|I (found|noticed|realised|realized)'
+  RE_REGISTER=''
+  MSG_WORDY='[군더더기] 수동태·에두른 표현 — 주어를 세우고 짧게 쓴다:'
+  RE_NOISE='^\|.*(no change|unchanged|not applicable)'
+  RE_ASKING='(\?|what do you think|should we|is it ok|any thoughts)'
+  RE_WORDY='\bin order to\b|\bdue to the fact that\b|\bit should be noted\b|\butilize[sd]?\b|\bmake use of\b|\bis [a-z]+ed by\b|\bare [a-z]+ed by\b|\bwith (regard|respect) to\b|\bat this point in time\b|\bhas the ability to\b'
+else
+  RE_NARRATIVE='Phase [0-9]|thoughts/|플랜|리뷰 반영|[0-9]차 시도|논의 결과|판단해|하다가 발견'
+  RE_REGISTER='습니다|합니다|입니다|됩니다|드립니다'
+  MSG_WORDY='[번역체] 영어 번역투 — 능동·짧은 우리말로 바꾼다:'
+  RE_NOISE='^\|.*(변경 없음|해당 없음|해당사항 없음)'
+  RE_ASKING='(\?|의견을 듣고 싶|어떻게 할지|괜찮을지|필요할지)'
+  RE_WORDY='에 대한|에 대해|를 통해|을 통해|를 통하여|을 통하여|에 의해|에 의하여|되어진|되어지|지게 된다|할 수 있도록 지원|에 있어서|필요로 한다|로 하여금'
+fi
+
 fail=0
 note() { fail=1; printf '%s\n' "$1"; }
 # 막지 않는 알림. 검사가 «안 걸린 것» 인지 «못 본 것» 인지 구분해 준다.
 remark() { printf '%s\n' "$1"; }
 
 # 1) 작업 경위·플랜 참조·판단 과정 서술 — 독자는 세션·사슬 문서에 접근할 수 없다.
-if hits="$(grep -nE 'Phase [0-9]|thoughts/|플랜|리뷰 반영|[0-9]차 시도|논의 결과|판단해|하다가 발견' "$FILE")"; then
+if hits="$(grep -niE "$RE_NARRATIVE" "$FILE")"; then
   note "[경위] 작업 과정 서술로 보이는 줄 — 리뷰어에게 새 정보인지 다시 보고 아니면 지운다:"
   printf '%s\n' "$hits"
 fi
@@ -28,7 +57,7 @@ fi
 # 2) 합쇼체 — 문체는 체언·평서 종결(런타임 references/prose.md 와 같은 기준).
 # «합니다» 에는 «습니다» 가 없다. 하나로 줄이면 검사가 조용히 죽는다. «아니다» 를 잡지 않도록
 # 어간을 붙여 적는다.
-if hits="$(grep -nE '습니다|합니다|입니다|됩니다|드립니다' "$FILE")"; then
+if [ -n "$RE_REGISTER" ] && hits="$(grep -niE "$RE_REGISTER" "$FILE")"; then
   note "[문체] 합쇼체 — 체언·평서 종결로 바꾼다:"
   printf '%s\n' "$hits"
 fi
@@ -52,7 +81,7 @@ if hits="$(grep -nE '^[[:space:]]*(-|[0-9]+\.)?[[:space:]]*\.\.\.[[:space:]]*$' 
 fi
 
 # 6) 변경 없는 영역의 표 행 — 정보가 아니라 잡음.
-if hits="$(grep -nE '^\|.*(변경 없음|해당 없음|해당사항 없음)' "$FILE")"; then
+if hits="$(grep -niE "$RE_NOISE" "$FILE")"; then
   note "[잡음] 바뀌지 않은 영역의 표 행 — 행째 지운다:"
   printf '%s\n' "$hits"
 fi
@@ -87,14 +116,14 @@ if [[ "$ref_count" -gt 2 ]]; then
 fi
 
 # 10) Reviewer Focus 안의 질문 — 확인할 사실(단언)과 저자의 질문을 갈라 둔다.
-if hits="$(grep -nE '^>[[:space:]]*\*\*Reviewer Focus:\*\*.*(\?|의견을 듣고 싶|어떻게 할지|괜찮을지|필요할지)' "$FILE")"; then
+if hits="$(grep -niE "^>[[:space:]]*\*\*Reviewer Focus:\*\*.*$RE_ASKING" "$FILE")"; then
   note "[콜아웃] Reviewer Focus 에 질문이 섞였다 — 단언만 남기고 질문은 **Open question:** 줄로 뺀다:"
   printf '%s\n' "$hits"
 fi
 
 # 11) 번역체 — 런타임 references/prose.md 의 목록과 같은 축이다. 주어를 세우고 능동으로 쓴다.
-if hits="$(grep -nE '에 대한|에 대해|를 통해|을 통해|를 통하여|을 통하여|에 의해|에 의하여|되어진|되어지|지게 된다|할 수 있도록 지원|에 있어서|필요로 한다|로 하여금' "$FILE")"; then
-  note "[번역체] 영어 번역투 — 능동·짧은 우리말로 바꾼다:"
+if hits="$(grep -niE "$RE_WORDY" "$FILE")"; then
+  note "$MSG_WORDY"
   printf '%s\n' "$hits"
 fi
 
@@ -124,7 +153,6 @@ if [[ -n "$wrapped" ]]; then
 fi
 
 # --- 여기서부터는 레포를 본다. 프로필과 Git 이 있을 때만 돈다. ---
-pr_repo_profile || PROFILE=""
 BASE="${PR_BODY_LINT_BASE:-}"
 if [[ -z "$BASE" && -n "$PROFILE" ]]; then BASE="$(pr_yml pr_base "$PROFILE")"; fi
 BASE="${BASE:-origin/main}"
@@ -159,14 +187,21 @@ if [[ -n "$PROFILE" && -n "$CHANGED" ]]; then
   fi
 fi
 
-# 16) 언어 — 위 문체 검사(2·11)는 전부 한국어 표현 목록이다. 영문 본문에서는 하나도 안 걸리는데,
-#     안 걸리는 것은 통과와 구분되지 않는다. references/prose.md 의 lang-unsupported 와 같은 기준.
+# 16) 언어 — 위 문체 검사는 낱말 목록이라 언어를 탄다. 프로필의 lang 과 본문의 언어가 다르면
+#     하나도 안 걸리는데, 안 걸리는 것은 통과와 구분되지 않는다.
 #     글자 수는 로케일을 지정한 grep·wc 로 센다. awk 의 length() 는 바이트를 세어 한글에서 어긋난다.
 #     200자가 안 되는 본문은 비율이 흔들려 판정하지 않는다.
 ko="$(LC_ALL=en_US.UTF-8 grep -o '[가-힣]' "$FILE" | wc -l | tr -d ' ')"
 all="$(LC_ALL=en_US.UTF-8 tr -d '[:space:]' < "$FILE" | wc -m | tr -d ' ')"
-if awk -v k="$ko" -v n="$all" 'BEGIN { exit !(n >= 200 && k / n < 0.3) }'; then
-  remark "[lang-unsupported] 한국어가 아닌 본문이다 — 문체 검사(합쇼체·번역체)가 하나도 돌지 않았다. 통과가 아니라 미검사다."
+if [ "$BODY_LANG" = "en" ]; then
+  mismatch="$(awk -v k="$ko" -v n="$all" 'BEGIN { print (n >= 200 && k / n >= 0.3) ? 1 : 0 }')"
+  wanted="English"
+else
+  mismatch="$(awk -v k="$ko" -v n="$all" 'BEGIN { print (n >= 200 && k / n < 0.3) ? 1 : 0 }')"
+  wanted="한국어"
+fi
+if [ "$mismatch" = "1" ]; then
+  remark "[lang-unsupported] 프로필의 \`lang: $BODY_LANG\` 인데 본문이 ${wanted} 가 아니다 — 문체 검사가 하나도 돌지 않았다. 통과가 아니라 미검사다."
 fi
 
 exit "$fail"

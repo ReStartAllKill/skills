@@ -88,7 +88,7 @@ ${CLAUDE_PLUGIN_ROOT}/skills/sdlc/create-pr/scripts/pr-context.sh [base]   # 브
 `references/pr.md` 를 따른다. 그 문서가 섹션 구성, 사슬에서 무엇을 가져오는지, Risk
 등급의 뜻, 문체와 분량을 정한다. 여기서 되풀이하지 않는다.
 
-섹션 골격이 필요하면 `assets/pr-body-template.md` 로 시작한다. **안내 주석은 전부 지운다** — 남으면
+섹션 골격이 필요하면 `assets/<lang>/pr-body-template.md` 로 시작한다. **안내 주석은 전부 지운다** — 남으면
 린트가 막는다. 최소형(Intent + Problem)으로 끝나는 변경이면 나머지 섹션은 채우지 말고 지운다.
 
 **본문 초안은 파일로 쓰고 린트를 exit 0 으로 통과시킨 뒤 `--body-file` 로 넘긴다.**
