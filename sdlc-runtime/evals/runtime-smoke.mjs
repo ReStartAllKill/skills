@@ -1200,6 +1200,67 @@ ${wp('WP-003', 'src/c.js')}
 })
 
 
+test('통과 로그는 본문을 잘라 남기고 실패 로그는 그대로 둔다', () => {
+  /** --- 위의 헤더가 증거다. 아래는 실패를 읽을 때 쓰는 재료라, 통과한 실행의 1000 줄은 아무도
+   *  다시 열지 않으면서 레포에 영원히 남는다. 자른 자리는 전체 출력의 sha256 이 지킨다. */
+  const d = temp('sdlc-trunc')
+  put(join(d, '.claude/spec-profile.yml'), 'sdlc_version: 4\nspec_dir: .sdlc/specs\nverify: echo ok\n')
+  const spec = join(d, '.sdlc/specs/2026-09-08-t')
+  put(join(spec, 'plan.md'), `---
+artifact: plan
+schema_version: 4
+status: in_progress
+---
+
+## 작업 \`[필수 · 모든 티어]\`
+
+- [ ] **WP-001 — 변경**
+  - files: \`src/a.js\`
+  - depends: 없음
+  - covers: FR-001 (AC-001)
+  - tests: 결과가 참이다
+  - verify: true
+
+## 실행 기록
+
+해당 없음 — 아직 실행 전
+`)
+  put(join(d, 'src/a.js'), "test('결과가 참이다', () => {})\n")
+  git(d, 'init', '-q'); git(d, 'config', 'user.email', 'eval@local'); git(d, 'config', 'user.name', 'eval')
+  git(d, 'add', '-A'); git(d, 'commit', '-qm', 'plan born')
+
+  const noisy = 'for i in $(seq 1 600); do echo "line $i"; done'
+  const logs = () => readdirSync(join(d, '.sdlc/verify/2026-09-08-t')).sort()
+  const read = (f) => readFileSync(join(d, '.sdlc/verify/2026-09-08-t', f), 'utf8')
+
+  let r = run(process.execPath, [tool('verify-run.mjs'), spec, '--level', '1', '--tasks', 'WP-001', '--', noisy])
+  assert(r.code === 0, r.out)
+  assert(r.out.split('\n').filter((l) => /^line \d+$/.test(l)).length === 600, '실행 중 출력까지 줄였다 — 자르는 것은 기록이지 화면이 아니다')
+  const passed = read(logs()[0])
+  const [header, kept] = passed.split('\n---\n')
+  assert(/^sha256: [0-9a-f]{64}$/m.test(header), `전체 출력의 해시가 헤더에 없다 — 자른 로그를 지킬 것이 없다:\n${header}`)
+  assert(/^output: tail 40 of 600 lines$/m.test(header), `무엇을 잘랐는지 헤더가 말하지 않는다:\n${header}`)
+  assert(kept.split('\n').length < 60 && kept.includes('line 600') && !kept.includes('line 100'),
+    `통과 로그 본문을 안 줄였다 (${kept.split('\n').length}줄)`)
+  assert(/560 lines omitted/.test(kept), `자른 사실을 본문에 안 남겼다:\n${kept.slice(0, 200)}`)
+
+  // 실패한 실행에서는 그 출력이 곧 용건이다.
+  r = run(process.execPath, [tool('verify-run.mjs'), spec, '--level', '1', '--tasks', 'WP-001', '--', `${noisy}; exit 3`])
+  assert(r.code === 3, `실패 종료 코드를 삼켰다 (${r.code})`)
+  const failed = read(logs().find((f) => read(f).includes('exit: 3')))
+  assert(/^output: full 600 lines$/m.test(failed.split('\n---\n')[0]), `실패 로그를 잘랐다:\n${failed.split('\n---\n')[0]}`)
+  assert(failed.includes('line 1\n') && failed.includes('line 300') && failed.includes('line 600'), '실패 로그에서 출력이 사라졌다')
+
+  // 헤더만 읽는 쪽은 잘린 로그도 그대로 증거로 쓴다.
+  put(join(d, 'src/a.js'), "test('결과가 참이다', () => {})\nexport const a = 1\n")
+  git(d, 'add', 'src/a.js'); git(d, 'commit', '-qm', 'feat: a', '-m', 'SDLC-Task: WP-001\nSDLC-Plan: .sdlc/specs/2026-09-08-t/plan.md')
+  r = run(process.execPath, [tool('verify-run.mjs'), spec, '--level', '1', '--tasks', 'WP-001', '--', 'echo ok'])
+  assert(r.code === 0, r.out)
+  r = run(process.execPath, [tool('plan-progress.mjs'), spec, '--json'])
+  assert(JSON.parse(r.out).rows[0].verified.length === 1, `헤더를 못 읽었다:\n${r.out}`)
+})
+
+
 console.log('\n런타임 스모크 평가\n')
 for (const r of results) {
   console.log(`  ${r.ok ? '통과' : '✗ 실패'}  ${r.name}`)

@@ -1,8 +1,10 @@
 #!/usr/bin/env node
-/** 검증 명령의 출력·종료 코드·파일 지문을 verify_log_dir에 기록하고 종료 코드를 그대로 반환한다. */
+/** 검증 명령의 출력·종료 코드·파일 지문을 verify_log_dir에 기록하고 종료 코드를 그대로 반환한다.
+ *  통과한 실행의 출력은 끝만 남긴다 — 자세한 것은 아래 «통과한 실행의 본문은 잘라서 남긴다». */
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { resolve, join, relative, basename } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { loadDir } from './artifact-parse.mjs'
 import { taskFingerprint, repositoryFingerprint } from './task-evidence.mjs'
 
@@ -63,6 +65,31 @@ const out = (r.stdout ?? '') + (r.stderr ?? '')
 process.stdout.write(out)
 const code = r.status ?? 1
 
+/** 통과한 실행의 본문은 잘라서 남긴다.
+ *
+ *  증거는 --- 위의 헤더다. 지문·저장소 해시·HEAD 가 거기 있고 plan-progress 는 그것만 읽는다.
+ *  --- 아래는 사람이 실패를 볼 때 쓰는 재료라, 통과한 실행에서는 아무도 다시 열지 않는 1000 줄이
+ *  레포에 영구히 쌓인다. 실패한 실행은 그 1000 줄이 곧 용건이므로 그대로 둔다.
+ *
+ *  자른 자리는 전체 출력의 sha256 이 지킨다 — 자른 로그도 조용히 고쳐 쓸 수 없다. */
+const PASS_TAIL = 40
+const FAIL_MAX = 2000
+const FAIL_HEAD = 400
+
+const lines = out.length ? out.replace(/\n$/, '').split('\n') : []
+const elide = (n) => `[… ${n.toLocaleString('en-US')} lines omitted · sha256 in header …]`
+const [body, shape] = (() => {
+  if (code === 0 && lines.length > PASS_TAIL) {
+    return [[elide(lines.length - PASS_TAIL), ...lines.slice(-PASS_TAIL)].join('\n'), `tail ${PASS_TAIL} of ${lines.length} lines`]
+  }
+  if (code !== 0 && lines.length > FAIL_MAX) {
+    const tail = FAIL_MAX - FAIL_HEAD
+    return [[...lines.slice(0, FAIL_HEAD), elide(lines.length - FAIL_MAX), ...lines.slice(-tail)].join('\n'),
+      `head ${FAIL_HEAD} + tail ${tail} of ${lines.length} lines`]
+  }
+  return [out, `full ${lines.length} lines`]
+})()
+
 /** plan-progress는 헤더만 읽는다. 명령 출력은 --- 아래에 저장한다. */
 writeFileSync(file, [
   '# sdlc verify',
@@ -77,9 +104,12 @@ writeFileSync(file, [
   `stable: ${JSON.stringify(before) === JSON.stringify(fingerprints()) && repositoryBefore === repository()}`,
   `head: ${head}`,
   `exit: ${code}`,
+  `bytes: ${Buffer.byteLength(out)}`,
+  `output: ${shape}`,
+  `sha256: ${createHash('sha256').update(out).digest('hex')}`,
   '---',
-  out,
+  body,
 ].join('\n'))
 
-console.log(`\n${code === 0 ? '통과' : `실패 (exit ${code})`} — 기록: ${relative(ROOT, file)}`)
+console.log(`\n${code === 0 ? '통과' : `실패 (exit ${code})`} — 기록: ${relative(ROOT, file)} (${shape})`)
 process.exit(code)
