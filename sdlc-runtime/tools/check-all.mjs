@@ -7,11 +7,13 @@ import { fileURLToPath } from 'node:url'
 import { loadBands, validate } from './bands.mjs'
 import { loadPolicy, validate as validatePolicy } from './autonomy.mjs'
 import { frontmatter, schemaVersion } from './artifact-parse.mjs'
+import { useLocale } from './locale.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const args = process.argv.slice(2)
 const REQUIRED = args.includes('--required')
 const ROOT = resolve(args.find((a) => !a.startsWith('--')) ?? process.cwd())
+useLocale(ROOT)   // 문체 번들을 프로필의 lang 으로 고른다
 const DOCS = ['intent.md', 'spec.md', 'plan.md', 'finding.md']
 
 /** 프로필의 스칼라 값에서 주석과 따옴표를 제거한다. */

@@ -2,7 +2,8 @@
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { resolve, join, relative } from 'node:path'
 import { ADR_FILENAME, idsIn, stripComments, isNull, loadAdrDir } from './artifact-parse.mjs'
-import { SECTION, CHOSEN, hasAlias, RE_TRADEOFF, RE_DEADLINE_ONLY } from './keywords.mjs'
+import { SECTION, CHOSEN, hasAlias } from './keywords.mjs'
+import { locale } from './locale.mjs'
 /** 채택안 표시. 괄호까지 포함해 본다 — 본문에 «채택» 이 그냥 나오는 것과 구분한다. */
 const CHOSEN_RE = new RegExp(`\\((?:${CHOSEN.join('|')})\\)`, 'i')
 
@@ -171,7 +172,7 @@ export function checkAdr(doc, { seam, siblings = [] }, push) {
 
   // 채택안의 효과와 감수할 제약을 모두 확인한다.
   if (found['결과'] && !['draft', 'rejected'].includes(status)) {
-    if (!RE_TRADEOFF.test(found['결과'].text)) {
+    if (!locale().tradeoff.test(found['결과'].text)) {
       err('«결과» 에 감수하는 제약이 없다', '얻는 것만 있는 결정은 없다. 무엇을 대가로 지불하기로 했는지 적는다 — 그 줄이 이 문서의 핵심 기록이다.')
     }
   }
@@ -186,7 +187,7 @@ export function checkAdr(doc, { seam, siblings = [] }, push) {
   for (const id of rvs) if (declared.length && !declared.includes(id)) warn(`${id} 가 \`revisit:\` 에 없다`, '프런트매터가 기계가 읽는 목록이다 — 빠지면 finding 이 그 조건을 못 깨운다.')
   for (const rv of [...doc.ents.values()].filter((e) => e.id.startsWith('RV-'))) {
     // JavaScript의 단어 경계(\b)는 한글을 단어 문자로 취급하지 않는다.
-    if (RE_DEADLINE_ONLY.test(rv.title)) {
+    if (locale().deadlineOnly.test(rv.title)) {
       warn(`${rv.title} 이 시한으로 쓰였다`, 'RV-* 는 참·거짓이 판정되는 조건이다. «6개월 뒤 재검토» 는 아무도 판정하지 않는다.')
     }
   }

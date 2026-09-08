@@ -7,9 +7,7 @@ import {
   SUPPORTED_SCHEMA_VERSIONS, schemaVersion,
 } from './artifact-parse.mjs'
 import { loadLock } from './upstream.mjs'
-/** 수용 기준이 서술문으로 끝나는지. 한국어는 «다», 영문은 마침표가 그 자리다 — 어미 규칙이라
- *  lang 번들로 옮길 첫 후보다. */
-const AC_SENTENCE = /(?:다|다\.|[.!?])$/
+import { useLocale } from './locale.mjs'
 
 const argv = process.argv.slice(2)
 if (argv.includes('--version')) {
@@ -19,58 +17,19 @@ if (argv.includes('--version')) {
 const STRICT = argv.includes('--strict')
 const DIR = resolve(argv.find((a) => !a.startsWith('--')) ?? '.')
 
-/** 측정 기준이 필요한 표현. 같은 줄에 수치가 있으면 제외한다. */
-const VAGUE = ['빠르게', '빠른', '신속', '적절히', '적절한', '적당히', '쉽게', '편하게',
-  '간편하', '사용하기 쉬', '최적화', '개선한다', '개선된다', '향상', '안정적', '효율적',
-  '유연하', '확장 가능', '충분히', '대부분', '종종', '가능한 한', '되도록', '원활',
-  '매끄럽', '직관적', '깔끔', '잘 동작', '문제없', '등등']
 /** 목표 결과·요구사항·수용 기준의 본문에만 적용한다. */
 const MEASURED = /^(OUT|FR|NFR|AC)-/
-const MAX_SENTENCES = 4
-const MAX_TITLE = 40
-const MAX_FIELD = 200
 
-/** 번역체 표현 목록. */
-const TRANSLATIONESE = [
-  ['되어지', '이중 피동이다. «되다» 하나면 된다'],
-  ['지게 된다', '이중 피동이다. «된다» 로 충분하다'],
-  ['에 있어서', '«~에서» 나 «~할 때»'],
-  ['에 의해', '누가 하는지를 주어로 세운다 — «A 에 의해 처리된다» → «A 가 처리한다»'],
-  ['에 의하여', '누가 하는지를 주어로 세운다'],
-  ['필요로 한다', '«~이 필요하다»'],
-  ['을 가진다', '«~이 있다»'],
-  ['를 가진다', '«~이 있다»'],
-  ['을 갖는다', '«~이 있다»'],
-  ['를 갖는다', '«~이 있다»'],
-  ['제공한다', '«~한다» 로 바로 쓴다 — «검색 기능을 제공한다» → «검색한다»'],
-  ['수행한다', '«~한다» 로 바로 쓴다'],
-  ['라고 할 수 있다', '«~이다»'],
-  ['가능하게 한다', '«~할 수 있다»'],
-  ['로 하여금', '주어를 바꿔 쓴다'],
-]
-/** 내용 대신 문서 자체를 설명하는 표현 목록. */
-const META = [
-  [/이 문서(는|에서는)[^.\n]{0,40}(설명|기술|정의|다룬다|살펴|소개)/, '문서가 자기를 설명한다. 내용을 바로 쓴다'],
-  [/본 문서/, '«이 문서» 도 대개 필요 없다'],
-  [/(아래에서는|위에서 설명|앞서 언급|앞에서 살펴|다음 절|이 절에서는|이 장에서는)/, '차례를 서술하지 않는다 — 제목이 이미 그 일을 한다'],
-  [/참고로,/, '본문이면 그냥 쓰고, 아니면 뺀다'],
-]
-
-/** 공백을 제외한 글자 수 제한. 위험 등급에 따라 배수를 적용한다. */
-const BUDGET = {
-  intent: { doc: 1200, section: 500, entity: 250 },
-  spec: { doc: 2000, section: 800, entity: 400 },
-  plan: { doc: 3000, section: 1200, entity: 350 },
-  finding: { doc: 2000, section: 600, entity: 250 },
-  /** ADR에는 위험 등급 배수를 적용하지 않는다. */
-  adr: { doc: 2600, section: 900, entity: 400 },
-}
-/** 한국어 중심 규칙이므로 지원 언어를 확인한다. 짧은 문서는 비율 오차를 피하기 위해 제외한다. */
-const KO_MIN_RATIO = 0.3
-const LANG_MIN_CHARS = 200
-
+// 티어 배수는 «위험이 크면 더 길게 써도 된다» 는 규칙이라 언어와 무관하다.
 const TIER_MULT = { light: 1, standard: 1.6, full: 2.4 }
-const MAX_AC = 100
+
+// 낱말 목록·글자 한도·어미 규칙은 언어마다 다르다 — 프로필의 lang 이 고른다.
+const L = useLocale(DIR)
+const { vague: VAGUE, translationese: TRANSLATIONESE, meta: META, budget: BUDGET, script: SCRIPT } = L
+const MAX_SENTENCES = L.limits.sentences
+const MAX_TITLE = L.limits.title
+const MAX_FIELD = L.limits.field
+const MAX_AC = L.limits.ac
 
 const problems = []
 const add = (level, doc, line, rule, msg, hint) => problems.push({ level, doc, line, rule, msg, hint })
@@ -125,12 +84,12 @@ for (const d of Object.values(docs)) {
     const prose = stripComments(
       d.lines.filter((_, i) => d.live[i]).join('\n').replace(/^---[\s\S]*?---/, ''),
     ).replace(/`[^`]*`/g, '')
-    const ko = (prose.match(/[가-힣]/g) ?? []).length
-    const la = (prose.match(/[A-Za-z]/g) ?? []).length
-    if (ko + la >= LANG_MIN_CHARS && ko / (ko + la) < KO_MIN_RATIO) {
+    const mine = (prose.match(SCRIPT.test) ?? []).length
+    const other = (prose.match(SCRIPT.against) ?? []).length
+    if (mine + other >= SCRIPT.minChars && mine / (mine + other) < SCRIPT.minRatio) {
       add('warn', d.name, 1, 'lang-unsupported',
-        `한국어 문서가 아니다 (한글 ${Math.round((ko / (ko + la)) * 100)}%)`,
-        '문체 검사(번역체·메타·모호어)는 한국어 목록이라 이 문서에서는 하나도 걸리지 않고, 글자 한도도 한국어 기준이라 영문에는 좁다. 지금 이 사슬이 지원하는 산출물 언어는 한국어다 — 길이 경고는 참고로만 읽는다.')
+        `${SCRIPT.name} 문서가 아니다 (${SCRIPT.name} ${Math.round((mine / (mine + other)) * 100)}%)`,
+        `문체 검사(번역체·메타·모호어)는 ${SCRIPT.name} 낱말 목록이라 이 문서에서는 하나도 걸리지 않고, 글자 한도도 ${SCRIPT.name} 기준이라 다른 언어에는 안 맞는다. 이 레포의 산출물 언어는 프로필의 \`lang\` 이 정한다.`)
     }
   }
 
@@ -214,7 +173,7 @@ for (const d of Object.values(docs)) {
           : '한 항목이 길어지면 그것은 대개 두 항목이다. 갈라 쓰거나 아래 층(spec·plan)으로 내린다.')
     }
     // 수용 기준은 서술문으로 작성해야 한다.
-    if (e.kind === 'ac' && !AC_SENTENCE.test(e.title.trim())) {
+    if (e.kind === 'ac' && !L.acSentence.test(e.title.trim())) {
       add('warn', d.name, e.line + 1, 'untestable-ac', `${e.id} 이 서술문으로 끝나지 않는다`,
         '«<언제>이면 시스템은 <무엇을> 한다» 꼴로 쓴다. 명사로 끝나면 그건 기준이 아니라 항목 이름이다.')
     }

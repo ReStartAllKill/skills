@@ -13,6 +13,7 @@ import { LOCK_FILE, upstreamSeam, loadLock, verifyLock, findUpstream, headOf, sa
 import { loadBands, revisedBy } from './bands.mjs'
 import { loadPolicy, routeActive, STAGES } from './autonomy.mjs'
 import { FIELD, MARKER, BLOCKED, SECTION, hasAlias, sectionBlock, RE_NA, RE_NA_WITH_BASIS } from './keywords.mjs'
+import { useLocale } from './locale.mjs'
 
 const argv = process.argv.slice(2)
 if (argv.includes('--version')) {
@@ -26,6 +27,7 @@ if (supportAt >= 0) {
 }
 const STRICT = argv.includes('--strict')
 const DIR = resolve(argv.find((a) => !a.startsWith('--')) ?? '.')
+useLocale(DIR)   // 문체 번들을 프로필의 lang 으로 고른다
 
 /** 산출물 ID 검사에서 제외할 표준 약어와 문서 ID 접두. */
 const NOT_OURS = new Set(['UTF', 'ISO', 'RFC', 'SHA', 'AES', 'TLS', 'SLA', 'RTO', 'RPO', 'WCAG',

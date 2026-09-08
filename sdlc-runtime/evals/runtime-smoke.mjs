@@ -937,6 +937,30 @@ test('상류 문서 레포는 배정되지 않은 Must 수용 기준을 막는�
   assert(stray.code !== 0 && stray.out.includes('등록되지 않은 레포'), `등록되지 않은 소비 레포를 통과시켰다:\n${stray.out}`)
 })
 
+
+test('lang 은 문체 번들을 고르고, 번들이 없으면 조용히 통과하지 않는다', () => {
+  /** 번들이 없는 언어를 통과시키면 문체 검사가 0건인지 미실행인지 구분되지 않는다. */
+  const d = temp('sdlc-lang')
+  const chain = join(d, '.sdlc/specs/change')
+  cpSync(join(findSkill('create-plan', HERE), 'evals/cases/clean-light/docs'), chain, { recursive: true })
+  const profile = (lang) => put(join(d, '.claude/spec-profile.yml'),
+    `sdlc_version: 5\nspec_dir: ".sdlc/specs"\n${lang ? `lang: ${lang}\n` : ''}`)
+  const lint = () => run(process.execPath, [tool('lint-prose.mjs'), chain])
+
+  profile(null)
+  const bare = lint()
+  assert(bare.code === 0, `lang 이 없으면 ko 로 읽어야 한다:\n${bare.out}`)
+
+  profile('ko')
+  const ko = lint()
+  assert(ko.code === 0 && ko.out === bare.out, `lang: ko 가 기본값과 다른 결과를 냈다:\n${ko.out}`)
+
+  profile('fr')
+  const missing = lint()
+  assert(missing.code === 2 && /문체 번들이 없다/.test(missing.out),
+    `번들이 없는 언어를 통과시켰다 — 미검사가 통과로 읽힌다:\n${missing.out}`)
+})
+
 console.log('\n런타임 스모크 평가\n')
 for (const r of results) {
   console.log(`  ${r.ok ? '통과' : '✗ 실패'}  ${r.name}`)

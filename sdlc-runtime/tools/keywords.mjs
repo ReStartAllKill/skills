@@ -68,8 +68,3 @@ export const sectionHeading = (aliases) =>
 /** 필수 절을 «정말 없다» 로 면제하는 말. 근거를 요구하는 것이 요점이라 두 형태를 함께 본다. */
 export const RE_NA = /^\s*(?:N\/A|해당\s*없음)/i
 export const RE_NA_WITH_BASIS = /(?:N\/A|해당\s*없음)\s*[—–-]\s*\S/i
-
-/** ADR 의 결과 절이 대가를 말하는지. 여기만 낱말 목록이 문체 쪽에 가깝다 — lang 번들로 옮길 후보다. */
-export const RE_TRADEOFF = /감수|대가|비용|포기|제약을 진다|trade-?off|cost|give up|sacrifice/i
-/** 재검토 조건이 기한일 뿐인지. 위와 같은 이유로 번들 후보다. */
-export const RE_DEADLINE_ONLY = /\d\s*(?:개월|달|주|분기|년|months?|weeks?|quarters?|years?)|다음 분기|next quarter|뒤에 재검토|정기 검토|periodic review/i

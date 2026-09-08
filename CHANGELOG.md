@@ -4,6 +4,15 @@
 
 ### Added
 
+- **The style rules are a bundle, chosen by `lang`.** The word lists, the character budgets and
+  the sentence-ending rule move out of `lint-prose.mjs` into `sdlc-runtime/locales/ko.mjs`, and a
+  new `lang` profile key selects which bundle measures a repository's artifacts. `lang` is a
+  repository setting, not a person's: the chain is a committed contract, and CI has no
+  conversation to read a language from. A `lang` with no bundle stops the linter rather than
+  passing — a check that cannot run must not look like a check that found nothing. Only `ko`
+  ships; its numbers are measurements of this repository's 42 Korean artifacts and must not be
+  copied into another language's bundle.
+
 - **The contract accepts English keywords.** Every word a checker actually reads now lives in
   `sdlc-runtime/tools/keywords.mjs` — thirteen of them — and each takes an English form beside the
   Korean one: `basis:` for `근거:`, `[required · all tiers]` for `[필수 · 모든 티어]`, `N/A —` for
