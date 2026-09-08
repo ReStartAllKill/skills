@@ -1,24 +1,13 @@
-/** 산출물 파서 — `check-artifacts.mjs` 와 `lint-prose.mjs` 가 **함께** 쓴다.
- *
- *  파서를 두 벌 두면 이 사슬이 내내 경계한 «두 정본» 이 도구 쪽에 생긴다. 구조를 읽는
- *  법이 갈리는 순간 «검사기는 통과하는데 린터는 못 찾는» 자리가 조용히 생기고, 그 자리는
- *  아무도 안 본다.
- *
- *  읽는 모양은 셋이다 — 산문에 ID 를 다는 방식이 그것뿐이기 때문이다.
- *    `### FR-001 — 제목 `Must``          헤딩 정의
- *    `- [ ] AC-001 — 기준 문장`          수용 기준 (부모 요구사항 안)
- *    `- [ ] **WP-001 — 제목**` + 다섯 줄  작업
- */
+/** 검사기와 린터가 공유하는 산출물 파서. 제목의 ID, AC 체크박스, WP 작업 필드를 읽는다. */
 import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { join, dirname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-/** 글로벌 런타임은 여러 산출물 스키마를 읽는다. 무버전 문서는 v1 이다. */
+/** 버전이 없는 문서는 스키마 v1으로 읽는다. */
 export const SDLC_VERSION = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../VERSION'), 'utf8').trim()
 export const CURRENT_SCHEMA_VERSION = Number(SDLC_VERSION)
 export const LEGACY_SCHEMA_VERSION = 1
-/** 옛 버전을 계속 읽는다 — 레포마다 사슬을 올리는 시점이 다르고, 낡았다는 이유로
- *  거절하면 마이그레이션이 끝날 때까지 그 레포는 검사기를 못 쓴다. */
+/** 지원하는 이전 스키마도 함께 허용한다. */
 export const SUPPORTED_SCHEMA_VERSIONS =
   Array.from({ length: CURRENT_SCHEMA_VERSION - LEGACY_SCHEMA_VERSION + 1 }, (_, i) => LEGACY_SCHEMA_VERSION + i)
 export const schemaVersion = (fm = {}) => {
@@ -27,8 +16,7 @@ export const schemaVersion = (fm = {}) => {
   return Number.isInteger(n) ? n : null
 }
 
-/** ID 접두. `conventions.md` 의 표가 정본이고 여기가 그 기계 판이다.
- *  접두를 더할 때는 **양쪽을 함께** 고친다. */
+/** ID 접두를 변경할 때 conventions.md도 함께 갱신한다. */
 export const PREFIXES = {
   OUT: { doc: 'intent', label: '목표 결과' },
   CON: { doc: 'intent', label: '제약' },
@@ -51,17 +39,13 @@ export const PREFIXES = {
   ALT: { doc: 'adr', label: '대안' },
   RV: { doc: 'adr', label: '재검토 조건' },
 }
-/** `ASM-*` 은 두 집을 갖는다 — intent 의 «가정» 과 adr 의 «전제» 는 같은 뜻이고, 결정이 선
- *  전제를 ADR 밖에 두면 그 전제가 무너져도 결정을 아무도 못 깨운다. 접두를 하나 더 만드는
- *  대신 집을 둘로 인정한다. */
+/** ASM은 intent의 가정과 ADR의 전제에 공통으로 사용한다. */
 PREFIXES.ASM.also = ['adr']
 
-/** `ALT` 를 `AC` 보다 앞에 둔다. 교체는 앞에서부터 맞춰 보므로 뒤에 두면 «ALT-001» 이
- *  «AC» 로 먼저 걸릴 자리가 생긴다(지금 문법으로는 안 걸리지만 접두가 늘면 걸린다). */
 export const P_ALT = 'RISK|EDGE|HYP|NFR|OUT|CON|ASM|SCN|ALT|FR|AC|EV|FQ|SQ|SD|TD|WP|PQ|RV|Q'
-/** 사슬의 네 문서. `loadDir` 가 도는 것은 이것뿐이다. */
+/** loadDir이 읽는 산출물 파일명. */
 export const CHAIN_FILES = { finding: 'finding.md', intent: 'intent.md', spec: 'spec.md', plan: 'plan.md' }
-/** ADR 은 폴더가 아니라 파일 하나고 이름이 번호를 문다 — 아래 이름표는 오류 문구에만 쓴다. */
+/** ADR 이름표는 오류 메시지에 사용한다. */
 export const FILES = { ...CHAIN_FILES, adr: 'ADR-*.md' }
 export const ADR_FILENAME = /^ADR-(\d{3,4})-([a-z0-9]+(?:-[a-z0-9]+)*)\.md$/
 export const WP_FIELDS = ['files', 'depends', 'covers', 'tests', 'verify']
@@ -71,9 +55,7 @@ export const stripComments = (s) => s.replace(/<!--[\s\S]*?-->/g, '')
 export const unquote = (s) => s.trim().replace(/^["']|["']$/g, '')
 export const isNull = (v) => v == null || v === 'null' || v === '' || (Array.isArray(v) && v.length === 0)
 
-/** 프런트매터 — 이 문서들이 쓰는 만큼만 읽는다(스칼라·인라인 배열·블록 리스트).
- *  YAML 파서를 들이지 않는 것은 의존성의 문제다. 필요한 모양이 넷뿐이고, 넷을 넘어서면
- *  그건 프런트매터가 아니라 설정 파일이다. */
+/** 프런트매터의 스칼라·인라인 배열·블록 목록만 지원한다. */
 export function frontmatter(text) {
   const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)
   if (!m) return null
@@ -95,7 +77,7 @@ export function frontmatter(text) {
   return out
 }
 
-/** 코드펜스 밖의 줄만 «살아 있다». 예시 안의 `### FR-001` 이나 표가 세어지면 안 된다. */
+/** 코드 블록 안의 예시는 정의로 집계하지 않는다. */
 export function outsideFence(lines) {
   const ok = new Array(lines.length).fill(true)
   let fence = false
@@ -106,7 +88,7 @@ export function outsideFence(lines) {
   return ok
 }
 
-/** `## 제목 `[표기]`` 과 `### …`. 표기가 붙은 것이 티어 검사 단위다. */
+/** 제목의 티어 표기를 섹션 검사에 사용한다. */
 export function headings(lines, live) {
   const hs = []
   lines.forEach((line, i) => {
@@ -127,8 +109,7 @@ export function headings(lines, live) {
   return hs
 }
 
-/** 필드 — `키: 값` 또는 `- 키: 값`. 산문 한가운데의 콜론이 걸려도 해가 없다(안 쓰는 키가
- *  하나 생길 뿐). 값에서 ID 를 뽑는 쪽이 실제 검사다. */
+/** ‘키: 값’과 ‘- 키: 값’을 필드로 읽는다. */
 export function fieldsOf(lines) {
   const f = new Map()
   for (const raw of lines) {
@@ -150,8 +131,7 @@ export const scopeList = (raw) => String(raw ?? '')
 /** 항목의 유효 범위. 자기 것이 없으면 상위 요구사항에서 물려받는다. */
 export const scopeOf = (e, parent) => (e?.scope?.length ? e.scope : parent?.scope ?? [])
 
-/** 엔티티를 모은다. `onDup` 은 중복 정의를 어떻게 보고할지 부르는 쪽이 정한다 —
- *  검사기는 오류로, 린터는 무시한다(같은 사실을 두 도구가 두 번 말하지 않는다). */
+/** 중복 ID의 처리는 호출자가 onDup으로 지정한다. */
 export function entities(doc, onDup = () => {}) {
   const { lines, live, hs } = doc
   const out = new Map()
@@ -194,9 +174,7 @@ export function entities(doc, onDup = () => {}) {
   return out
 }
 
-/** ADR 파일 하나를 사슬 문서와 같은 모양으로 연다. `loadDir` 와 갈라 두는 이유는 ADR 이
- *  폴더가 아니라 파일 단위이고 이름이 번호를 물기 때문이다 — 같은 함수에 우겨넣으면
- *  «폴더 하나에 문서 넷» 이라는 loadDir 의 계약이 흐려진다. */
+/** ADR 파일을 산출물 공통 구조로 읽는다. */
 export function loadAdr(path, onDup) {
   if (!existsSync(path)) return null
   const text = readFileSync(path, 'utf8')
@@ -208,8 +186,7 @@ export function loadAdr(path, onDup) {
   return d
 }
 
-/** `<adr_dir>` 의 ADR 을 전부 연다. 이름 규칙을 어긴 파일은 열지 않고 이름만 돌려준다 —
- *  번호를 못 읽는 파일은 이 모음의 «번호는 하나를 가리킨다» 를 이미 깨고 있다. */
+/** 파일명이 규칙에 맞지 않으면 본문을 읽지 않고 이름만 반환한다. */
 export function loadAdrDir(dir, onDup) {
   if (!existsSync(dir)) return { docs: [], malformed: [] }
   const docs = [], malformed = []
@@ -222,8 +199,7 @@ export function loadAdrDir(dir, onDup) {
   return { docs, malformed }
 }
 
-/** 폴더 하나를 읽어 네 문서를 연다. 없는 문서는 그냥 없다 — finding 하나만 있는 폴더도,
- *  intent 만 있는 폴더도 정상이다. */
+/** 존재하는 산출물만 읽는다. 일부 문서만 있는 디렉터리도 허용한다. */
 export function loadDir(dir, onDup) {
   const docs = {}
   for (const [kind, name] of Object.entries(CHAIN_FILES)) {
@@ -240,11 +216,11 @@ export function loadDir(dir, onDup) {
   return docs
 }
 
-/** 템플릿 원본인가 — 채우기 전이면 내용 검사를 건너뛴다. 안 그러면 템플릿이 늘 실패한다. */
+/** 템플릿 원본은 내용 검사에서 제외한다. */
 export const isTemplate = (docs) => Object.values(docs)
   .some((doc) => /YYYY-NNN/.test(String(doc?.fm?.id ?? '')))
 
-/** 보고 — 두 도구가 같은 모양으로 낸다. */
+/** 검사기와 린터의 공통 출력 형식. */
 export function report({ title, notes = [], problems, strict, ruleDoc }) {
   const errors = problems.filter((p) => p.level === 'error')
   const warns = problems.filter((p) => p.level === 'warn')
@@ -270,9 +246,7 @@ export function report({ title, notes = [], problems, strict, ruleDoc }) {
   return 0
 }
 
-/** 작업(WP)의 `files` · `depends` 와 **레벨**. `/implement-spec` 은 `depends` 를 위상정렬한
- *  같은 깊이를 한 레벨로 병렬 실행한다. 검사기(파일 겹침)와 plan-levels(실행 순서)가
- *  같은 함수를 써야 «검사는 통과했는데 실행 순서가 다르다» 가 생기지 않는다. */
+/** 작업 의존 관계와 실행 레벨을 검사기·실행 도구가 공유한다. */
 export const wpField = (e, k) => (e.fields.has(k) ? e.fields.get(k) : '')
 export const wpFiles = (w) => {
   const v = wpField(w, 'files')
@@ -281,8 +255,7 @@ export const wpFiles = (w) => {
 }
 export const wpDeps = (w) => idsIn(wpField(w, 'depends')).filter((x) => x.startsWith('WP-'))
 
-/** 레벨을 센다. 결과: { level: Map<id, n>, cycles: [[...ids]], unknown: [{id, dep}] }.
- *  순환이나 없는 의존은 레벨 0 으로 두고 문제로 돌려준다 — 부르는 쪽이 오류로 만든다. */
+/** 반환값: {level, cycles, unknown}. 순환·미정의 의존 작업의 레벨은 0이다. */
 export function levelsOf(wps) {
   const byId = new Map(wps.map((w) => [w.id, w]))
   const level = new Map()

@@ -1,37 +1,5 @@
 #!/usr/bin/env node
-/** 자율 경로를 실행한다 — **탐지는 결정론이고, 판단만 모델에게 넘긴다.**
- *
- *  레포의 탐지 스크립트가 지표를 재서 밴드가 깨지면 이것을 부른다. 이 파일은 정책을
- *  읽고, 경로가 살아 있는지 보고, 그 경로가 허용한 **도구만** 들려 Claude 를 비대화형으로
- *  띄운다. 무엇을 해도 되는지가 문서 안의 선언이 아니라 **실행 시점의 권한**이 되는 자리다.
- *
- *  이 파일이 지키는 것 넷. 모델에게 맡기면 «지켜졌다고 문서에 적히는» 값이 된다.
- *
- *    1. 만료된 위임으로는 실행하지 않는다.
- *    2. 경로가 허용한 도구만 넘긴다 (`--allowedTools`). 사슬을 쓰는 데 드는 **배관**은
- *       정책이 아니라 여기서 더한다 — 아래 «배관» 참조.
- *    3. 다 쓴 뒤 검사기를 **이 프로세스가** 돌린다. 모델이 «검사기를 돌렸다» 고 적는 것과
- *       검사기가 실제로 돈 것은 다른 사실이다.
- *    4. 허용한 것 · 실제로 쓴 도구 · 거부된 호출 · 검사 결과를 실행 기록에 남긴다.
- *
- *  ## 배관 — 첫 end-to-end 실행에서 드러난 것
- *
- *  정책의 `tools` 만 넘기면 사슬이 서지 않았다. 셋이 막혔다.
- *
- *    - **`.claude/` 아래는 «민감한 파일» 이라 Write·Edit 이 언제나 묻는다.** `-p` 에는 답할
- *      사람이 없어 거부되고, 에이전트는 `specs-staging/` 같은 딴 자리에 문서를 두었다.
- *      허용 규칙(`Write(.claude/specs/**)`)도 훅의 `allow` 도 그 물음을 끄지 못했다.
- *      → `spec_dir` 를 `.claude/` 밖으로 옮긴다(기본 `.sdlc/specs`). 여기서는 거절한다.
- *    - **Bash 가 없으면 검사기·린터·`git log`(버전 핀) 를 못 돌린다.** 38번 시도하고 전부
- *      거부됐다. → 검사는 이 프로세스가 돌리고, `git log` 와 런타임 도구 셋만 허용한다.
- *    - **막힌 이유를 모르면 런타임 소스를 뒤진다.** 검사기·가드·디스패처 소스를 읽느라
- *      Read 23번 · Bash 38번을 썼다. → 프롬프트에 무엇이 허용됐고 무엇이 뒤에 도는지 적는다.
- *
- *  이 명령은 사슬을 `advance_to` 까지만 밀어 올린다. `approved_by` 는 사람 이름이 아니라
- *  `policy:<경로 id>` 가 되고, 검사기가 그 경로의 실재·만료·티어 한계를 대조한다.
- *
- *    node dispatch-auto.mjs <repo> --route <id> --signal "<무엇이 관측됐나>" [--dry-run]
- */
+/** 정책에 따라 비대화형 실행을 시작하고 결과를 검사·커밋·기록한다. 사용법: node dispatch-auto.mjs <repo> --route <id> --signal <관측> [--dry-run]. */
 import { readFileSync, existsSync, appendFileSync, mkdirSync } from 'node:fs'
 import { resolve, join, relative, dirname } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -58,9 +26,7 @@ const yml = (k) => (new RegExp(`^${k}:[ \\t]*(.*)$`, 'm').exec(profile)?.[1] ?? 
   .replace(/\s+#.*$/, '').replace(/^["']|["']$/g, '').trim()
 
 const SPEC_DIR = yml('spec_dir') || '.sdlc/specs'
-/** **`.claude/` 아래는 자율로 쓸 수 없다.** Claude Code 는 그 폴더의 Write·Edit 을 «자기 설정
- *  편집» 으로 보고 언제나 묻는다 — 허용 규칙도 훅의 allow 도 그 물음을 끄지 못한다.
- *  `-p` 에는 답할 사람이 없어 산출물이 한 장도 안 써진다. */
+/** .claude 아래 쓰기는 사용자 확인이 필요하므로 비대화형 산출물 경로로 허용하지 않는다. */
 if (SPEC_DIR === '.claude' || SPEC_DIR.startsWith('.claude/')) {
   die(`\`spec_dir: ${SPEC_DIR}\` 는 자율 경로가 쓸 수 없다 — \`.claude/\` 아래 쓰기는 Claude Code 가 언제나 사람에게 묻는다.\n` +
       '프로필의 `spec_dir` 를 `.claude/` 밖(기본 `.sdlc/specs`)으로 옮기고 사슬 폴더를 그리로 이동한다.')
@@ -75,16 +41,13 @@ if (pol.missing) die(`자율 실행 정책이 없다 — ${pol.rel}. 이 레포�
 const route = pol.routes[ROUTE_ID]
 if (!route) die(`경로 \`${ROUTE_ID}\` 가 정책에 없다. 있는 것: ${Object.keys(pol.routes).join(' · ') || '(없음)'}`)
 
-/** **만료가 이 명령의 첫 관문이다.** 만료된 위임으로 돈 실행은 지금 아무도 책임지지
- *  않는다. 그것을 실행 시점에 막지 않으면 만료일은 문서에 적힌 장식이 된다. */
+/** 만료된 정책으로는 실행하지 않는다. */
 if (!routeActive(route)) {
   die(`경로 \`${ROUTE_ID}\` 의 위임이 만료됐다 (${route.expires ?? '만료일 없음'}).\n` +
       '정책을 다시 검토해 갱신하거나, 이번 신호는 사람이 직접 처리한다.', 3)
 }
 
-/** **가드가 없으면 돌리지 않는다.** 자율 루트의 승인 경계(`policy:` 자기 경로만)는
- *  PreToolUse 가드가 지킨다. 그 훅이 이 레포에 등록돼 있지 않으면 «정책 승인» 은
- *  프롬프트 속 부탁일 뿐이다. */
+/** 정책 승인 경계를 검사할 PreToolUse 가드가 등록돼 있어야 한다. */
 const settingsPath = join(ROOT, '.claude/settings.json')
 const settingsText = existsSync(settingsPath) ? readFileSync(settingsPath, 'utf8') : ''
 if (!settingsText.includes('sdlc-approval.sh')) {
@@ -95,9 +58,7 @@ if (!settingsText.includes('sdlc-approval.sh')) {
 const policyErrors = validate(pol).filter((p) => p.level === 'error')
 if (policyErrors.length) die(policyErrors.map((p) => p.msg).join('\n'))
 
-/** 사슬을 어디까지 미느냐가 곧 프롬프트다. `implement` 는 여기서 부르지 않는다 —
- *  `/implement-spec` 은 사람이 시점을 정하는 명령이고(자동 호출이 꺼져 있다), 자율
- *  경로가 그것을 우회하면 «사람이 실행 시점을 정한다» 가 글자로만 남는다. */
+/** 자율 경로는 계획 작성까지만 수행하고 구현 실행은 사용자에게 안내한다. */
 const CHAIN = {
   finding: '`/create-finding` 으로 finding.md 만 쓴다.',
   intent: '`/create-finding` 으로 finding.md 를 쓰고, 경로가 `intent` 면 이어서 `/create-intent` 로 intent.md 까지 쓴다.',
@@ -106,10 +67,7 @@ const CHAIN = {
   implement: '`/create-finding` → `/create-intent` → `/create-spec` → `/create-plan` 까지 쓴다. **구현은 하지 않는다** — `/implement-spec` 은 사람이 부르는 명령이다. 마지막에 그 명령을 다음 단계로 안내한다.',
 }
 
-/** ── 배관 ─────────────────────────────────────────────────────────────────
- *  정책의 `tools` 는 «이 위임이 무엇을 만져도 되나» 다. 아래는 그 위임과 무관하게 사슬을
- *  **쓰는 데** 드는 최소 권한이고, 정책마다 다시 적게 하면 빠뜨린 정책이 조용히 실패한다.
- *  넓히지 않는다 — 산출물 폴더 안의 편집, 상위 문서의 커밋 SHA, 런타임 도구 셋뿐이다. */
+/** 정책 도구에 산출물 작성·버전 조회·검사에 필요한 최소 도구를 추가한다. */
 const toolsDir = join(RUNTIME, 'tools')
 const tildeTools = toolsDir.startsWith(process.env.HOME ?? '\0') ? '~' + toolsDir.slice(process.env.HOME.length) : null
 const PLUMBING = [
@@ -166,7 +124,7 @@ const args = ['-p', prompt, '--permission-mode', 'acceptEdits',
 const MAX_TURNS = Number(route.max_turns ?? 80)
 if (MAX_TURNS > 0) args.push('--max-turns', String(MAX_TURNS))
 
-// 실행 이력 자체는 다음 실행의 입력 변경으로 취급하지 않는다.
+// 자체 실행 로그는 다음 실행의 작업 트리 변경 검사에서 제외한다.
 const initialStatus = spawnSync('git', ['-C', ROOT, 'status', '--porcelain', '--', '.', ':(exclude).claude/autonomy-runs.jsonl'], { encoding: 'utf8' })
 if (!DRY && (initialStatus.status !== 0 || initialStatus.stdout.trim())) die('자율 실행은 변경이 없는 Git 작업 트리에서 시작한다.')
 const started = new Date().toISOString()
@@ -183,16 +141,14 @@ if (DRY) {
   process.exit(0)
 }
 
-/** 가드에게 «지금은 물어볼 사람이 없다» 를 알린다. `-p` 에서 훅의 "ask" 는 답할 사람이
- *  없어 거부되므로, 가드는 이 변수를 보고 자기 경로의 정책 승인만 통과시킨다. */
+/** 가드가 현재 경로의 정책 승인만 허용하도록 경로 ID를 전달한다. */
 const r = spawnSync('claude', args, {
   cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024,
   env: { ...process.env, SDLC_AUTONOMY_ROUTE: ROUTE_ID },
 })
 const ended = new Date().toISOString()
 
-/** **실제로 한 것을 스트림에서 센다.** 도구 이름별 호출 수, 거부된 호출, 마지막 보고,
- *  비용. 모델이 «했다» 고 적은 것이 아니라 하네스가 본 것이다. */
+/** 이벤트 스트림에서 도구 호출·거부·최종 결과·비용을 집계한다. */
 const used = {}
 const denied = []
 let final = null
@@ -216,16 +172,14 @@ console.log(final?.result ?? (r.stderr || '(결과 없음)').slice(0, 2000))
 console.log(`\n도구 사용: ${Object.entries(used).map(([k, v]) => `${k}×${v}`).join(' · ') || '(없음)'}`)
 if (denied.length) console.log(`거부된 호출 ${denied.length}건:\n  ${denied.slice(0, 8).join('\n  ')}`)
 
-/** **검사는 이 프로세스가 돌린다.** 에이전트가 돌렸든 안 돌렸든, 기록에 남는 판정은
- *  여기서 난 것이다. 오류가 있으면 커밋하지 않고 사람에게 넘긴다. */
+/** 에이전트의 보고와 별도로 전체 검사를 실행한다. */
 const checkAll = spawnSync(process.execPath, [join(toolsDir, 'check-all.mjs'), ROOT, '--required'], { encoding: 'utf8' })
 const checkOut = (checkAll.stdout ?? '') + (checkAll.stderr ?? '')
 console.log('\n── 검사 (디스패처) ──')
 console.log(checkOut.trim())
 const checkOk = checkAll.status === 0
 
-/** 통과했을 때만 산출물 폴더를 커밋한다. 상위 문서의 커밋 SHA 가 하위의 버전 핀이라,
- *  커밋되지 않은 사슬은 다음 칸(사람이 여는 `/create-spec`)에서 핀을 찍을 수 없다. */
+/** 에이전트 실행과 검사가 모두 성공한 경우에만 산출물 디렉터리를 커밋한다. */
 let commit = null
 const status = spawnSync('git', ['-C', ROOT, 'status', '--porcelain', '--', SPEC_DIR], { encoding: 'utf8' })
 const changed = status.stdout?.trim()

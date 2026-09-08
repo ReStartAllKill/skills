@@ -1,18 +1,5 @@
 #!/usr/bin/env node
-/** 작업 워크트리의 배관 — add · commit · merge · remove.
- *
- *  `/implement-spec` 에서 가장 비싼 실수가 여기 살았다. `git add -A` 로 남의 파일을 실어 보내고,
- *  분기 기준을 틀리고, `SDLC-Task` trailer 를 빼먹고, 워크트리를 안 치웠다. 규칙 8 «스테이징은
- *  그 작업의 files 만» 은 글자였다. 여기서는 plan 의 `files` 와 프로필의 템플릿을 **읽어서**
- *  git 명령을 조립한다 — 모델은 어느 작업인지만 말한다.
- *
- *    node task-worktree.mjs <스펙 폴더> add    <WP>            target_branch 에서 작업 브랜치·워크트리를 판다. bootstrap 을 돌린다
- *    node task-worktree.mjs <스펙 폴더> commit <WP> -m "<제목>" [--main]   그 작업의 files 만 스테이징해 trailer 와 함께 커밋한다
- *    node task-worktree.mjs <스펙 폴더> merge  <WP>            메인 트리(target_branch)에 작업 브랜치를 하나 머지한다. 충돌이면 되돌리고 exit 2
- *    node task-worktree.mjs <스펙 폴더> remove <WP> [--force]  워크트리와 브랜치를 치운다. 남은 변경이 있으면 --force 없이는 거절한다
- *
- *  `--main` 은 작업 하나짜리 레벨 — 워크트리 없이 메인 트리에서 한 작업을 같은 규칙으로 커밋한다.
- */
+/** 작업 워크트리를 생성·커밋·병합·제거한다. commit은 files만 스테이징하고 SDLC-Task 트레일러를 추가한다. --main은 현재 작업 트리를 사용한다. */
 import { existsSync } from 'node:fs'
 import { resolve, join, relative } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -32,7 +19,7 @@ if (!dirArg || !['add', 'commit', 'merge', 'remove'].includes(CMD) || !TASK) {
 }
 const DIR = resolve(dirArg)
 
-/** plan-levels 가 plan·프로필을 한 번에 읽는다 — 여기서 다시 파싱하지 않는다. */
+/** plan-levels가 해석한 계획서와 프로필을 사용한다. */
 const lv = spawnSync(process.execPath, [join(HERE, 'plan-levels.mjs'), DIR, '--json'], { encoding: 'utf8' })
 let plan
 try { plan = JSON.parse(lv.stdout) } catch { die(`plan-levels 를 읽지 못했다:\n${lv.stdout}${lv.stderr}`) }
@@ -81,8 +68,7 @@ if (CMD === 'commit') {
   const known = new Set(tracked.stdout.split('\0'))
   const present = task.files.filter((f) => existsSync(resolve(cwd, f)) || known.has(f))
   if (!present.length) die(`${TASK} 의 files 중 존재하거나 추적 중인 파일이 없다: ${task.files.join(', ')}`)
-  /** files 밖의 변경은 싣지 않되 **숨기지도 않는다** — 규칙 5 «스코프 밖 파일을 주지 않는다» 가
-   *  깨졌다는 신호이고, 다음 레벨이 그것을 못 본 채 분기하면 안 된다. */
+  /** files 밖의 변경은 커밋하지 않고 경고한다. */
   const st = stdout(git(cwd, 'status', '--porcelain')).split('\n').filter(Boolean)
     .map((l) => l.trim().replace(/^\S+\s+/, '')).filter((p) => !task.files.includes(p))
   if (st.length) console.error(`⚠ files 밖의 변경 ${st.length}개는 싣지 않는다: ${st.slice(0, 5).join(', ')}${st.length > 5 ? ' …' : ''}`)
@@ -96,7 +82,7 @@ if (CMD === 'commit') {
 
 if (CMD === 'merge') {
   if (current() !== plan.target_branch) die(`메인 트리가 ${current()} 에 있다 — target_branch ${plan.target_branch} 로 먼저 옮긴다.`)
-  /** 추적 중인 파일의 변경만 본다 — 편집기 임시 파일 같은 untracked 는 머지와 부딪히지 않는다. */
+  /** 병합 전에는 추적 중인 파일의 변경만 검사한다. */
   if (stdout(git(ROOT, 'status', '--porcelain', '--untracked-files=no'))) die('메인 트리가 더럽다 — 합류 전에 정리한다. 무엇이 누구 변경인지 갈라낼 수 없다.')
   if (!ok(git(ROOT, 'rev-parse', '--verify', '--quiet', branch))) die(`작업 브랜치가 없다 — ${branch}`)
   const r = git(ROOT, 'merge', '--no-edit', branch)
@@ -111,8 +97,7 @@ if (CMD === 'merge') {
 
 if (CMD === 'remove') {
   if (existsSync(wt)) {
-    /** 남은 변경이 있으면 기본은 거절이다 — commit 이 싣지 않은 스코프 밖 편집이 거기 있고,
-     *  그것을 버릴지는 사람이 정한다. `--force` 는 그 결정을 내린 뒤에 준다. */
+    /** 미커밋 변경이 남으면 제거를 거부한다. 폐기 승인 후 --force를 사용한다. */
     const left = stdout(git(wt, 'status', '--porcelain')).split('\n').filter(Boolean)
     if (left.length && !FORCE) {
       die(`워크트리에 커밋되지 않은 변경 ${left.length}개가 남아 있다 — ${relative(ROOT, wt)}\n  ${left.slice(0, 8).join('\n  ')}\n` +

@@ -1,31 +1,17 @@
 #!/usr/bin/env node
-/** 탐지 밴드 등록부 — 사슬의 **입력** 쪽을 결정론으로 되돌린다.
- *
- *  `finding.md` 는 «밴드가 깨졌다» 에서 시작하는데, 그 밴드가 어디에도 정의되어 있지
- *  않으면 «무엇이 정상인가» 를 모델이 그때그때 지어낸다. 그러면 §관측 과 §진단 을 갈라
- *  놓은 이 문서의 척추가 한 층 위에서 무너진다 — **기계가 잰 것** 이라고 적힌 값의
- *  기준선이 사실은 모델의 짐작이기 때문이다.
- *
- *  그리고 **기각이 루프를 닫게 한다.** 지금까지 「밴드 조정」 은 문서 안의 산문이었고
- *  아무도 그것을 읽지 않았다. 그래서 기각한 신호가 다음 실행에서 새 발견으로 다시 섰다 —
- *  finding 템플릿 자신이 경고한 바로 그 일이다. 조정이 **등록부에 남아야** 기각이 끝난다.
- *
- *    node bands.mjs <repo-root> [--strict]
- */
+/** 지표 허용 범위와 조정 이력을 검사한다. 사용법: node bands.mjs <repo-root> [--strict]. */
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve, join, relative } from 'node:path'
 
 export const AUTONOMY = ['log', 'diagnose', 'propose']
 const REQUIRED = ['metric', 'source', 'window', 'rule', 'autonomy_tier', 'owner']
 
-/** 등록부는 모양이 정해져 있다 — 최상위 스칼라, `bands:` 밑에 id → 필드, 그 밑에
- *  `revised:` 목록. 그 넷을 넘어서면 그건 등록부가 아니라 설정 파일이므로, 여기서도
- *  YAML 파서를 들이지 않는다(`artifact-parse.mjs` 와 같은 판단이다). */
+/** 최상위 스칼라, bands의 ID별 필드, revised 목록을 읽는다. */
 export function parseBands(text) {
   const out = { version: null, bands: {}, problems: [] }
   const bad = (line, msg) => out.problems.push({ line, msg })
   const lines = text.split(/\r?\n/)
-  let cur = null      // 현재 밴드 id
+  let cur = null
   let inBands = false
   let inRevised = false
 
@@ -77,8 +63,7 @@ export function parseBands(text) {
   return out
 }
 
-/** 등록부 자체가 성립하는가. 밴드가 재현 명령을 안 들고 있으면 그것은 밴드가 아니라
- *  «느낌» 이고, 그 위에 선 발견의 §관측 은 잰 것이 아니다. */
+/** 밴드의 필수 필드와 재현 명령을 확인한다. */
 export function validate(reg) {
   const problems = reg.problems.map((p) => ({ level: 'error', ...p }))
   const err = (line, msg, hint) => problems.push({ level: 'error', line, msg, hint })
@@ -108,7 +93,7 @@ export function validate(reg) {
   return problems
 }
 
-/** 이 발견이 이 밴드를 조정했다고 등록부가 말하는가 — 기각의 루프를 닫는 자리. */
+/** finding의 밴드 조정이 등록부에도 기록됐는지 확인한다. */
 export const revisedBy = (reg, bandId, findingId) =>
   (reg.bands[bandId]?.revised ?? []).some((r) => r.includes(findingId))
 
@@ -119,7 +104,6 @@ export function loadBands(root, profileValue) {
   return { path, rel, missing: false, ...parseBands(readFileSync(path, 'utf8')) }
 }
 
-// ─────────────────────────────────────────────────────────────── CLI
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const argv = process.argv.slice(2)

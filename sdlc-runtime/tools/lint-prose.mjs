@@ -1,38 +1,5 @@
 #!/usr/bin/env node
-/** 산문 규율 린터 — 검사기가 못 보는 자리.
- *
- *  `check-artifacts.mjs` 는 **구조**를 본다 — ID 가 맞물리는가, 추적이 끊겼는가.
- *  구조가 완벽하면서 읽을 수 없는 문서를 쓰는 것은 얼마든지 가능하다. 이 사슬을 표에서
- *  산문으로 옮긴 이유 자체가 «읽히는 것» 이었으므로, 그 규율에도 결정론적 층이 필요하다.
- *
- *  ## 표 자체는 죄가 없다 — **항목을 행으로 만드는 것**이 죄다
- *
- *  이 사슬을 산문으로 옮긴 이유는 셋이다. 발안자(엔지니어가 아닌 사람)가 양식 앞에서
- *  물러나는 것, 셀이 짧아 «왜» 가 빠지는 것, 세션마다 읽히는 글의 비용.
- *
- *  **셋 다 겨냥하는 것은 하나다 — 항목 목록을 표의 행으로 만드는 것.** 거기서만 «양식
- *  채우기» 가 된다. 반대로 진짜 2차원 자료(대안 비교 · 상태 전이 · 지표의 현재값과 목표)는
- *  표가 가장 정확한 형태이고, 그것까지 막으면 규칙이 스스로를 못 지킨다 — 이 규약을 적은
- *  `conventions.md` 자신이 표로 되어 있다.
- *
- *  그래서 잡는 것은 **첫 칸에 우리 ID 가 선 표**다. 그것이 곧 «`### FR-001 — 제목` 으로
- *  섰어야 할 항목을 행으로 접었다» 는 뜻이다. 넓은 표(5열 이상)는 `intent`·`spec` 에서만
- *  경고한다 — 그 둘의 독자에 엔지니어가 아닌 사람이 있다.
- *
- *  ## 모호한 말은 요구사항에서만 잡는다
- *
- *  «빠르게» 는 문제를 서술할 때는 정직한 말이다 — 사람이 실제로 그렇게 느낀다. 그것이
- *  결함이 되는 자리는 **결과·요구사항·수용 기준**뿐이다. 거기서는 참·거짓을 가릴 수
- *  없게 만들기 때문이다. 그래서 이 검사는 엔티티 안에서만 돌고, 같은 줄에 수치가 있으면
- *  이미 한정된 것으로 보고 넘어간다.
- *
- *  ## 템플릿에는 안 돈다
- *
- *  템플릿은 주석과 placeholder 가 있는 것이 정상이다. 인스턴스화된 문서에만 돈다 —
- *  거기 주석이 남아 있으면 «템플릿 지시문이 산출물에 실려 나간» 것이다.
- *
- *    node lint-prose.mjs <스펙 폴더> [--strict]
- */
+/** 산출물의 문체·분량·표 구조·템플릿 잔재를 검사한다. 사용법: node lint-prose.mjs <명세 디렉터리> [--strict]. */
 import { existsSync, statSync } from 'node:fs'
 import { resolve, basename, dirname } from 'node:path'
 import {
@@ -49,19 +16,18 @@ if (argv.includes('--version')) {
 const STRICT = argv.includes('--strict')
 const DIR = resolve(argv.find((a) => !a.startsWith('--')) ?? '.')
 
-/** 측정 가능한 기준으로 바꿔야 하는 말. 같은 줄에 수치가 있으면 이미 한정된 것으로 본다. */
+/** 측정 기준이 필요한 표현. 같은 줄에 수치가 있으면 제외한다. */
 const VAGUE = ['빠르게', '빠른', '신속', '적절히', '적절한', '적당히', '쉽게', '편하게',
   '간편하', '사용하기 쉬', '최적화', '개선한다', '개선된다', '향상', '안정적', '효율적',
   '유연하', '확장 가능', '충분히', '대부분', '종종', '가능한 한', '되도록', '원활',
   '매끄럽', '직관적', '깔끔', '잘 동작', '문제없', '등등']
-/** 이 접두의 본문에서만 모호한 말을 잡는다 — 문제 서술에서 «빠르게» 는 정직한 말이다. */
+/** 목표 결과·요구사항·수용 기준의 본문에만 적용한다. */
 const MEASURED = /^(OUT|FR|NFR|AC)-/
 const MAX_SENTENCES = 4
 const MAX_TITLE = 40
 const MAX_FIELD = 200
 
-/** 번역체 — 한국어로 생각해 쓴 글에는 잘 안 나오는 모양들. 값이 아니라 **읽는 속도**의
- *  문제다: 이중 피동과 «~에 의해» 는 누가 하는 일인지를 한 겹 뒤로 숨긴다. */
+/** 번역체 표현 목록. */
 const TRANSLATIONESE = [
   ['되어지', '이중 피동이다. «되다» 하나면 된다'],
   ['지게 된다', '이중 피동이다. «된다» 로 충분하다'],
@@ -79,7 +45,7 @@ const TRANSLATIONESE = [
   ['가능하게 한다', '«~할 수 있다»'],
   ['로 하여금', '주어를 바꿔 쓴다'],
 ]
-/** 문서가 내용 대신 **자기 자신**을 말하는 자리. 읽는 사람이 할 일이 없는 글자다. */
+/** 내용 대신 문서 자체를 설명하는 표현 목록. */
 const META = [
   [/이 문서(는|에서는)[^.\n]{0,40}(설명|기술|정의|다룬다|살펴|소개)/, '문서가 자기를 설명한다. 내용을 바로 쓴다'],
   [/본 문서/, '«이 문서» 도 대개 필요 없다'],
@@ -87,32 +53,16 @@ const META = [
   [/참고로,/, '본문이면 그냥 쓰고, 아니면 뺀다'],
 ]
 
-/** 섹션별 글자 한도(공백 제외). **`intent.md` 가 가장 좁다** — 그 문서의 독자는 발안자와
- *  제품 책임자이고, 길어지는 순간 «읽고 판단하는 문서» 에서 «훑고 넘기는 문서» 가 된다.
- *
- *  숫자는 지어낸 것이 아니라 `light` 예제를 재서 뽑았다:
- *  intent 437 · spec 727 · plan 1240 · finding 871, 섹션 최대 159~476, 엔티티 최대 187.
- *  경고선은 그 3배 남짓이고 **두 배를 넘으면 오류**다. 티어가 오르면 함께 늘어난다 —
- *  full 은 규제 대상이라 실제로 쓸 말이 많다. */
+/** 공백을 제외한 글자 수 제한. 위험 등급에 따라 배수를 적용한다. */
 const BUDGET = {
   intent: { doc: 1200, section: 500, entity: 250 },
   spec: { doc: 2000, section: 800, entity: 400 },
   plan: { doc: 3000, section: 1200, entity: 350 },
   finding: { doc: 2000, section: 600, entity: 250 },
-  /** ADR 은 티어가 없다 — 사슬 밖 문서라 이번 변경의 크기를 물려받지 않는다. 그래서 아래
-   *  `mult` 가 1 로 고정되고, 이 수가 그대로 한도다. 「분량은 결정의 무게에 맞춘다」 지만
-   *  한 결정이 이보다 길어지면 대개 분량 문제가 아니라 **한 문서에 결정이 둘**인 것이다. */
+  /** ADR에는 위험 등급 배수를 적용하지 않는다. */
   adr: { doc: 2600, section: 900, entity: 400 },
 }
-/** 이 사슬의 문체 규칙은 **한국어에 맞춰 잰 것**이다 — 번역체·메타·모호어 목록도, 위 글자
- *  한도도. 영문 산출물에 그대로 걸면 목록 셋이 **하나도 안 걸리고** 길이만 한국어 숫자로
- *  재진다. 안 걸리는 것은 통과와 구분되지 않으므로, 지원하지 않는다는 사실을 조용히 두지
- *  않고 말한다.
- *
- *  임계값은 실측이다: 이 레포의 한국어 산출물 42개가 한글 비율 0.52~0.97, 중앙 0.92 였다.
- *  0.3 은 그 아래 어디에도 닿지 않고 영문 문서는 0 에 가깝다. **짧은 문서는 판정하지
- *  않는다** — 200자도 안 되면 비율이 흔들려 오판이 나고, 오판한 경고는 사람이 린터를 끄게
- *  만든다. */
+/** 한국어 중심 규칙이므로 지원 언어를 확인한다. 짧은 문서는 비율 오차를 피하기 위해 제외한다. */
 const KO_MIN_RATIO = 0.3
 const LANG_MIN_CHARS = 200
 
@@ -123,8 +73,7 @@ const problems = []
 const add = (level, doc, line, rule, msg, hint) => problems.push({ level, doc, line, rule, msg, hint })
 const notes = []
 
-/** 입력이 ADR 파일 하나이거나 ADR 이 든 폴더면 그쪽을 읽는다. **사슬의 네 이름만 보면
- *  결정 기록이 문체 검사를 통째로 안 받는다.** 문서 모양이 같으므로 아래 검사는 다 돈다. */
+/** ADR 파일과 ADR 디렉터리도 검사한다. */
 const docs = (() => {
   const isDir = existsSync(DIR) && statSync(DIR).isDirectory()
   const adrDir = isDir ? DIR : dirname(DIR)
@@ -152,8 +101,7 @@ if (Object.keys(docs).length === 0) {
   console.error(`산출물이 없다 — ${DIR} 에 intent.md / spec.md / plan.md / finding.md / ADR-*.md 가 하나도 없다.`)
   process.exit(1)
 }
-// ADR 만 있는 폴더에서는 사슬의 넷이 다 없다. 거기서 undefined 를 읽어 v1 로 적으면 사람이
-// 그걸 「이 결정이 구버전인가」 로 읽는다 — ADR 은 언제나 현재 스키마다.
+// ADR 전용 디렉터리는 현재 스키마 버전으로 표시한다.
 const schema = schemaVersion((docs.intent ?? docs.finding ?? docs.spec ?? docs.plan ?? Object.values(docs)[0])?.fm)
 if (schema != null) notes.push(`산출물 schema v${schema}${schema === 1 ? ' (무버전 문서 호환)' : ''} · runtime ${SDLC_VERSION}`)
 if (isTemplate(docs)) {
@@ -170,7 +118,6 @@ const mult = ADR_ONLY ? 1 : (TIER_MULT[TIER] ?? 1.6)
 const chars = (s) => stripComments(String(s)).replace(/\s+/g, '').length
 
 for (const d of Object.values(docs)) {
-  // ── 한국어 문서인가. 아니면 아래 검사 대부분이 **말없이 지나간다**.
   if (!TEMPLATE) {
     const prose = stripComments(
       d.lines.filter((_, i) => d.live[i]).join('\n').replace(/^---[\s\S]*?---/, ''),
@@ -184,13 +131,12 @@ for (const d of Object.values(docs)) {
     }
   }
 
-  // ── 항목을 표의 행으로 접었나. 표 자체가 아니라 **이것**이 규칙이다.
   d.lines.forEach((line, i) => {
     if (!d.live[i]) return
     if (!/^\s*\|/.test(line)) return
     if (!/^\s*\|[\s:|-]+\|\s*$/.test(d.lines[i + 1] ?? '')) return
     const cols = line.trim().replace(/^\||\|$/g, '').split('|').length
-    // 표의 어느 행이든 첫 칸이 우리 ID 면 «헤딩으로 섰어야 할 항목» 을 행으로 접은 것이다.
+    // 첫 번째 열이 항목 ID인 표만 구조 위반으로 처리한다.
     let rowIds = 0
     for (let j = i + 2; j < d.lines.length && /^\s*\|/.test(d.lines[j]); j++) {
       const first = (d.lines[j].trim().replace(/^\||\|$/g, '').split('|')[0] ?? '').replace(/`/g, '').trim()
@@ -208,7 +154,7 @@ for (const d of Object.values(docs)) {
   })
   if (TEMPLATE) continue
 
-  // ── 번역체와 메타. 값이 아니라 읽는 속도의 문제라 전부 경고다.
+  // 번역체와 메타 표현은 경고로 처리한다.
   d.lines.forEach((line, i) => {
     if (!d.live[i] || /^\s*(?:[-*]\s+)?[A-Za-z가-힣_][A-Za-z가-힣_ ]{0,19}:\s/.test(line)) return
     const clean = stripComments(line)
@@ -222,7 +168,6 @@ for (const d of Object.values(docs)) {
     }
   })
 
-  // ── 템플릿 주석이 산출물에 실려 나갔다.
   d.lines.forEach((line, i) => {
     if (!/<!--/.test(line)) return
     add('error', d.name, i + 1, 'comment', '템플릿 주석이 남아 있다',
@@ -230,30 +175,26 @@ for (const d of Object.values(docs)) {
   })
 
   for (const e of d.ents.values()) {
-    // ── 제목은 라벨이지 문장이 아니다. AC 는 제목이 곧 기준이라 길이는 아래 한 곳에서만
-    //    말한다 — 한 사실을 두 규칙이 말하면 사람이 고칠 자리를 두 번 찾는다.
+    // AC는 제목이 기준 문장이므로 길이 경고를 중복 출력하지 않는다.
     if (e.kind !== 'ac' && e.title.length > MAX_TITLE) {
       add('warn', d.name, e.line + 1, 'long-title', `${e.id} 의 제목이 ${e.title.length}자다`,
         `제목은 목록에서 훑어보는 라벨이다. ${MAX_TITLE}자 안으로 줄이고 자세한 것은 본문에 쓴다.`)
     }
-    // ── 필드는 한 줄.
     for (const [k, v] of e.fields) {
       if (v.length <= MAX_FIELD) continue
       add('warn', d.name, e.line + 1, 'long-field', `${e.id} 의 \`${k}:\` 가 ${v.length}자다`,
         '필드는 한 줄이다. 문단이 필요하면 본문으로 내린다.')
     }
-    // ── 한 항목은 한 단락.
     const prose = e.bodyLines.filter((l) => !/^\s*(?:[-*]\s+)?[A-Za-z가-힣_][A-Za-z가-힣_ ]{0,19}:\s/.test(l) && !/^\s*[-*]\s+\[[ xX]\]/.test(l))
     const n = sentences(prose.join(' '))
     if (n > MAX_SENTENCES) {
       add('warn', d.name, e.line + 1, 'long-item', `${e.id} 의 본문이 ${n}문장이다`,
         `한 항목은 한 단락이다. ${MAX_SENTENCES}문장을 넘으면 두 항목으로 갈라야 한다는 신호다.`)
     }
-    // ── 모호한 말 — 재는 자리에서만.
     if (MEASURED.test(e.id)) {
       const hay = e.kind === 'ac' ? [e.title] : [e.title, ...prose]
       for (const line of hay) {
-        if (/\d/.test(line)) continue // 수치가 함께 있으면 이미 한정됐다
+        if (/\d/.test(line)) continue // 수치가 있으면 제외한다.
         const hit = VAGUE.find((w) => line.includes(w))
         if (!hit) continue
         add(e.kind === 'ac' ? 'error' : 'warn', d.name, e.line + 1, 'vague', `${e.id} 에 «${hit}» — 측정 기준이 아니다`,
@@ -261,7 +202,6 @@ for (const d of Object.values(docs)) {
             : '재는 자리다. «얼마나»를 수치나 조건으로 적는다.')
       }
     }
-    // ── 항목 하나의 길이. 넘치면 읽는 사람이 «훑고 넘기는» 쪽으로 넘어간다.
     const cap = e.kind === 'ac' ? MAX_AC : Math.round((BUDGET[d.kind]?.entity ?? 400) * mult)
     const size = e.kind === 'ac' ? e.title.length : chars(prose.join('') + e.title)
     if (size > cap) {
@@ -270,15 +210,13 @@ for (const d of Object.values(docs)) {
         e.kind === 'ac' ? '수용 기준은 한 문장이다. 길어지면 기준이 둘 이상 섞인 것이다.'
           : '한 항목이 길어지면 그것은 대개 두 항목이다. 갈라 쓰거나 아래 층(spec·plan)으로 내린다.')
     }
-    // ── 수용 기준은 서술문으로 끝난다.
+    // 수용 기준은 서술문으로 작성해야 한다.
     if (e.kind === 'ac' && !/(다|다\.)$/.test(e.title.trim())) {
       add('warn', d.name, e.line + 1, 'untestable-ac', `${e.id} 이 서술문으로 끝나지 않는다`,
         '«<언제>이면 시스템은 <무엇을> 한다» 꼴로 쓴다. 명사로 끝나면 그건 기준이 아니라 항목 이름이다.')
     }
   }
 
-  // ── 섹션과 문서의 길이. **`intent.md` 가 가장 좁다** — 그 문서가 길어지면 발안자와
-  //    제품 책임자가 읽지 않고, 그러면 이 사슬의 첫 칸이 비는 것과 같다.
   const budget = BUDGET[d.kind]
   if (budget) {
     for (const h of d.hs.filter((x) => x.depth === 2)) {
@@ -300,7 +238,7 @@ for (const d of Object.values(docs)) {
     }
   }
 
-  // ── 작업의 `tests:` 는 수용 기준 문장을 옮긴 것이다.
+  // 작업의 tests와 수용 기준 문장을 대조한다.
   if (d.kind !== 'plan') continue
   const specAcs = new Map([...(docs.spec?.ents ?? new Map())].filter(([id]) => id.startsWith('AC-')))
   for (const w of [...d.ents.values()].filter((e) => e.kind === 'wp')) {

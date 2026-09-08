@@ -1,22 +1,5 @@
 #!/usr/bin/env node
-/** 레포의 스키마 버전을 런타임에 맞춘다 — **올리는 대상 둘의 위험도가 다르다.**
- *
- *    프로필 `sdlc_version`      새 사슬에만 영향한다.       올려도 아무것도 안 깨진다.
- *    문서의 `schema_version`    새 규칙이 **소급** 적용된다. 옛 사슬이 즉시 깨질 수 있다.
- *
- *  둘을 한 낱말로 묶으면 «버전을 올린다» 가 안전한 일인지 위험한 일인지 알 수 없어진다.
- *  그래서 기본은 **보고만** 하고, 올리는 것은 각각 따로 시킨다.
- *
- *  낮은 버전을 그대로 두는 것도 공짜가 아니다 — 낮은 프로필은 새 사슬도 낮은 버전으로
- *  만들고, 그러면 승인 분리(v3)나 작업 증거(v4)가 **조용히 안 걸린다.** 안 걸리는 것은
- *  통과와 구분되지 않는다.
- *  그래서 이 명령은 «맞춰도 된다» 가 아니라 «지금 무엇이 안 걸리고 있다» 를 말한다.
- *
- *    node migrate-schema.mjs <repo-root>             무엇이 낡았고 올리면 무엇이 깨지나
- *    node migrate-schema.mjs <repo-root> --profile   프로필만 올린다 (안전)
- *    node migrate-schema.mjs <repo-root> --chains    깨지지 않는 사슬만 올린다
- *    node migrate-schema.mjs <repo-root> --chains --force   깨져도 올린다
- */
+/** 스키마 변경 영향을 미리 검사한다. --profile은 프로필만, --chains는 통과한 문서를 갱신한다. --force는 검사 실패도 허용한다. */
 import { readFileSync, writeFileSync, existsSync, readdirSync, mkdtempSync, mkdirSync, cpSync } from 'node:fs'
 import { resolve, join, relative, dirname, basename } from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -47,7 +30,7 @@ const declared = yml('sdlc_version', profileText)
 const profileVer = declared === '' ? 1 : Number(declared)
 const specDir = resolve(ROOT, yml('spec_dir', profileText) || '.sdlc/specs')
 
-/** 사슬 하나 = 산출물이 하나라도 있는 폴더. */
+/** 산출물이 하나 이상 있는 디렉터리를 선택한다. */
 const chains = []
 const walk = (dir, depth = 0) => {
   if (depth > 4 || !existsSync(dir)) return
@@ -63,14 +46,13 @@ const schemaOf = (text) => {
   const v = yml('schema_version', text)
   return v === '' ? 1 : Number(v)
 }
-/** 프런트매터의 `schema_version` 을 바꾸거나, 없으면 `artifact:` 바로 뒤에 넣는다. */
+/** schema_version을 수정하거나 artifact 뒤에 추가한다. */
 const setSchema = (text, n) =>
   /^schema_version:/m.test(text)
     ? text.replace(/^schema_version:.*$/m, `schema_version: ${n}`)
     : text.replace(/^(artifact:.*)$/m, `$1\nschema_version: ${n}`)
 
-/** **올리면 무엇이 깨지나** — 사본에서 실제로 검사기를 돌려 답한다. 규칙 목록을 여기에
- *  다시 적으면 검사기와 두 정본이 되고, 새 규칙이 늘 때마다 이 파일이 조용히 낡는다. */
+/** 임시 사본에 새 버전을 적용한 뒤 검사기로 호환성을 확인한다. */
 function dryRun(chain, target) {
   const tmp = mkdtempSync(join(tmpdir(), 'sdlc-mig-'))
   mkdirSync(join(tmp, '.claude'), { recursive: true })
@@ -82,9 +64,7 @@ function dryRun(chain, target) {
   for (const f of chain.files) writeFileSync(join(work, f), setSchema(readFileSync(join(chain.dir, f), 'utf8'), target))
   try {
     execFileSync(process.execPath, [join(HERE, 'check-artifacts.mjs'), work], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
-    // v4는 체크된 작업마다 SDLC-Task trailer 커밋을 요구한다. 임시 사본에는 원본 git 이력이
-    // 없으므로 이미 실행된 plan을 안전하다고 증명할 수 없다. 자동 승격하지 않고, 원본에서
-    // 증거를 보강한 뒤 명시적으로 처리한다. 시작 전 plan은 새 계약으로 올려도 잃을 증거가 없다.
+    // 임시 사본에는 원본 Git 이력이 없어 실행된 plan의 v4 증거를 검증할 수 없다. 자동 변환에서 제외한다.
     const plan = join(chain.dir, 'plan.md')
     if (target >= 4 && existsSync(plan)) {
       const text = readFileSync(plan, 'utf8')
@@ -107,7 +87,6 @@ function dryRun(chain, target) {
   }
 }
 
-// ─────────────────────────────────────────────────────────────── 보고
 
 const TARGET = CURRENT_SCHEMA_VERSION
 console.log(`스키마 버전 — ${basename(ROOT)}`)
@@ -154,7 +133,6 @@ if (chains.length === 0) {
   console.log('\n  git 이 없는 사본에서 검사하므로 **버전 고정(SHA) 검사만 빠진 결과**다.')
 }
 
-// ─────────────────────────────────────────────────────────────── 적용
 
 let wrote = false
 if (DO_PROFILE && profileStale) {

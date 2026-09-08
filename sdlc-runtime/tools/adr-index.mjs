@@ -1,17 +1,5 @@
 #!/usr/bin/env node
-/** 결정 로그 — `<adr_dir>` 의 ADR 을 한 장의 표로 만든다.
- *
- *  인덱스가 없으면 그 폴더는 아무도 못 읽는 파일 벽이다. 번호는 단조 증가하고 재사용하지
- *  않으므로 파일 이름만으로는 «지금 효력 있는 결정이 무엇인가» 를 알 수 없다 — 폐기·대체된
- *  것이 같은 자리에 섞여 있기 때문이다. 이 표가 그것을 갈라 준다.
- *
- *  **손으로 고치지 않는다.** 사람이 고치면 파일과 표가 갈리고, 그때 믿을 것은 파일 쪽인데
- *  사람이 보는 것은 표 쪽이다.
- *
- *    node adr-index.mjs <레포 루트>            인덱스를 만들어 쓴다
- *    node adr-index.mjs <레포 루트> --check    어긋나면 exit 1 (CI 용)
- *    node adr-index.mjs <레포 루트> --next     다음 번호와 기존 목록만 낸다 (/create-adr 용)
- */
+/** ADR 인덱스를 생성한다. --check는 최신 여부를 검사하고, --next는 다음 번호와 목록을 출력한다. */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { resolve, relative, basename } from 'node:path'
 import { loadAdrDir, ADR_FILENAME } from './artifact-parse.mjs'
@@ -23,7 +11,7 @@ const NEXT = argv.includes('--next')
 const ROOT = resolve(argv.find((a) => !a.startsWith('--')) ?? '.')
 const die = (msg, code = 2) => { console.error(msg); process.exit(code) }
 
-/** 레포 뿌리는 프로필이 있는 가장 가까운 조상이다 — 검사기와 같은 규칙이다. */
+/** 프로필이 있는 가장 가까운 상위 디렉터리를 저장소 루트로 사용한다. */
 let root = null
 for (let d = ROOT, prev = null; d !== prev; prev = d, d = resolve(d, '..')) {
   if (existsSync(resolve(d, '.claude/spec-profile.yml'))) { root = d; break }
@@ -37,8 +25,7 @@ if (!seam.configured || !seam.dir) {
 
 const { docs, malformed } = loadAdrDir(seam.dir)
 const num = (d) => Number(ADR_FILENAME.exec(d.name)?.[1] ?? 0)
-/** 옛 문서는 프런트매터가 없다 — H1 과 헤더 표에서 읽는다. 이관이 끝날 때까지 두 모양이
- *  한 폴더에 섞여 살고, 그때 옛 것을 «제목 없음 · 상태 ?» 로 적으면 결정 로그가 못 쓰게 된다. */
+/** 프런트매터가 없는 ADR은 H1과 헤더 표에서 읽는다. */
 const meta = (d) => {
   const lg = legacyMeta(d)
   return lg
@@ -48,9 +35,7 @@ const meta = (d) => {
 }
 docs.sort((a, b) => num(a) - num(b))
 
-// ── --next ────────────────────────────────────────────────────────────────
-// 다음 번호는 **파일에서만** 센다. 진행 중인 브랜치가 쥔 번호는 여기서 안 보이므로
-// `/create-adr` 이 `git log origin/main..` 으로 한 번 더 본다.
+// 다음 번호는 현재 파일 기준이다. 다른 브랜치의 번호 사용은 별도로 확인해야 한다.
 if (NEXT) {
   const max = docs.reduce((m, d) => Math.max(m, num(d)), 0)
   console.log(`다음 번호: ADR-${String(max + 1).padStart(3, '0')}   (${relative(root, seam.dir)} · ${docs.length}장)`)
@@ -66,9 +51,7 @@ if (NEXT) {
   process.exit(0)
 }
 
-// ── 표 ────────────────────────────────────────────────────────────────────
-// 효력 있는 것과 지나간 것을 갈라 놓는다. 한 표에 섞으면 «지금 무엇이 유효한가» 를
-// 읽는 데 상태 열을 한 줄씩 훑어야 하고, 그러면 아무도 안 읽는다.
+// 유효한 결정과 대체·폐기된 결정을 분리한다.
 const cell = (s) => String(s ?? '').replace(/\|/g, '\\|').trim()
 const link = (d) => `[${cell(meta(d).id)}](${basename(d.name)})`
 const rows = (list) => list.map((d) => {

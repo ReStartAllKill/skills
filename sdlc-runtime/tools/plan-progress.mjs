@@ -1,23 +1,5 @@
 #!/usr/bin/env node
-/** 작업이 **실제로** 어디까지 갔나 — 체크박스와 작업 귀속 커밋을 대조한다.
- *
- *  `plan.md` 의 `- [x]` 는 사람이나 모델이 적은 **주장**이다. 그 주장과 저장소의 사실이
- *  갈리는 자리가 이 명령이 보는 것이고, 갈리는 방향마다 뜻이 다르다.
- *
- *    체크됐는데 귀속 커밋이 없다   → 하지 않은 일을 했다고 적었거나 trailer가 빠졌다
- *    귀속 커밋은 있는데 미체크다   → 한 일이 기록되지 않았다 (컨텍스트가 날아간 자리)
- *
- *  **왜 훅으로 자동 갱신하지 않나.** 체크박스는 «이 작업이 수용 기준을 만족시켰다» 는
- *  판정이고 §실행 기록 은 «계획과의 차이» 를 요구한다 — 기계가 만들 수 없는 값이다.
- *  훅이 대신 적으면 그 줄은 보일러플레이트가 되고, «차이 없음» 이 정말 없는 것인지
- *  훅이 적은 것인지 구분이 사라진다. 게다가 훅의 쓰기는 Edit 도구를 타지 않아 게이트가
- *  검사하지 못한다 — 잘못 들어간 줄이 **다음 사람의 편집**에서 엉뚱하게 터진다.
- *
- *  그래서 이 도구는 **읽기만 한다.** 사실을 재고, 판정은 갱신하는 쪽에 남긴다.
- *  `/implement-spec` 이 §진행 상태 와 §체크박스 갱신 에서 이것을 대조한다.
- *
- *    node plan-progress.mjs <스펙 폴더> [--strict] [--json]
- */
+/** 체크박스·작업 커밋·테스트·검증 로그를 대조한다. 읽기 전용이며 완료 표시는 변경하지 않는다. */
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { resolve, join, relative, basename } from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -37,7 +19,7 @@ if (!docs.plan) {
 const PLAN_SCHEMA = schemaVersion(docs.plan.fm)
 const TASK_EVIDENCE_SCHEMA = 4
 
-/** 레포 뿌리는 프로필이 있는 가장 가까운 조상이다(검사기와 같은 규칙). */
+/** 프로필이 있는 가장 가까운 상위 디렉터리를 저장소 루트로 사용한다. */
 let ROOT = null
 for (let d = DIR, prev = null; d !== prev; prev = d, d = resolve(d, '..')) {
   if (existsSync(resolve(d, '.claude/spec-profile.yml'))) { ROOT = d; break }
@@ -49,23 +31,16 @@ const git = (...a) => {
 const inGit = git('rev-parse', '--git-dir') != null
 const rel = (p) => (ROOT ? relative(ROOT, p) : p)
 
-/** **기준선은 이 계획이 생긴 커밋이다.** 그 전의 커밋은 이번 변경의 일이 아니므로 세면
- *  안 된다 — 안 그러면 오래된 파일을 건드리는 작업이 시작도 전에 «완료» 로 보인다. */
+/** 계획서 생성 이전의 커밋은 작업 완료 증거에서 제외한다. */
 const planPath = rel(join(DIR, 'plan.md'))
 const born = inGit
   ? (git('log', '--diff-filter=A', '--format=%H', '--', planPath) ?? '').split('\n').filter(Boolean).pop() ?? null
   : null
 
-// 완료 문서는 마지막 문서 커밋 당시의 코드를 검사한다. 후속 사슬의 변경은 소급하지 않는다.
+// 완료된 계획서는 마지막 문서 커밋 시점의 코드로 검증한다.
 const evidenceRef = docs.plan.fm.status === 'completed' && git('status', '--porcelain', '--', planPath) === ''
   ? git('log', '-1', '--format=%H', '--', planPath) : null
-/** `files` 의 항목 하나를 읽는다. **폴더도 온다** — 생성 트리를 통째로 작업의 산출로 적는
- *  계획이 있고, `task-worktree commit` 은 `git add -A -- <경로>` 라 그것을 그대로 받는다.
- *  폴더를 그냥 `readFileSync` 하면 EISDIR 로 죽어, 있는 것을 세는 도구가 답을 못 낸다.
- *
- *  폴더는 **안의 파일을 이어 붙여** 낸다. 「있나」만 보면 빈 문자열로도 되지만, 아래에서
- *  같은 값으로 «tests 문장이 그 파일에 있나»를 찾으므로 빈 문자열은 폴더 안에 사는 테스트를
- *  없다고 답한다 — 없는 것과 못 본 것을 합치는 그 실수다. */
+/** files에 디렉터리가 있으면 내부 파일 내용을 합쳐 테스트 문장 검사에 사용한다. */
 const readEvidence = (path) => {
   const name = rel(path)
   if (evidenceRef) {
@@ -91,10 +66,7 @@ const filesOf = (e) => {
   return (ticked.length ? ticked : v.split(',')).map((s) => s.trim().replace(/^`|`$/g, '')).filter(Boolean)
 }
 
-/** `tests:` 의 수용 기준 문장이 **실제 테스트 파일에 있나.** 규약은 «수용 기준 문장이 곧
- *  테스트 이름» 이라 한다. 린터의 test-drift 는 plan 과 spec 사이만 보고, 코드 쪽은
- *  아무도 안 봤다 — 그러면 «테스트를 썼다» 도 체크박스처럼 주장으로 남는다.
- *  공백을 접어 비교한다. 못 찾은 문장은 «없다» 가 아니라 «그 이름으로는 없다» 다. */
+/** 공백을 정규화해 tests 문장이 실제 파일에 있는지 확인한다. */
 const testsOf = (e) => field(e, 'tests').split(/\s·\s|\s\|\s/).map((t) => t.trim().replace(/^[`"'«]|[`"'»]$/g, '').trim())
   .filter((t) => t && !/^<.*>$/.test(t) && !/^해당 없음/.test(t))
 const squash = (s) => s.replace(/\s+/g, '')
@@ -104,8 +76,7 @@ const testsPresent = (files, sentences) => {
   return { checked: true, missing: sentences.filter((t) => !bodies.some((b) => b.includes(squash(t)))) }
 }
 
-/** 합류점 verify 기록 — `verify-run.mjs` 가 남긴 로그의 헤더만 읽는다. 종료 코드 0 이고
- *  그 작업 id 가 `tasks:` 에 있는 로그가 있어야 «검증됐다» 다. */
+/** 검증 로그 헤더에서 종료 코드와 tasks의 작업 ID를 확인한다. */
 const yml = (k, file) => {
   if (!file) return ''
   const m = new RegExp(`^${k}:[ \\t]*(.*)$`, 'm').exec(readEvidence(file) ?? '')
@@ -140,11 +111,7 @@ const verifiedBy = (task, commits) => verifyLogs.filter((l) => !l.label && l.spe
   commits.length > 0 && commits.every((c) => git('merge-base', '--is-ancestor', c, l.head) !== null)
 ).map((l) => l.file)
 
-/** 파일 이력은 작업 완료 증거가 아니다. 순차 작업은 같은 파일을 정상적으로 공유하므로,
- *  앞 작업의 커밋을 뒤 작업의 완료로 오인한다. 작업 커밋의 표준 git trailer만 귀속 증거다.
- *
- *      SDLC-Task: WP-001
- */
+/** 파일 이력만으로 귀속하지 않고 SDLC-Task 트레일러를 사용한다. */
 const commitRecords = (() => {
   if (!inGit || !born) return []
   const out = git('log', '--format=%H%x1f%B%x1e', `${born}..${evidenceRef ?? 'HEAD'}`) ?? ''
@@ -158,13 +125,9 @@ const taskCommits = (id) => commitRecords
   .filter((c) => c.body.split('\n').some((line) => line === `SDLC-Plan: ${planPath}`))
   .map((c) => c.hash)
 
-/** §실행 기록 은 «무엇이 일어났나» 다. 체크박스만 있고 이 줄이 없으면 계획서는
- *  «하려던 것» 만 알고 «한 것» 은 모르는 문서가 된다. */
+/** 작업별 실행 기록이 있는지 확인한다. */
 const planBody = stripComments(docs.plan.lines.join('\n'))
-/** **`### 변경 기록` 은 실행 기록이 아니다.** 그쪽은 «이 문서를 언제 왜 고쳤나» 이고
- *  «영향: WP-001~WP-009» 처럼 작업 ID 를 통째로 나열한다. `\n##\s` 로만 끊으면 `\n### `
- *  에 안 걸려 그 절을 삼키고, 아직 실행 전인 계획서도 변경 기록 한 줄만으로 WP 가
- *  `기록됨` 으로 선다 — «체크됐는데 §실행 기록 에 줄이 없다» 가 영영 안 뜬다. */
+/** 변경 기록 하위 섹션의 작업 ID를 실행 증거로 집계하지 않는다. */
 const logSection = (/##\s*실행 기록[\s\S]*?(?=\n##\s|\n*$)/.exec(planBody)?.[0] ?? '')
   .replace(/\n#{3,}\s*변경 기록[\s\S]*$/, '')
 const loggedIds = new Set(idsIn(logSection).filter((x) => x.startsWith('WP-')))
@@ -185,8 +148,7 @@ for (const w of wps) {
       fileCommits = (out ?? '').split('\n').filter(Boolean)
     }
     const st = evidenceRef ? '' : git('status', '--porcelain', '--', ...files)
-    // 상태 코드는 두 칸이지만 앞칸이 공백일 수 있고 git() 이 이미 trim 했다 —
-    // 자리수로 자르면 경로가 한 글자 밀린다. 첫 토큰을 떼는 편이 안전하다.
+    // git()이 선행 공백을 제거하므로 상태 코드는 고정 위치 대신 첫 토큰으로 분리한다.
     dirty = (st ?? '').split('\n').filter(Boolean).map((l) => l.trim().replace(/^\S+\s+/, ''))
   }
   const sentences = testsOf(w)
@@ -200,7 +162,6 @@ for (const w of wps) {
   })
 }
 
-/** 어긋남마다 뜻이 다르다 — 방향을 합치면 «뭔가 이상하다» 로 뭉개진다. */
 const notes = []
 for (const r of rows) {
   if (r.done && r.commits.length === 0) {
@@ -232,12 +193,7 @@ for (const r of rows) {
   }
 }
 
-/** **체크가 있는데 status 가 실행 상태가 아니면 그 계획서는 되돌려진 것이다.**
- *  `/iterate-spec` 이 실행 중(`in_progress`) 계획에 작업을 더하면서 재승인을 태우면
- *  status 가 `in_review` → `accepted` 로 돌아간다. 그 순간 `guard-approval.sh` 가
- *  «승인된 문서의 상태 유지 변경» 으로 체크박스 편집마다 승인 다이얼로그를 띄우고,
- *  `claude -p` 자율 경로에서는 아예 거부한다 — 남은 작업이 조용히 체크되지 않고, 아무도
- *  안 보면 실행이 다 끝난 뒤에야 드러난다. */
+/** 완료 표시가 있으면 계획서가 실행 중이거나 완료 상태여야 한다. */
 if (PLAN_SCHEMA >= TASK_EVIDENCE_SCHEMA) {
   const status = docs.plan.fm.status ?? ''
   const checked = rows.filter((r) => r.done).map((r) => r.id)

@@ -1,17 +1,5 @@
 #!/usr/bin/env node
-/** 레포의 **모든** 사슬을 검사한다 — CI 가 부르는 자리.
- *
- *  `check-artifacts.mjs` 는 폴더 하나만 본다. 그것으로 «편집한 그 자리»는 지켜지지만
- *  «이 레포에 깨진 사슬이 있나»에는 답할 수 없다. 훅은 방금 만진 폴더만 보므로,
- *  상위 문서가 바뀐 뒤 아무도 안 건드린 하위는 조용히 낡아간다 — 이 사슬에서 가장
- *  흔한 붕괴가 정확히 그 모양이다.
- *
- *  **훅과 CI 는 다른 일을 한다.** 훅은 속도(0.2초, 그 자리에서 고치게)이고, CI 는
- *  강제(팀 전체가 통과해야 머지)다. 훅은 개인 장비에 있어서 팀원에게 없을 수 있고,
- *  그래서 훅만으로는 관문이 될 수 없다.
- *
- *    node check-all.mjs [repo-root]
- */
+/** 저장소의 산출물·ADR·밴드·자율 정책을 검사한다. 사용법: node check-all.mjs [repo-root] [--required]. */
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { resolve, join, relative, dirname } from 'node:path'
 import { execFileSync, execFileSync as run } from 'node:child_process'
@@ -26,7 +14,7 @@ const REQUIRED = args.includes('--required')
 const ROOT = resolve(args.find((a) => !a.startsWith('--')) ?? process.cwd())
 const DOCS = ['intent.md', 'spec.md', 'plan.md', 'finding.md']
 
-/** 프로필 스칼라 한 줄. 주석과 따옴표를 벗긴다 — 값 뒤에 설명을 단 프로필이 실제로 있다. */
+/** 프로필의 스칼라 값에서 주석과 따옴표를 제거한다. */
 const yml = (key, file) => {
   if (!existsSync(file)) return ''
   const m = new RegExp(`^${key}:[ \\t]*(.*)$`, 'm').exec(readFileSync(file, 'utf8'))
@@ -40,8 +28,7 @@ if (!existsSync(profile)) {
 }
 const specDir = resolve(ROOT, yml('spec_dir', profile) || '.sdlc/specs')
 
-/** 산출물이 **하나라도** 있는 폴더가 사슬 하나다. `finding.md` 만 있는 폴더도 사슬이다 —
- *  의도를 안 낳고 끝난 발견이 다수이기 때문이다. */
+/** 산출물이 하나 이상 있는 디렉터리를 검사 대상으로 선택한다. */
 const chains = []
 const walk = (dir, depth = 0) => {
   if (!existsSync(dir)) return
@@ -56,8 +43,7 @@ if (chains.length === 0) {
   console.log(`검사할 사슬이 없다 — ${relative(ROOT, specDir)} 아래에 산출물이 없다.`)
 }
 
-/** 런타임은 프로필이 정한다. 벤더한 레포에서 CI 가 글로벌을 쓰면 «팀과 CI 가 같은
- *  검사기를 쓴다» 는 벤더의 유일한 목적이 무너진다. */
+/** 런타임은 프로필 설정을 우선한다. */
 let runtime = yml('sdlc_runtime', profile) || join(HERE, '..')
 if (runtime.startsWith('~/')) runtime = join(process.env.HOME ?? '', runtime.slice(2))
 runtime = resolve(ROOT, runtime)
@@ -92,9 +78,7 @@ for (const dir of chains) {
   if (!ok) failed.push({ rel, out: out.join('\n') })
 }
 
-/** 결정 기록도 본다 — 사슬의 **바깥**이자 사슬이 기대는 자리다. 사슬이 다 맞물려도 그것이
- *  전제한 결정이 대체됐거나 결정 로그가 낡았으면, 사람이 읽는 것과 저장소가 진 것이 갈린다.
- *  ADR 은 폴더가 아니라 파일 단위라 위 사슬 루프가 못 본다. */
+/** ADR은 파일 단위로 별도 검사한다. */
 const adrDir = yml('adr_dir', profile)
 if (adrDir) {
   const dir = resolve(ROOT, adrDir)
@@ -116,8 +100,7 @@ if (adrDir) {
   console.log(`\n결정 기록은 ${yml('adr_repo', profile)} 에 있다 — 여기서는 핀의 형식만 본다`)
 }
 
-/** 밴드 등록부도 본다 — 사슬의 **입력** 쪽이다. 문서가 다 맞물려도 «무엇이 정상인가»
- *  가 깨져 있으면 다음 발견의 §관측 이 잰 것이 아니게 된다. */
+/** 밴드 등록부를 검사한다. */
 const bandsKey = yml("bands", profile)
 const reg = loadBands(ROOT, bandsKey)
 if (reg.missing) {
@@ -131,8 +114,7 @@ if (reg.missing) {
   if (be.length) failed.push({ rel: reg.rel, out: "밴드 등록부 오류 " + be.length + "건" })
 }
 
-/** 자율 실행 정책도 본다 — **위임은 만료된다.** 만료된 경로가 그대로 남아 있으면
- *  탐지기가 그것을 부를 때마다 실패하고, 아무도 그 사실을 모른다. */
+/** 자율 정책과 유효기간을 검사한다. */
 const pol = loadPolicy(ROOT, yml("autonomy", profile))
 if (pol.missing && yml('autonomy', profile)) failed.push({ rel: pol.rel, out: '프로필에 지정한 자율 정책이 없다.' })
 if (!pol.missing) {
@@ -143,13 +125,10 @@ if (!pol.missing) {
   if (pe.length) failed.push({ rel: pol.rel, out: "자율 실행 정책 오류 " + pe.length + "건" })
 }
 
-/** 벤더한 런타임이 글로벌과 다른지도 함께 본다 — 사슬은 통과하는데 검사기가
- *  옛것이면 «통과» 가 무엇을 뜻하는지 알 수 없다. 막지는 않고 알리기만 한다:
- *  벤더 사본이 정본인 것이 정상적인 선택이기 때문이다. */
+/** 벤더 런타임의 차이는 경고만 출력한다. 저장소가 고정한 버전을 우선한다. */
 const vendored = join(ROOT, '.claude/sdlc/VERSION')
 if (existsSync(vendored)) {
-  // **이 파일이 사는 곳이 곧 «지금 도는 런타임» 이다.** 경로를 박으면 런타임을 옮긴
-  // 기계에서 그 자리가 비어, 알리기만 하는 이 검사가 소리 없이 꺼진다.
+  // 비교 기준은 현재 실행 중인 런타임이다.
   const here = join(dirname(fileURLToPath(import.meta.url)), '..', 'VERSION')
   const a = readFileSync(vendored, 'utf8').trim()
   const b = existsSync(here) ? readFileSync(here, 'utf8').trim() : null

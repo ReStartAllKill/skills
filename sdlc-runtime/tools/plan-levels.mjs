@@ -1,16 +1,5 @@
 #!/usr/bin/env node
-/** 실행 순서를 **센다** — 모델이 머릿속에서 위상정렬하지 않게.
- *
- *  `/implement-spec` 은 `depends` 를 위상정렬한 같은 깊이를 한 레벨로 병렬 실행한다. 그 계산을
- *  모델이 하면 틀린 날 병렬 충돌이나 순서 위반이 되는데, 검사기는 파일 겹침만 보고 순서는
- *  안 본다. 여기서 검사기와 **같은 함수**(`levelsOf`)로 레벨을 세고, 체크박스와 프로필을
- *  합쳐 «다음에 무엇을 어떻게 돌리나» 까지 답한다.
- *
- *    node plan-levels.mjs <스펙 폴더> [--json]
- *
- *  레벨마다 mode 가 붙는다 — main(작업 1개 · 메인 트리) · parallel(워크트리) ·
- *  sequential(프로필에 bootstrap 이 없어 워크트리 의존성을 세울 수 없다).
- */
+/** 작업 의존 관계로 실행 레벨과 다음 작업을 계산한다. mode는 main·parallel·sequential이며 bootstrap이 없으면 순차 실행한다. */
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve, join, basename } from 'node:path'
 import { loadDir, levelsOf, wpFiles, wpDeps, wpField, stripComments } from './artifact-parse.mjs'
@@ -30,7 +19,7 @@ const profile = ROOT ? readFileSync(join(ROOT, '.claude/spec-profile.yml'), 'utf
 const yml = (k) => (new RegExp(`^${k}:[ \\t]*(.*)$`, 'm').exec(profile)?.[1] ?? '')
   .replace(/\s+#.*$/, '').replace(/^["']|["']$/g, '').trim()
 
-/** §릴리스 영향 의 `키: 값` 줄 — `/implement-spec` 이 실제로 읽는 값이다. */
+/** 릴리스 영향 섹션에서 실행 설정을 읽는다. */
 const planBody = stripComments(docs.plan.lines.join('\n'))
 const release = /##\s*릴리스 영향[\s\S]*?(?=\n##\s|\n*$)/.exec(planBody)?.[0] ?? ''
 const rel = (k) => (new RegExp(`^${k}:[ \\t]*(.*)$`, 'm').exec(release)?.[1] ?? '').trim()

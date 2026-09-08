@@ -1,19 +1,5 @@
 #!/usr/bin/env node
-/** 레포에 산출물 훅을 건다 — shim 두 장과 훅 등록.
- *
- *  **레포에 들어가는 것은 로직이 아니라 포인터다.** 검사기·린터·게이트 본체를 레포마다
- *  복사하면 «두 정본» 이 레포 수만큼 늘어나고, 오늘 고친 버그를 내일 다른 레포에서 다시
- *  만난다. shim 은 열 줄이라 낡을 것이 없다.
- *
- *  **이 일은 스킬이 아니라 프로그램이다.** 설치는 매번 같은 결과가 나와야 하는데 모델은
- *  그것을 보장하지 않고, 훅 등록은 실행 설정을 건드리는 일이라 드리프트가 가장 비싸게
- *  먹힌다. 판단이 필요한 것(프로필 초안)만 스킬이 한다.
- *
- *  거는 훅이 둘인 것은 **시점이 다르기 때문**이다. 게이트는 쓴 뒤에 맞물림을 보고,
- *  가드는 쓰기 전에 승인 전이를 막는다 — 뒤에 서는 훅은 되돌리지 못한다.
- *
- *    node install-hook.mjs <repo-root> [--force]
- */
+/** 기존 훅을 유지하며 승인 가드와 편집 후 검사 래퍼를 설치한다. 사용법: node install-hook.mjs <repo-root> [--force]. */
 import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync } from 'node:fs'
 import { resolve, join, relative } from 'node:path'
 
@@ -23,9 +9,7 @@ const ROOT = resolve(argv.find((a) => !a.startsWith('--')) ?? process.cwd())
 
 mkdirSync(join(ROOT, '.claude/hooks'), { recursive: true })
 
-/** shim. **벤더한 사본을 먼저 본다** — 레포가 런타임을 고정했으면 훅도 그 사본이어야
- *  하고, 그래야 팀원이 글로벌 설치 없이도 같은 검사를 받는다. 둘 다 없으면 조용히
- *  나간다: 이 레포를 스킬 없이 클론한 사람의 편집을 막을 이유가 없다. */
+/** 훅도 저장소가 고정한 런타임을 우선 사용한다. 런타임이 없으면 검사를 생략한다. */
 const shim = (tool, why) => `#!/usr/bin/env bash
 # ${why}
 #
@@ -72,10 +56,7 @@ for (const s of SHIMS) {
   console.log(`${existed ? '갱신' : '생성'}: ${relative(ROOT, p)}`)
 }
 
-// ── settings.json 에 등록 ───────────────────────────────────────────────────
-/** **기존 훅을 뭉개지 않는다.** 레포에 이미 코드 게이트가 걸려 있는 것이 정상이고
- *  (실제로 그런 레포가 있었다), 같은 matcher 에 항목을 하나 더 다는 것으로 충분하다 —
- *  둘 다 돌고 둘 다 차단할 수 있다. 덮어쓰면 남의 게이트가 조용히 사라진다. */
+// 기존 matcher의 훅 목록에 추가해 다른 훅을 보존한다.
 const sPath = join(ROOT, '.claude/settings.json')
 let settings = {}
 if (existsSync(sPath)) {
@@ -91,11 +72,7 @@ if (existsSync(sPath)) {
 let changed = false
 settings.hooks ??= {}
 
-// ── spec_dir 가 .claude/ 아래면 경고 ───────────────────────────────────────
-/** **`.claude/` 아래는 Claude Code 가 «자기 설정 편집» 으로 보고 Write·Edit 마다 묻는다.**
- *  허용 규칙도 훅의 allow 도 그 물음을 끄지 못한다. 대화형에서는 사슬의
- *  모든 편집이 다이얼로그를 타고, 비대화형 자율 경로에서는 거부돼 산출물이 안 써진다.
- *  설치는 막지 않는다 — 기존 레포의 사슬이 거기 있을 수 있다. 대신 크게 알린다. */
+// .claude 아래 산출물은 쓰기 승인이 필요할 수 있음을 알리되 설치는 허용한다.
 const profilePath = join(ROOT, '.claude/spec-profile.yml')
 const specDir = (existsSync(profilePath)
   ? (/^spec_dir:[ \t]*(.*)$/m.exec(readFileSync(profilePath, 'utf8'))?.[1] ?? '')
@@ -140,10 +117,7 @@ if (changed) {
   console.log(`갱신: ${relative(ROOT, sPath)}`)
 }
 
-// ── CI ─────────────────────────────────────────────────────────────────────
-/** 훅은 관문이 아니다 — 개인 장비에 있어서 팀원에게 없을 수 있다. 팀에 걸리는 관문은
- *  CI 이고, 그 자리가 `check-all.mjs` 다. 워크플로 파일은 레포마다 모양이 달라 여기서
- *  쓰지 않고 붙일 조각만 낸다. */
+// CI 워크플로는 수정하지 않고 연결할 검사 명령만 출력한다.
 console.log(`
 건 것 둘 — 시점이 다르다.
   PreToolUse   sdlc-approval.sh  Edit·Write·일반적인 Bash 자기승인을 막는다

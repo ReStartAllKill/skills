@@ -1,16 +1,5 @@
 #!/usr/bin/env node
-/** 작성 에이전트에게 줄 프롬프트를 **plan 과 spec 에서 뽑아** 만든다.
- *
- *  작성 에이전트의 정확도는 프롬프트의 정확도다. 모델이 spec.md 에서 AC 를 골라 옮겨 적고
- *  규칙 경로를 눈으로 대조하면 AC 누락·오타·규칙 누락이 거기서 난다. 여기서는 그 셋을
- *  결정론으로 뽑고 템플릿에 채운다.
- *
- *    node task-brief.mjs <스펙 폴더> <WP-id> [--worktree <경로>] [--snippets <파일>] [--template <경로>]
- *
- *  템플릿의 자리표시자: {task_id} {task_title} {spec_dir} {worktree} {bootstrap} {files} {requirements}
- *  {tests} {rules} {verify} {snippets} {decisions} {parallel_note}. 템플릿은 런타임 `references/writer-prompt.md`
- *  하나다 — 여기 내장본을 두면 정본이 둘이 된다.
- */
+/** plan·spec에서 작업 프롬프트를 생성한다. 사용법: node task-brief.mjs <명세 디렉터리> <WP-id> [--worktree <경로>] [--snippets <파일>] [--template <경로>]. */
 import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { resolve, join, relative, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -24,8 +13,7 @@ const flag = (n) => { const i = argv.indexOf(`--${n}`); return i >= 0 ? argv[i +
 const positional = argv.filter((a, i) => !a.startsWith('--') && !(i > 0 && argv[i - 1].startsWith('--')))
 const DIR = resolve(positional[0] ?? '.')
 const TASK = positional[1]
-/** 템플릿은 런타임의 `references/writer-prompt.md` 하나다 — 벤더한 레포는 그 사본을 쓰므로
- *  팀이 같은 프롬프트로 에이전트를 띄운다. `--template` 은 실험용 덮어쓰기다. */
+/** 기본 템플릿은 런타임의 references/writer-prompt.md이며 --template으로 재정의할 수 있다. */
 const TEMPLATE = flag('template') ?? join(HERE, '../references/writer-prompt.md')
 if (!TASK) {
   console.error('사용법: task-brief.mjs <스펙 폴더> <WP-id> [--worktree <경로>] [--snippets <파일>] [--template <경로>]')
@@ -46,9 +34,7 @@ const profile = ROOT ? readFileSync(join(ROOT, '.claude/spec-profile.yml'), 'utf
 const yml = (k) => (new RegExp(`^${k}:[ \\t]*(.*)$`, 'm').exec(profile)?.[1] ?? '')
   .replace(/\s+#.*$/, '').replace(/^["']|["']$/g, '').trim()
 
-// ── 요구사항: covers 의 FR/NFR 과 그 밑 AC 문장 전문 ─────────────────────────
-/** `covers: FR-001 (AC-001, AC-002)` — 괄호 안에 AC 를 짚었으면 그것만, 아니면 그 요구사항의
- *  AC 전부. spec 이 없으면(옛 사슬) covers 줄만 그대로 싣고 그 사실을 적는다. */
+// covers에 AC를 지정하면 해당 기준만, 없으면 요구사항의 모든 AC를 전달한다. spec이 없으면 covers만 전달한다.
 const covers = wpField(w, 'covers')
 const reqIds = [...covers.matchAll(/\b(FR|NFR)-\d{1,4}\b/g)].map((m) => m[0])
 const acIds = new Set([...covers.matchAll(/\bAC-\d{1,4}\b/g)].map((m) => m[0]))
@@ -72,9 +58,9 @@ if (docs.spec) {
 if (!reqLines.length) reqLines.push('- (covers 가 비었다 — plan.md 를 고친다)')
 if (missing.length) reqLines.push(`- ⚠ spec.md 에 없는 ID: ${[...new Set(missing)].join(', ')}`)
 
-// ── 규칙: .claude/rules/*.md 의 paths: 가 이 작업의 files 와 맞는 것 ───────────
+// 작업 파일에 적용되는 .claude/rules의 규칙을 선택한다.
 const files = wpFiles(w)
-// 글롭 → 정규식. 이중 별표 뒤에 슬래시면 «0개 이상의 디렉터리», 끝의 이중 별표는 «그 밑 전부», 별표 하나는 한 층.
+// **/는 0개 이상의 디렉터리, 끝의 **는 모든 하위 경로, *는 한 경로 요소에 대응한다.
 const globToRe = (g) => {
   const s = g.trim()
   let re = ''
@@ -105,17 +91,13 @@ if (rulesDir && existsSync(rulesDir)) {
   }
 }
 
-// ── 이미 정해진 것: 이 files 에 걸리는 ADR ──────────────────────────────────
-/** **이 주입이 ADR 이 구현에 닿는 유일한 경로다.** 결정을 못 받은 에이전트는 그 자리에서
- *  기본값을 구현하고, 사람이 이미 기각한 안을 다시 고른다 — 리뷰에서야 드러나고 그때는
- *  왜 안 되는지 아무도 기억하지 못한다. 싣는 것은 결정 · Non-goals · 기각안 제목뿐이고
- *  전문은 링크로만 준다(§adr.md 에이전트 주입). */
+// 적용되는 ADR의 결정·제외 범위·기각한 대안 요약과 원문 링크를 전달한다.
 const seam = { ...adrSeam(ROOT), root: ROOT }
 const adrLines = []
 if (seam.configured && seam.dir) {
   const all = loadAdrDir(seam.dir).docs
   const hit = adrsForFiles(all, files)
-  // 사슬이 핀했는데 이 작업엔 안 걸리는 결정은 조용히 빠진다 — 그 사실을 러너에게만 알린다.
+  // 참조된 ADR 중 작업 범위에 해당하지 않는 것은 별도 안내한다.
   const pinned = new Set(Object.values(docs).flatMap((d) => [].concat(d.fm?.decisions ?? []).map(String))
     .filter((p) => !p.includes('#'))
     .map((p) => /(ADR-\d{3,4})/.exec(p)?.[1]).filter(Boolean))
@@ -131,7 +113,6 @@ if (seam.configured && seam.dir) {
   if (missed.length) console.error(`· 사슬이 핀한 ${missed.join(' · ')} 는 이 작업의 files 에 안 걸려 싣지 않았다`)
 }
 
-// ── 채우기 ───────────────────────────────────────────────────────────────────
 const { level } = levelsOf([...docs.plan.ents.values()].filter((e) => e.kind === 'wp'))
 const siblings = [...docs.plan.ents.values()].filter((e) => e.kind === 'wp' && e.id !== w.id && level.get(e.id) === level.get(w.id))
 const snippetsPath = flag('snippets')
@@ -148,8 +129,7 @@ const vars = {
   rules: rules.join('\n') || '- (걸리는 규칙 없음)',
   verify: wpField(w, 'verify') || yml('verify') || '(verify 없음)',
   snippets: snippetsPath && existsSync(snippetsPath) ? readFileSync(snippetsPath, 'utf8').trim() : '(없음)',
-  // 걸리는 결정이 없으면 절째 사라진다 — ADR 을 안 쓰는 레포에 빈 절이 서면 그 자리가
-  // 「이 프롬프트에는 없어도 되는 것이 있다」는 신호가 되고, 다음 절도 그렇게 읽힌다.
+  // 적용할 ADR이 없으면 해당 섹션을 제거한다.
   decisions: adrLines.length
     ? ['## 이미 정해진 것 — 다시 논의하지 않는다', '',
        '아래는 사람이 승인한 결정이다. 다른 안이 더 낫다고 느껴져도 그 자리에서 바꾸지 마라 —',

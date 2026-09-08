@@ -1,34 +1,5 @@
 #!/usr/bin/env node
-/** 산출물 사슬 검사 — 규약을 사람의 기억에서 기계로 옮긴다.
- *
- *  `/create-*` 가 만든 intent · spec · plan · finding 을 읽고, 문서가 서로 맞물리는지 본다.
- *  **권고는 위반을 드물게 만들 뿐이고, 반드시 지켜져야 하는 것에는 결정론적 장치가
- *  뒤에 있어야 한다.** 스킬 본문의 «추적성 검사» 는 모델이 자기 글을 읽고 하는 판정이라
- *  advisory 다. 여기가 그 뒤에 서는 층이다.
- *
- *  ## 산문에서 ID 를 어떻게 읽나
- *
- *  표가 아니라 **헤딩**이 정의다 — `### FR-001 — 제목 `Must``. 그 밑의
- *  `키: 값` 줄이 필드이고, 수용 기준은 `- [ ] AC-001 — …` 체크박스, 작업은
- *  `- [ ] **WP-001 — …**` 와 다섯 줄이다.
- *
- *  이 모양을 고른 이유는 사람이 읽는 글이 그대로 기계가 읽는 구조이기 때문이다. 표는
- *  기계에겐 편하지만 사람에게는 양식이고, 양식은 안 쓰인다. 정의가 헤딩에만 있으므로
- *  «참조인지 정의인지» 하는 모호함도 없다.
- *
- *  ## 결측을 합치지 않는다
- *
- *  «섹션이 없다» · «비었다» · «placeholder 만 남았다» · «해당 없음이라 적었다» 는 서로
- *  다른 사실이고 서로 다른 문장으로 선다. 마지막 것은 근거를 요구한다 — 근거 없는
- *  `해당 없음` 은 «정말 없다» 와 «귀찮아서» 를 같은 글자로 만든다.
- *
- *  ## 오류와 경고
- *
- *  오류는 사슬이 깨진 것(참조가 허공을 가리킨다, 하위가 상위를 앞선다, 같은 레벨의
- *  작업이 같은 파일을 만진다), 경고는 사람이 판단할 것이다. CI 는 `--strict`.
- *
- *    node check-artifacts.mjs <스펙 폴더> [--strict]
- */
+/** 산출물의 구조·추적성·상태·참조 버전을 검사한다. 사용법: node check-artifacts.mjs <명세 디렉터리> [--strict]. */
 import { readFileSync, existsSync, statSync, readdirSync } from 'node:fs'
 import { resolve, basename, dirname, join } from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -36,7 +7,7 @@ import {
   PREFIXES, FILES, WP_FIELDS, P_ALT, idsIn, stripComments, isNull, frontmatter,
   loadDir, isTemplate, report, SDLC_VERSION,
   SUPPORTED_SCHEMA_VERSIONS, schemaVersion,
- levelsOf, wpFiles, ADR_FILENAME, loadAdrDir, CHAIN_FILES, scopeOf } from './artifact-parse.mjs'
+  levelsOf, wpFiles, ADR_FILENAME, loadAdrDir, CHAIN_FILES, scopeOf } from './artifact-parse.mjs'
 import { adrSeam, checkAdr, checkPins } from './adr-check.mjs'
 import { LOCK_FILE, upstreamSeam, loadLock, verifyLock, findUpstream, headOf, sameRepo } from './upstream.mjs'
 import { loadBands, revisedBy } from './bands.mjs'
@@ -55,7 +26,7 @@ if (supportAt >= 0) {
 const STRICT = argv.includes('--strict')
 const DIR = resolve(argv.find((a) => !a.startsWith('--')) ?? '.')
 
-/** 우리 ID 가 아닌 «대문자-숫자» — 표준 약어와 문서 자신의 id 접두다. */
+/** 산출물 ID 검사에서 제외할 표준 약어와 문서 ID 접두. */
 const NOT_OURS = new Set(['UTF', 'ISO', 'RFC', 'SHA', 'AES', 'TLS', 'SLA', 'RTO', 'RPO', 'WCAG',
   'HTTP', 'HTTPS', 'ADR', 'DORA', 'MDM', 'MCP', 'ACP', 'PII', 'API', 'SDK', 'CHG', 'SPEC',
   'PLAN', 'FND', 'JSON', 'YAML', 'CSV', 'SQL', 'AWS', 'GCP', 'CPU', 'RAM'])
@@ -65,8 +36,7 @@ const STATUS = {
   intent: ['draft', 'in_review', 'accepted', 'rejected', 'superseded'],
   spec: ['draft', 'in_review', 'accepted', 'rejected', 'superseded'],
   plan: ['draft', 'in_review', 'accepted', 'in_progress', 'completed', 'rejected', 'superseded'],
-  // finding 은 같은 낱말을 쓰되 뜻이 다르다 — in_review = 분류 중, accepted = 경로 확정,
-  // rejected = 기각. 상태 어휘를 두 벌로 만들지 않기 위해서다.
+  // finding의 accepted는 승인 대신 처리 경로 확정을 뜻한다.
   finding: ['draft', 'in_review', 'accepted', 'rejected', 'superseded'],
 }
 const RANK = { draft: 0, in_review: 1, accepted: 2, in_progress: 3, completed: 4, rejected: -1, superseded: -2 }
@@ -85,7 +55,7 @@ const err = (doc, msg, hint) => problems.push({ level: 'error', doc, msg, hint }
 const warn = (doc, msg, hint) => problems.push({ level: 'warn', doc, msg, hint })
 const notes = []
 
-/** 레포 뿌리 — 프로필이 있는 가장 가까운 조상. 아래 여러 검사가 각자 찾던 것을 한 번만 찾는다. */
+/** 프로필이 있는 가장 가까운 상위 디렉터리를 저장소 루트로 사용한다. */
 const REPO_ROOT = (() => {
   for (let d = DIR, prev = null; d !== prev; prev = d, d = resolve(d, '..')) {
     if (existsSync(resolve(d, '.claude/spec-profile.yml'))) return d
@@ -95,16 +65,12 @@ const REPO_ROOT = (() => {
 const SEAM = { ...adrSeam(REPO_ROOT), root: REPO_ROOT }
 const UP = upstreamSeam(REPO_ROOT)
 
-// ─────────────────────────────────────────── 0. 결정 기록 모드
-// 입력이 ADR 파일 하나이거나 `adr_dir` 이면 사슬 검사를 돌리지 않는다. ADR 은 폴더가 아니라
-// 파일 단위고 상위 문서가 없어서, 사슬의 추적성·버전 고정 검사가 통째로 헛돈다.
+// ADR 입력은 상위 문서가 없는 파일 단위 검사로 처리한다.
 
 const ADR_TARGETS = (() => {
   const isDir = existsSync(DIR) && statSync(DIR).isDirectory()
   if (!isDir) return ADR_FILENAME.test(basename(DIR)) ? { dir: dirname(DIR), only: basename(DIR) } : null
-  // **사슬 문서가 있으면 언제나 사슬 모드다.** `adr_dir` 이 `spec_dir` 과 겹치게 설정된
-  // 레포에서 ADR 모드가 이기면 그 폴더의 intent·spec·plan 검사가 통째로 안 돈다 — 아무도
-  // 안 보는 자리가 조용히 생기는, 이 하네스가 가장 경계하는 모양이다.
+  // ADR 경로가 겹치더라도 intent·spec·plan이 있으면 산출물 검사를 우선한다.
   if (Object.values(CHAIN_FILES).some((f) => existsSync(join(DIR, f)))) return null
   const looksAdr = SEAM.dir === DIR || readdirSync(DIR).some((f) => ADR_FILENAME.test(f))
   return looksAdr ? { dir: DIR, only: null } : null
@@ -122,8 +88,7 @@ if (ADR_TARGETS) {
     process.exit(1)
   }
   for (const d of targets) {
-    // `info` 는 오류도 경고도 아니지만 **보이긴 해야 한다** — report 가 error·warn 만 내므로
-    // 노트로 돌린다. 어느 문서가 옛 계약인지 안 보이면 아무도 이관하지 않는다.
+    // info 진단도 누락되지 않도록 별도 출력한다.
     checkAdr(d, { seam: SEAM, siblings: all }, (level, msg, hint) =>
       level === 'info' ? notes.push(`${d.name} — ${msg}`) : problems.push({ level, doc: d.name, msg, hint }))
   }
@@ -134,7 +99,6 @@ if (ADR_TARGETS) {
   }))
 }
 
-// ─────────────────────────────────────────────────────────── 문서 읽기
 
 const docs = loadDir(DIR, (d, dup, first) =>
   err(d.name, `${dup.id} 이 두 번 정의됐다`, `먼저: ${d.name}:${first.line + 1}`))
@@ -144,13 +108,12 @@ if (Object.keys(docs).length === 0) {
   console.error(`산출물이 없다 — ${DIR} 에 intent.md / spec.md / plan.md / finding.md 가 하나도 없다.`)
   process.exit(1)
 }
-// finding.md 하나만 있는 폴더는 정상이다 — 한 장의 PR 로 끝났거나 기각된 발견이다.
+// finding만 있는 디렉터리도 유효하다.
 if (!TEMPLATE && !docs.intent && (docs.spec || docs.plan)) {
   err('(폴더)', 'intent.md 가 없다', '사슬은 의도에서 시작한다. spec·plan 만으로는 «왜»가 어디에도 없다.')
 }
 
-/** 템플릿 원본인가. 채우기 전이면 내용·상태·버전 검사를 건너뛴다 — 안 그러면 템플릿이
- *  늘 실패한다. **구조와 ID 그래프는 그대로 본다**: 템플릿이 스스로 검증되는 것이 요점이다. */
+/** 템플릿은 내용·상태·버전 검사를 생략하되 구조와 ID 참조는 검사한다. */
 if (TEMPLATE) notes.push('템플릿 원본으로 판정했다(id 가 아직 `…-YYYY-NNN`) — 내용·상태·버전·층 검사는 건너뛰고 구조와 ID 그래프만 본다.')
 
 const ALL = new Map()
@@ -160,7 +123,6 @@ const of = (kind, prefix) => [...(docs[kind]?.ents.values() ?? [])].filter((e) =
 const isMust = (e) => /^must$/i.test(e.priority ?? '')
 const field = (e, ...names) => { for (const n of names) if (e.fields.has(n)) return e.fields.get(n); return '' }
 
-// ─────────────────────────────────────────────────────────── 1. 프런트매터
 
 for (const d of Object.values(docs)) {
   const schema = schemaVersion(d.fm)
@@ -178,21 +140,10 @@ for (const d of Object.values(docs)) {
   }
 }
 
-// ──────────────────────────────── 1-e. 밴드 등록부 (finding 의 입력 쪽)
-
-/** **탐지는 결정론으로 남아야 한다.** `trigger: band_breach` 는 «기계가 밴드를 깼다» 는
- *  말인데, 그 밴드가 어디에도 정의되어 있지 않으면 «무엇이 정상인가» 를 모델이 그때그때
- *  지어낸다. 그러면 §관측 과 §진단 을 갈라 놓은 이 문서의 척추가 한 층 위에서 무너진다 —
- *  **기계가 잰 것** 이라고 적힌 값의 기준선이 사실은 짐작이기 때문이다.
- *
- *  그리고 **기각이 루프를 닫게 한다.** 「밴드 조정」 이 문서 안의 산문이기만 하면 아무도
- *  그것을 읽지 않고, 기각한 신호가 다음 실행에서 새 발견으로 다시 선다 — 이 템플릿이
- *  스스로 경고한 그 일이다. 조정이 **등록부에 남아야** 기각이 끝난 것이다. */
+// band_breach는 등록된 밴드를 참조해야 하며, 조정 내용은 등록부와 일치해야 한다.
 if (docs.finding && !TEMPLATE) {
   const f = docs.finding
-  /** 레포 뿌리는 **프로필이 있는 가장 가까운 조상**이다. git 에 묻지 않는 것은 산출물이
-   *  늘 git 안에 있지는 않기 때문이다 — 평가 케이스가 그렇고, 아직 init 하지 않은 레포도
-   *  그렇다. 프로필이 곧 «여기가 이 사슬의 뿌리다» 라는 표시라 그것을 찾는 편이 정확하다. */
+  /** Git 초기화 여부와 관계없이 프로필을 기준으로 루트를 찾는다. */
   let repoRoot = null
   for (let d = DIR, prev = null; d !== prev; prev = d, d = resolve(d, '..')) {
     if (existsSync(resolve(d, '.claude/spec-profile.yml'))) { repoRoot = d; break }
@@ -219,15 +170,13 @@ if (docs.finding && !TEMPLATE) {
         `등록부에 있는 밴드: ${Object.keys(reg.bands).join(' · ') || '(없음)'}. 오타이거나, 밴드를 먼저 등록부에 더해야 한다.`)
     } else if (f.fm.autonomy_tier && reg.bands[band].autonomy_tier &&
                f.fm.autonomy_tier !== reg.bands[band].autonomy_tier) {
-      // 발화가 허용한 범위는 밴드가 정한다. 문서가 더 넓게 적으면 «경계가 작동했다» 는
-      // 기록이 문서 자신의 주장일 뿐이 된다.
+      // finding의 허용 범위는 밴드 설정을 초과할 수 없다.
       err(f.name, `\`autonomy_tier: ${f.fm.autonomy_tier}\` 가 등록부의 \`${band}\`(\`${reg.bands[band].autonomy_tier}\`) 와 다르다`,
         '무엇을 해도 되는지는 밴드가 정한다. 넓혀야 하면 등록부를 먼저 고친다.')
     }
   }
 
-  /** 기각의 닫힘. «조정 없음 — 근거» 라고 적었으면 그것으로 끝이고, 조정했다고 적었으면
-   *  등록부가 그 사실을 말해야 한다. 둘 다 아니면 이 신호는 다음 실행에서 다시 선다. */
+  /** 밴드를 조정했다면 등록부 기록을 요구하고, 조정하지 않았다면 근거를 요구한다. */
   if (f.fm.status === 'rejected') {
     const body = stripComments(f.lines.join('\n'))
     const noChange = /밴드\s*조정\s*:\s*«?\s*조정\s*없음\s*[—–-]\s*\S/.test(body)
@@ -246,18 +195,7 @@ if (docs.finding && !TEMPLATE) {
   }
 }
 
-// ────────────────────────────────────── 1-c. 승인 분리 (schema v3+)
-
-/** **쓴 것이 승인할 수 없다.** 이 사슬에서 승인은 오래 «문서를 쓴 그 에이전트가 프런트매터
- *  한 줄을 바꾸는 일» 이었고, 그러면 관문이 아니라 자기선언이다. 사람이 지키는 것은 판단이
- *  필요한 결정이므로, 그 결정만은 기계가 대신 적을 수 없어야 한다.
- *
- *  여기는 **뒤에 서는 층**이다. 앞에서는 PreToolUse 훅이 일반적인 자기승인을 막고, 여기서는
- *  그 결과(누가 승인했나)가 문서에 남았는지 본다. 훅은 개인 장비에 있어서 팀원에게 없을 수
- *  있고, 그래서 훅만으로는 관문이 못 된다 — 팀에 거는 관문은 CI 의 이 검사다.
- *
- *  `finding.md` 는 뺀다. 그쪽의 `accepted` 는 «승인» 이 아니라 «경로가 정해져 나갔다» 이고
- *  이미 `routed_to` 가 그 자리를 지킨다. */
+// 스키마 v3 이상은 작성자와 승인자를 분리한다. finding은 처리 경로로 검증한다.
 const APPROVAL_SCHEMA = 3
 if (!TEMPLATE) {
   for (const d of [docs.intent, docs.spec, docs.plan].filter(Boolean)) {
@@ -272,12 +210,7 @@ if (!TEMPLATE) {
     const by = String(d.fm.approved_by).trim()
     const gen = isNull(d.fm.generated_by) ? '' : String(d.fm.generated_by).trim()
 
-    /** **정책 승인** — 자율 경로가 만든 문서는 사람 이름 대신 정책을 가리킨다
-     *  (`policy:<경로 id>`). 승인이 사라진 것이 아니라 **문서 단위에서 정책 단위로
-     *  올라간 것**이고, 정책은 커밋된 산출물이라 사람이 쓰고 사람이 다시 본다.
-     *
-     *  그 문자열을 검사하지 않으면 «policy:아무거나» 가 승인으로 통과한다. 그러면
-     *  자기승인을 막으려고 만든 필드가 자기승인의 우회로가 된다 — 여기가 그것을 막는다. */
+    /** 정책 승인은 등록된 경로의 유효기간과 위임 범위를 검사한다. */
     if (by.startsWith('policy:')) {
       const routeId = by.slice('policy:'.length).trim()
       let repoRoot = null
@@ -304,9 +237,7 @@ if (!TEMPLATE) {
         err(d.name, `\`tier: ${d.fm.tier}\` 가 자율 경로 \`${routeId}\` 의 \`max_tier: ${route.max_tier}\` 를 넘는다`,
           '위임한 것보다 위험한 변경이 그 위임으로 통과했다. 사람이 직접 승인하거나 정책을 먼저 넓힌다.')
       } else if (STAGES.indexOf(d.name.replace(/\.md$/, '')) > STAGES.indexOf(String(route.advance_to))) {
-        /** **`advance_to` 는 사슬의 어디까지 맡겼는지다.** 그 뒤를 같은 위임으로 승인하면
-         *  경계가 문서 안의 선언일 뿐이 된다 — `intent` 까지 맡긴 위임이 `plan` 을
-         *  승인하는 자리가 실제로 열려 있었다. */
+        /** 정책 승인은 advance_to 이후의 산출물에 적용할 수 없다. */
         err(d.name, `자율 경로 \`${routeId}\` 은 \`${route.advance_to}\` 까지 맡았는데 ${d.name} 를 승인했다`,
           `이 위임의 경계 밖이다. 사람이 직접 승인하거나, 정책의 \`advance_to\` 를 먼저 넓힌다 — 넓히는 것은 사람이 하는 결정이다.`)
       }
@@ -320,11 +251,7 @@ if (!TEMPLATE) {
   }
 }
 
-// ────────────────────────────────────── 1-d. 감사 추적 (경고)
-
-/** «누가 썼나» 의 답이 사람 이름뿐이면 AI-native 사슬의 감사 추적은 절반이 빈 칸이다.
- *  사람이 손으로 쓴 문서는 비어 있는 것이 정상이라 **경고**다 — 판단은 사람이 한다.
- *  CI 는 `--strict` 로 돌아 이 경고도 실패로 센다. */
+// 작성 메타데이터 누락은 경고한다. strict 모드에서는 실패로 처리한다.
 if (!TEMPLATE) {
   for (const d of Object.values(docs)) {
     if (!isNull(d.fm.generated_by)) continue
@@ -333,8 +260,7 @@ if (!TEMPLATE) {
   }
 }
 
-/** intent · spec · plan 은 한 계약이므로 스키마 버전도 같아야 한다. finding 은 독립 입력이라
- *  다른 버전이어도 새 intent 를 낳을 수 있다. */
+/** intent·spec·plan은 스키마 버전이 같아야 한다. 독립 입력인 finding은 예외다. */
 const chain = [docs.intent, docs.spec, docs.plan].filter(Boolean)
 const chainSchema = chain.length ? schemaVersion(chain[0].fm) : null
 for (const d of chain.slice(1)) {
@@ -347,9 +273,7 @@ for (const d of chain.slice(1)) {
 const shownSchema = chainSchema ?? (docs.finding ? schemaVersion(docs.finding.fm) : null)
 if (shownSchema != null) notes.push(`산출물 schema v${shownSchema}${shownSchema === 1 ? ' (무버전 문서 호환)' : ''} · runtime ${SDLC_VERSION}`)
 
-/** 티어의 정본은 intent 다. finding 만 있는 폴더에서는 finding 이 진다 — 발견은 사슬의
- *  **입력**이지 하위 문서가 아니므로 상속하지 않는다. light 발견이 full intent 를 낳는
- *  것이 정상이다(작은 신호가 큰 문제를 가리킬 수 있다). */
+/** 위험 등급은 intent에서 상속한다. finding은 자체 등급을 사용한다. */
 const TIER = docs.intent?.fm?.tier ?? docs.finding?.fm?.tier ?? 'standard'
 for (const d of [docs.spec, docs.plan].filter(Boolean)) {
   if (d.fm.tier && d.fm.tier !== TIER) {
@@ -361,7 +285,6 @@ for (const [d, key] of [[docs.spec, 'intent'], [docs.plan, 'intent'], [docs.plan
   if (!existsSync(resolve(DIR, String(d.fm[key])))) err(d.name, `\`${key}: ${d.fm[key]}\` 가 가리키는 파일이 없다`, '상대 경로를 확인한다.')
 }
 
-// ─────────────────────────────────────────── 1-b. 발견의 발화와 경로
 
 if (docs.finding) {
   const f = docs.finding
@@ -382,8 +305,7 @@ if (docs.finding) {
   }
 }
 
-/** 루프가 실제로 닫혔는지 — intent 가 «어느 발견에서 왔다» 고 말하면 그 발견도 «이
- *  intent 로 나갔다» 고 말해야 한다. 한쪽만 있으면 사슬이 한 방향으로만 이어진다. */
+/** from_finding과 routed_to의 양방향 연결을 확인한다. */
 if (docs.intent && !isNull(docs.intent.fm.from_finding)) {
   const fp = resolve(DIR, String(docs.intent.fm.from_finding))
   if (!existsSync(fp)) err('intent.md', `\`from_finding: ${docs.intent.fm.from_finding}\` 가 가리키는 파일이 없다`, '상대 경로를 확인한다.')
@@ -393,8 +315,7 @@ if (docs.intent && !isNull(docs.intent.fm.from_finding)) {
     if (up.status === 'accepted' && !r.startsWith('intent')) {
       err('intent.md', `상위 발견(${basename(fp)}) 은 \`${r || '경로 없음'}\` 로 나갔다고 적혀 있다`, '이 intent 가 그 발견에서 왔다면 발견의 `routed_to` 도 `intent:<이 경로>` 여야 한다.')
     } else if (r.startsWith('intent')) {
-      // 경로 종류만 맞는 것으로는 부족하다 — **같은 파일**을 가리켜야 한다. 안 그러면
-      // 발견 하나가 여러 intent 의 출처로 조용히 재사용된다.
+      // 양쪽 경로가 같은 문서 쌍을 가리켜야 한다.
       const points = resolve(fp, '..', r.slice(r.indexOf(':') + 1).trim())
       if (points !== docs.intent.path) {
         err('intent.md', '상위 발견의 `routed_to` 는 다른 intent 를 가리킨다',
@@ -404,11 +325,6 @@ if (docs.intent && !isNull(docs.intent.fm.from_finding)) {
   }
 }
 
-// ─────────────────────────────────────────────────────────── 2. 버전 고정
-
-/** `intent_version` · `spec_version` 은 «어느 시점의 상위를 보고 썼나» 다. 대조하지
- *  않으면 적어 두기만 한 글자이고, 대조하는 순간 이 사슬에서 가장 흔한 붕괴가 잡힌다 —
- *  상위가 몰래 바뀐 채 하위가 진행되는 것. */
 // 상류가 다른 레포면 그 사실이 폴더 안에 파일로 있어야 검사기가 본다. 락이 그 파일이다.
 const LOCK = TEMPLATE ? null : loadLock(DIR)
 if (LOCK?.broken) {
@@ -464,7 +380,6 @@ else if (!TEMPLATE) {
   }
 }
 
-// ─────────────────────────────────────────────────────────── 3. 티어별 섹션
 
 const tierOf = (m) => !m ? null
   : /조건부/.test(m) ? 'conditional' : /선택/.test(m) ? 'optional'
@@ -485,9 +400,7 @@ for (const d of Object.values(docs)) {
     const where = `«${h.title}»`
 
     if (content.length === 0) {
-      /** 흔한 모양 하나를 따로 말한다: 표기 붙은 제목 바로 뒤에 **형제** 항목 헤딩이 서면
-       *  그 항목들은 이 제목의 자식이 아니라 옆칸이라 내용이 빈 것으로 읽힌다. 템플릿의
-       *  헤딩 층을 바꿀 때 생기고, 메시지가 «비어 있다» 뿐이면 원인이 안 보인다. */
+      /** 같은 깊이의 제목은 하위 내용으로 집계하지 않는다. */
       const next = d.hs.find((x) => x.line > h.line)
       const sibling = next && next.depth === h.depth && new RegExp(`^(${P_ALT})-\\d`).test(next.title)
       err(d.name, `${where} 이 비어 있다`, sibling
@@ -495,9 +408,7 @@ for (const d of Object.values(docs)) {
         : `\`${TIER}\` 티어에서 필수다. 없으면 \`해당 없음 — <근거>\`.`)
       continue
     }
-    /** «이 섹션은 해당 없음» 과 «복구: 해당 없음» 은 다르다. 앞은 섹션을 통째로 비운
-     *  선언이라 근거를 요구하고, 뒤는 본문 한가운데의 필드 값이다. 줄 **머리**에 서고
-     *  그것 말고 내용이 없을 때만 선언으로 읽는다. */
+    /** 섹션 전체가 ‘해당 없음’일 때만 근거를 요구한다. 본문 필드 값은 제외한다. */
     const none = content.length <= 2 ? content.find((l) => /^\s*해당\s*없음/.test(l)) : undefined
     if (none) {
       if (!/해당\s*없음\s*[—–-]\s*\S/.test(none)) {
@@ -511,7 +422,6 @@ for (const d of Object.values(docs)) {
   }
 }
 
-// ─────────────────────────────────────────────────────────── 4. ID 문법과 참조
 
 for (const d of Object.values(docs)) {
   for (const e of d.ents.values()) {
@@ -524,14 +434,10 @@ for (const d of Object.values(docs)) {
     if (!d.live[i]) return
     for (const id of idsIn(line)) {
       if (ALL.has(id)) continue
-      // 템플릿의 `<AC-ID>` 같은 placeholder 참조는 세지 않는다.
+      // 템플릿의 ID 자리표시자는 참조로 집계하지 않는다.
       if (TEMPLATE && /<[^<>]*-\d/.test(line)) continue
       const home = PREFIXES[id.split('-')[0]]
-      /** **아직 안 쓴 문서의 ID 는 오류가 아니다.** 사슬은 한 장씩 자란다 —
-       *  `/create-intent` 직후에는 intent.md 뿐이고, 그 문서가 앞으로 쓸 `spec.md` 의
-       *  결정을 가리키는 것은 정상이다. 그 문서가 **생긴 뒤에도** 정의가 없으면 그때
-       *  오류다. 이것을 늘 오류로 두면 부분 사슬이 언제나 빨갛고, 빨간 것이 기본이면
-       *  아무도 안 본다. */
+      /** 아직 생성되지 않은 문서의 ID 참조는 오류로 처리하지 않는다. */
       const pending = !docs[home.doc]
       ;(pending ? warn : err)(d.name,
         pending ? `${id} 은 아직 없는 ${FILES[home.doc]} 의 ID 다`
@@ -546,20 +452,18 @@ for (const d of Object.values(docs)) {
   })
 }
 
-// ─────────────────────────────────────────────────────────── 5. 추적성
 
 const outs = of('intent', 'OUT')
 const reqs = [...of('spec', 'FR'), ...of('spec', 'NFR')]
 const acs = of('spec', 'AC')
 const wps = of('plan', 'WP')
 
-// 5-1. 모든 요구사항은 근거(OUT/CON)를 가리킨다.
+// 요구사항의 근거는 OUT 또는 CON이어야 한다.
 for (const r of reqs) {
   if (idsIn(field(r, '근거')).some((x) => /^(OUT|CON)-/.test(x))) continue
   err('spec.md', `${r.id} 에 \`근거:\` 가 없다`, '어느 OUT-*/CON-* 에서 왔는지 없으면 이 요구사항이 왜 존재하는지 아무도 답할 수 없다.')
 }
-// 5-2. 모든 Must 결과는 요구사항으로 덮인다 — **역방향**. 이것이 빠지면 «요구사항이
-//      어디서 왔나» 만 알고 «이 결과를 정말 덮었나» 는 모른다.
+// 모든 Must 목표 결과에 요구사항이 연결돼야 한다.
 if (docs.spec) {
   const covered = new Set(reqs.flatMap((r) => idsIn(field(r, '근거'))))
   for (const o of outs) {
@@ -567,13 +471,13 @@ if (docs.spec) {
     err('spec.md', `${o.id}(Must) 를 덮는 요구사항이 없다`, 'intent 가 Must 로 약속한 결과인데 명세가 다루지 않는다. 요구사항을 더하거나 intent 에서 우선순위를 내린다.')
   }
 }
-// 5-3. 모든 Must 요구사항은 수용 기준을 가진다.
+// Must 요구사항에는 수용 기준이 필요하다.
 for (const r of reqs) {
   if (!isMust(r)) continue
   if (acs.some((a) => a.parent === r.id)) continue
   err('spec.md', `${r.id}(Must) 에 수용 기준이 없다`, '`수용 기준:` 밑에 `- [ ] AC-00N — <언제>이면 시스템은 <무엇을> 한다` 를 적는다. Pass/Fail 로 못 재는 Must 는 끝났는지 아무도 말할 수 없다.')
 }
-// 5-4. 작업은 다섯 줄을 갖추고 요구사항을 가리킨다.
+// 작업의 필수 필드와 요구사항 참조를 검사한다.
 for (const w of wps) {
   const missing = WP_FIELDS.filter((k) => !w.fields.has(k))
   if (missing.length) err('plan.md', `${w.id} 에 \`${missing.join('\`·\`')}\` 줄이 없다`, `작업마다 ${WP_FIELDS.join(' · ')} 다섯 줄이 있어야 /implement-spec 이 이것을 굴린다.`)
@@ -590,13 +494,14 @@ const MINE = (e, parent) => {
   return sc.length === 0 || sc.some((s) => sameRepo(s, UP.self))
 }
 
-// 5-5. 모든 Must 수용 기준은 작업이 덮는다 — 상류에서 왔으면 이 레포에 배정된 것만.
+// 모든 Must 수용 기준에 구현 작업이 연결돼야 한다.
 if (docs.plan && docs.spec) {
   const done = new Set(wps.flatMap((w) => idsIn(field(w, 'covers'))))
   for (const a of acs) {
     const parent = a.parent ? ent(a.parent) : null
     if (!parent || !isMust(parent)) continue
     if (done.has(a.id) || done.has(a.parent)) continue
+    // 상류에서 끌어온 spec 은 여러 레포의 몫을 함께 담는다. 이 레포는 자기 `scope` 만 덮는다.
     if (!MINE(a, parent)) continue
     err('plan.md', `${a.id}(${a.parent} 의 수용 기준) 을 덮는 작업이 없다`, '수용 기준이 있는데 그것을 만드는 작업이 없으면 그 기준은 아무도 통과시키지 않는다.')
   }
@@ -649,16 +554,13 @@ if (UP.isUpstream && docs.spec && !TEMPLATE) {
   }
 }
 
-// 5-6. 모든 가설은 관측을 가리킨다 — finding 의 척추다.
+// 가설은 관측 근거를 참조해야 한다.
 for (const h of of('finding', 'HYP')) {
   if (idsIn(field(h, '근거')).some((x) => x.startsWith('EV-'))) continue
   err('finding.md', `${h.id} 이 어느 관측도 가리키지 않는다`, '§관측 의 EV-* 를 `근거:` 로 든다. 기계가 잰 것에 안 걸린 가설은 모델의 짐작이지 발견이 아니다.')
 }
 
-// 5-7. 같은 레벨의 작업은 같은 파일을 만지지 않는다.
-/** `/implement-spec` 은 같은 레벨을 **동시에** 워크트리로 돌린다. `files` 가 겹치면
- *  합류에서 충돌이 나고, 그 충돌은 «이 검사가 틀렸다» 는 신호다. 스킬이 눈으로 보던
- *  것을 여기서 기계가 본다. */
+// 병렬 실행할 같은 레벨의 작업은 파일 범위가 겹치면 안 된다.
 if (wps.length) {
   const { level, cycles, unknown } = levelsOf(wps)
   for (const c of cycles) err('plan.md', `${c[0]} 의 \`depends\` 가 순환한다`, `${c.join(' → ')}. 순환하면 레벨이 정해지지 않아 실행 순서가 없다.`)
@@ -676,7 +578,6 @@ if (wps.length) {
   }
 }
 
-// ─────────────────────────────────────────────────────────── 6. 상태 정합성
 
 if (!TEMPLATE) {
   const rank = (d) => RANK[d?.fm?.status] ?? 0
@@ -711,16 +612,12 @@ if (!TEMPLATE) {
   }
 }
 
-// ────────────────────────────────────── 6-b. 결정 핀 (schema v4 는 선택, v5 는 검사)
-// 되돌리기 어려운 결정을 사슬 안에서 새로 정하면 그 결정은 이번 변경과 함께 죽는다. 핀은
-// 그것을 밖으로 내보내고, 이 검사는 **대체된 결정을 인용한 채로 도는 사슬**을 잡는다 —
-// 산문만으로는 아무도 못 보는 자리다.
+// ADR 참조의 버전과 유효 상태를 검사한다.
 
 if (!TEMPLATE) {
   checkPins(docs, { seam: SEAM }, (level, doc, msg, hint) => problems.push({ level, doc, msg, hint }))
 }
 
-// ─────────────────────────────────────────────────────────── 7. 층 침범 (경고)
 
 if (!TEMPLATE) {
   const SRC = /`?[\w.-]+\/[\w./-]*\.(?:ts|tsx|js|jsx|py|rs|go|java|kt|rb|php|cs|swift|sql)`?/
@@ -736,7 +633,6 @@ if (!TEMPLATE) {
   }
 }
 
-// ─────────────────────────────────────────────────────────── 보고
 
 process.exit(report({
   title: `산출물 사슬 검사 — ${basename(DIR)}  (tier: ${TIER}, 문서 ${Object.keys(docs).length}개, ID ${ALL.size}개)`,
