@@ -14,6 +14,8 @@
 - **프로필 키 셋** — `repo` · `upstream_repo` · `spec_consumers`. 단일 레포는 셋 다 비우면
   v5 와 똑같이 동작한다.
 
+- **평가 신뢰성** — 검사기 종료 코드 검증, 런타임 단독 실행 수정, 미채점·하네스 오류 결과의 집계 거부
+- **스킬 문서** — 9개 스킬의 한국어·기술 용어 통일, 중복 설명 정리, 평가 실행·집계 절차 명확화
 - **사슬 스킬 8개** — `sdlc-init` · `create-finding` · `create-intent` · `create-spec` ·
   `create-plan` · `implement-spec` · `iterate-spec` · `create-adr`
 - **런타임** — 산출물 규약, 검사기, 참조 문서. 스킬 · 훅 · CI 가 함께 쓴다
