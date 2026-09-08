@@ -1,0 +1,6 @@
+{
+  "kind": "negative-control",
+  "why": "심은 것이 없다. 이 케이스가 있어야 «전부 지적하는» 도구가 만점을 못 받는다. 시드 케이스와 반드시 같은 배치에서 돈다.",
+  "check": { "errors": 0, "warns": 0 },
+  "lint": { "errors": 0, "warns": 0 }
+}

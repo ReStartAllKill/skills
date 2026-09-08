@@ -1,0 +1,7 @@
+{
+  "kind": "negative-control",
+  "why": "심은 것이 없다. 템플릿대로 쓴 결정 한 장이 오류 0 경고 0 으로 서는 바닥선이고, 이 케이스가 있어야 «전부 지적하는» 도구가 만점을 못 받는다. 시드 케이스와 반드시 같은 배치에서 돈다.",
+  "cmd": "check-artifacts.mjs · lint-prose.mjs 를 `<case>/docs` 에 돌린다. `docs/` 가 곧 가짜 레포 뿌리다(`docs/.claude/spec-profile.yml` 의 `adr_dir: \".\"`) — ADR 은 폴더가 아니라 파일 단위라 검사기가 사슬 모드 대신 결정 기록 모드로 들어간다.",
+  "check": { "errors": 0, "warns": 0 },
+  "lint": { "errors": 0, "warns": 0 }
+}

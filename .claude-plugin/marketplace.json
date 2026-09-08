@@ -1,0 +1,23 @@
+{
+  "name": "restart-harness",
+  "owner": {
+    "name": "ReStartAllKill",
+    "url": "https://github.com/ReStartAllKill"
+  },
+  "description": "ReStartAllKill 의 Claude Code 하네스 — 산출물 사슬과 에이전트 평가를 설치형 플러그인으로.",
+  "plugins": [
+    {
+      "name": "restart-harness",
+      "source": "./",
+      "description": "산출물 사슬(intent → spec → plan → 구현)과 에이전트 평가 하네스.",
+      "category": "engineering",
+      "keywords": [
+        "sdlc",
+        "spec",
+        "adr",
+        "gate",
+        "eval"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "kind": "seeded · 명세",
+  "why": "spec 층의 결함은 **추적이 끊기는 것**이다 — 섞인 스키마 버전, 근거 없는 요구사항, 없는 상위 ID, 잴 수 없는 Must. 산문은 멀쩡하므로 린터는 0건이어야 한다. `intent.md` 가 있으므로 OUT-009 는 «아직 안 쓴 문서» 가 아니라 진짜 오류다.",
+  "check": {
+    "errors": 4, "warns": 0,
+    "matches": ["schema_version 이 intent.md 와 다르다", "OUT-009 을 참조하는데", "FR-003 에 `근거:` 가 없다", "FR-003(Must) 에 수용 기준이 없다"]
+  },
+  "lint": { "errors": 0, "warns": 0 }
+}

@@ -1,0 +1,6 @@
+{
+  "kind": "negative-control",
+  "why": "`/create-spec` 직후의 모양 — intent+spec, plan 은 아직 없다. 작업(WP)이 없다고 추적성 검사가 실패하면 안 된다.",
+  "check": { "errors": 0, "warns": 0 },
+  "lint": { "errors": 0, "warns": 0 }
+}

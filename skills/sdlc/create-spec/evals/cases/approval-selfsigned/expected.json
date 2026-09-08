@@ -1,0 +1,9 @@
+{
+  "kind": "seeded · 승인",
+  "why": "승인은 사람이 하는 결정이라 **문서를 쓴 주체가 대신 적을 수 없다**. 두 모양을 함께 심었다 — 승인자가 아예 없는 것(intent), 그리고 쓴 것과 승인한 것이 같은 자기승인(spec). 산문은 멀쩡하므로 린터는 0건이어야 한다: 이것은 문체가 아니라 구조의 결함이다. 이 규칙은 schema v3 부터라 v1 케이스들은 안 걸린다.",
+  "check": {
+    "errors": 2, "warns": 0,
+    "matches": ["`accepted` 인데 `approved_by` 가 비었다", "`approved_by` 가 `generated_by` 와 같다"]
+  },
+  "lint": { "errors": 0, "warns": 0 }
+}

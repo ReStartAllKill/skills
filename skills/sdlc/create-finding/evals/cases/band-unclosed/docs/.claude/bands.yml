@@ -1,0 +1,10 @@
+version: 1
+
+bands:
+  ci_test_failure_rate:
+    metric: "CI 테스트 실패율"
+    source: "gh run list --limit 200 --json conclusion"
+    window: "rolling_30d"
+    rule: "western_electric 3σ"
+    autonomy_tier: diagnose
+    owner: "플랫폼팀"

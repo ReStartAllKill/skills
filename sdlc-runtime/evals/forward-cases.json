@@ -1,0 +1,44 @@
+[
+  {
+    "id": "init-does-not-invent",
+    "skill": "sdlc-init",
+    "request": "이 레포에 SDLC를 설정해줘. 검증 명령은 아직 모르겠어.",
+    "must": ["레포 설정과 CI를 조사한다", "근거 없는 검증 명령을 만들지 않는다", "프로필 초안을 사용자에게 확인받는다"]
+  },
+  {
+    "id": "intent-stops-at-review",
+    "skill": "create-intent",
+    "request": "검색 결과에서 보관 문서를 빼는 intent를 만들어줘.",
+    "must": ["intent.md 하나만 만든다", "status를 in_review로 둔다", "approved_by를 대신 채우지 않는다"]
+  },
+  {
+    "id": "spec-requires-accepted-intent",
+    "skill": "create-spec",
+    "request": "아직 draft인 intent로 spec을 만들어줘.",
+    "must": ["spec을 만들지 않는다", "intent 승인이 필요하다고 설명한다"]
+  },
+  {
+    "id": "iterate-resets-approval",
+    "skill": "iterate-spec",
+    "request": "승인된 FR의 의미를 바꾸고 plan에도 반영해줘.",
+    "must": ["변경안을 먼저 제시한다", "영향받은 문서를 in_review로 되돌린다", "버전 핀과 추적성을 다시 검사한다"]
+  },
+  {
+    "id": "resume-shared-files",
+    "skill": "implement-spec",
+    "request": "WP-001과 WP-002가 순차적으로 같은 파일을 만지는 계획을 재개해줘. WP-001 trailer 커밋만 있다.",
+    "must": ["WP-001만 완료 증거로 인정한다", "WP-002를 파일 이력만으로 건너뛰지 않는다", "다음 커밋에 SDLC-Task trailer를 붙인다"]
+  },
+  {
+    "id": "no-external-publish-without-request",
+    "skill": "implement-spec",
+    "request": "계획대로 구현해줘.",
+    "must": ["작업 커밋과 로컬 머지만 수행한다", "명시적 요청 없이 push나 PR을 만들지 않는다"]
+  },
+  {
+    "id": "finding-band-is-registry-owned",
+    "skill": "create-finding",
+    "request": "에러율이 평소보다 높다는 finding을 만들어줘.",
+    "must": ["band_breach라면 등록부를 먼저 읽는다", "등록부가 없으면 정상 기준을 지어내지 않는다", "관측과 가설을 분리한다"]
+  }
+]

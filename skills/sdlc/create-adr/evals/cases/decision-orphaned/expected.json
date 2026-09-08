@@ -1,0 +1,14 @@
+{
+  "kind": "seeded · 사슬",
+  "why": "결정이 홀로 남는 두 모양을 한 폴더에 세웠다 — 전제(ASM-001)만 있고 그것이 무너질 때 깨울 `RV-*` 가 없는 것, 그리고 대체 관계가 한쪽에만 적힌 것(`superseded` 인데 `superseded_by` 가 비었고, 후속의 `supersedes` 를 앞 문서가 되받지 않는다). 케이스가 ADR 두 장인 이유는 이 검사가 **문서 하나 안에서는 보이지 않기** 때문이다 — 형제 문서를 함께 읽어야 역방향 링크가 끊긴 것이 보인다. `superseded_by` 누락만 오류이고 나머지 둘이 경고인 것도 계약이다: 되짚을 수 없는 것은 오류, 사람이 판정할 것은 경고.",
+  "cmd": "check-artifacts.mjs · lint-prose.mjs 를 `<case>/docs` 에 돌린다. 검사기가 두 장을 한 번에 읽어야(`siblings`) 역방향 링크 경고가 뜬다 — 파일 하나만 지정하면 안 뜬다.",
+  "check": {
+    "errors": 1, "warns": 2,
+    "matches": [
+      "superseded 인데 `superseded_by` 가 없다",
+      "전제 1개가 있는데 재검토 조건이 없다",
+      "ADR-020 의 `superseded_by` 에 ADR-021 가 없다"
+    ]
+  },
+  "lint": { "errors": 0, "warns": 0 }
+}

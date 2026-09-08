@@ -1,0 +1,10 @@
+{
+  "kind": "seeded · 드리프트",
+  "why": "**결정과 코드가 갈라진 자리는 기계만 볼 수 있다.** 문서는 완결돼 있고 사람이 읽어서는 아무 이상이 없다 — `confirms` 가 가리키는 테스트 이름 하나가 `scope` 안에서 이름이 바뀌었을 뿐이다. `confirms` 를 둘 두고 하나만 사라지게 한 것은 검사기가 «못 찾았다» 를 뭉뚱그리지 않고 사라진 것만 짚는지 재기 위해서다. 오류가 아니라 경고인 것도 계약이다 — 이름만 바뀐 것일 수 있어 사람이 판정한다. 산문은 린터가 0건으로 통과해야 한다: 이 케이스가 문체까지 걸리면 회귀가 났을 때 어느 층인지 못 가린다.",
+  "cmd": "check-artifacts.mjs · lint-prose.mjs 를 `<case>/docs` 에 돌린다. 드리프트 검사는 `scope` 를 레포 뿌리 기준으로 푼다 — `docs/src/index/schema/` 의 더미 소스가 그 대상이다.",
+  "check": {
+    "errors": 0, "warns": 1,
+    "matches": ["`confirms` 의 «test_schema_rejects_single_reviewer» 를 scope 안에서 못 찾았다"]
+  },
+  "lint": { "errors": 0, "warns": 0 }
+}

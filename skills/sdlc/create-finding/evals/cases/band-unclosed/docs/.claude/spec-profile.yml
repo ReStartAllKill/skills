@@ -1,0 +1,2 @@
+spec_dir: .claude/specs
+bands: .claude/bands.yml

@@ -1,0 +1,19 @@
+{
+  "kind": "seeded · 발견",
+  "why": "발견 **자신의** 안전선 넷을 깨뜨린다 — 허용된 발화 종류, 경로가 가리키는 파일의 실재, 가설의 근거, 막는 질문. 규약이 정한 진짜 배치에 서므로 `routed_to: ./intent.md` 는 «기준점을 틀린» 실제 실수다: 발견 폴더 기준이라 옆에 intent 가 없다. 교차 폴더 링크의 **불일치**는 intent 쪽에서 보이므로 `crosslink-broken` 이 맡는다. 산문은 멀쩡하므로 린터는 0건이어야 한다.",
+  "check": {
+    "errors": 4,
+    "warns": 0,
+    "matches": [
+      "허용되지 않는 trigger",
+      "`routed_to` 가 가리키는 intent 가 없다",
+      "HYP-001 이 어느 관측도 가리키지 않는다",
+      "«막힘» 질문이 Open 이다"
+    ]
+  },
+  "lint": {
+    "errors": 0,
+    "warns": 0
+  },
+  "target": "findings/FND-2026-007-ci-failure-rate"
+}

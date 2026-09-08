@@ -1,0 +1,14 @@
+{
+  "kind": "seeded · 핀",
+  "why": "**사슬이 대체된 결정을 전제한 채로 도는 것** — ADR 이 사슬에 닿는 유일한 자리이고, 산문만으로는 아무도 못 보는 자리다. intent 가 «본문 저장소» 를 찾아 ADR-027 을 핀했는데 그 결정은 이미 ADR-031 이 대체했다. 결정 기록 쪽에는 결함이 없다는 것이 이 케이스의 요지다 — ADR 두 장을 따로 검사하면 0/0 이고, 핀이 끊긴 것은 **사슬 폴더에 대고 돌려야만** 보인다. 오류인 이유도 계약이다: 효력이 없는 결정 위에 선 사슬은 사람이 판정할 일이 아니라 이미 틀렸다.",
+  "cmd": "check-artifacts.mjs · lint-prose.mjs 를 **사슬 폴더** `<case>/docs/specs/2026-09-05-multi-store-upload` 에 돌린다. `docs/` 가 레포 뿌리이고 프로필이 `spec_dir: specs` · `adr_dir: adr` 로 둘을 갈라 둔다 — `<case>/docs/adr` 에 돌리면 결정 기록 모드가 되어 0/0 이고 핀은 안 보인다.",
+  "check": {
+    "errors": 1, "warns": 0,
+    "matches": [
+      "핀한 ADR-027 의 상태가 `superseded` 다",
+      "ADR-031 이 대체했다"
+    ]
+  },
+  "lint": { "errors": 0, "warns": 0 },
+  "target": "specs/2026-09-05-multi-store-upload"
+}

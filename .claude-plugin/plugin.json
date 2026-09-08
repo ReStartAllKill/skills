@@ -1,0 +1,37 @@
+{
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
+  "name": "restart-harness",
+  "version": "0.1.0",
+  "description": "산출물 사슬(intent → spec → plan → 구현)과 에이전트 평가 하네스. 쓰기 시점 게이트·승인 가드·CI 검사기를 포함한다.",
+  "author": {
+    "name": "ReStartAllKill",
+    "url": "https://github.com/ReStartAllKill"
+  },
+  "repository": "https://github.com/ReStartAllKill/restart-harness",
+  "license": "MIT",
+  "keywords": [
+    "sdlc",
+    "spec",
+    "intent",
+    "plan",
+    "adr",
+    "finding",
+    "gate",
+    "hook",
+    "ci",
+    "eval",
+    "agent",
+    "rubric"
+  ],
+  "skills": [
+    "./skills/sdlc/create-intent",
+    "./skills/sdlc/create-spec",
+    "./skills/sdlc/create-plan",
+    "./skills/sdlc/create-adr",
+    "./skills/sdlc/create-finding",
+    "./skills/sdlc/iterate-spec",
+    "./skills/sdlc/implement-spec",
+    "./skills/sdlc/sdlc-init",
+    "./skills/eval/agent-eval"
+  ]
+}

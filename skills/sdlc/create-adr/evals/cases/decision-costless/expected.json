@@ -1,0 +1,13 @@
+{
+  "kind": "seeded · 대가",
+  "why": "ADR 반려 1순위는 **얻는 것만 적힌 결과 절**이다. 그것과 «(채택)» 표기 누락을 함께 심었다 — 둘 다 «무엇을 대가로 무엇을 골랐나» 가 문서에서 지워진 자리이고, 그 상태의 ADR 은 결정이 아니라 사후 정당화다. 나머지 층(scope · confirms · ASM/RV · 절 다섯)과 산문은 멀쩡하므로 검사기 오류가 정확히 둘이고 린터는 0건이어야 한다.",
+  "cmd": "check-artifacts.mjs · lint-prose.mjs 를 `<case>/docs` 에 돌린다.",
+  "check": {
+    "errors": 2, "warns": 0,
+    "matches": [
+      "accepted 인데 «(채택)» 이 0개다",
+      "«결과» 에 감수하는 제약이 없다"
+    ]
+  },
+  "lint": { "errors": 0, "warns": 0 }
+}
