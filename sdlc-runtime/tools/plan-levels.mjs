@@ -3,6 +3,7 @@
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve, join, basename } from 'node:path'
 import { loadDir, levelsOf, wpFiles, wpDeps, wpField, stripComments } from './artifact-parse.mjs'
+import { SECTION, sectionBlock } from './keywords.mjs'
 
 const argv = process.argv.slice(2)
 const JSON_OUT = argv.includes('--json')
@@ -21,7 +22,7 @@ const yml = (k) => (new RegExp(`^${k}:[ \\t]*(.*)$`, 'm').exec(profile)?.[1] ?? 
 
 /** 릴리스 영향 섹션에서 실행 설정을 읽는다. */
 const planBody = stripComments(docs.plan.lines.join('\n'))
-const release = /##\s*릴리스 영향[\s\S]*?(?=\n##\s|\n*$)/.exec(planBody)?.[0] ?? ''
+const release = sectionBlock(SECTION.releaseImpact).exec(planBody)?.[0] ?? ''
 const rel = (k) => (new RegExp(`^${k}:[ \\t]*(.*)$`, 'm').exec(release)?.[1] ?? '').trim()
 
 const wps = [...docs.plan.ents.values()].filter((e) => e.kind === 'wp')

@@ -1,0 +1,12 @@
+{
+  "kind": "negative-control · 영어 계약",
+  "why": "clean-spec 과 같은 문서인데 계약 낱말만 영어다 — `basis:` · `[required · all tiers]` · `N/A`. 산문은 한국어 그대로라 문체 검사는 같은 조건에서 돈다. 별칭이 죽으면 «근거가 없다»·«필수 절이 비었다» 로 오류가 쏟아지므로, 0건이 곧 별칭이 산다는 증거다.",
+  "check": {
+    "errors": 0,
+    "warns": 0
+  },
+  "lint": {
+    "errors": 0,
+    "warns": 0
+  }
+}

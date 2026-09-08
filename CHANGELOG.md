@@ -4,6 +4,16 @@
 
 ### Added
 
+- **The contract accepts English keywords.** Every word a checker actually reads now lives in
+  `sdlc-runtime/tools/keywords.mjs` — thirteen of them — and each takes an English form beside the
+  Korean one: `basis:` for `근거:`, `[required · all tiers]` for `[필수 · 모든 티어]`, `N/A —` for
+  `해당 없음 —`, and so on down to the task results and the ADR section titles. Both forms always
+  pass, independently of any language setting: gating the contract on a language would make a
+  Korean repository's documents unreadable in an English one and would break a chain that is
+  halfway between the two. Section titles were never part of the contract and still are not —
+  structure is decided by ID prefix and tier marker, so `## Outcomes` checks the same as
+  `## 목표 결과`.
+
 - **`/create-pr`** — writes the pull request title and body for the current branch and opens it
   with `gh`. Where a branch touched a chain, the body's Intent and Problem are taken from the
   approved `intent.md` and `spec.md` and cite their IDs, rather than being re-derived from the

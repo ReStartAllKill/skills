@@ -5,6 +5,7 @@ import { resolve, join, relative, basename } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { taskFingerprint, repositoryFingerprint } from './task-evidence.mjs'
 import { loadDir, stripComments, idsIn, schemaVersion } from './artifact-parse.mjs'
+import { SECTION, sectionBlock, RE_NA } from './keywords.mjs'
 
 const argv = process.argv.slice(2)
 const STRICT = argv.includes('--strict')
@@ -68,7 +69,7 @@ const filesOf = (e) => {
 
 /** 공백을 정규화해 tests 문장이 실제 파일에 있는지 확인한다. */
 const testsOf = (e) => field(e, 'tests').split(/\s·\s|\s\|\s/).map((t) => t.trim().replace(/^[`"'«]|[`"'»]$/g, '').trim())
-  .filter((t) => t && !/^<.*>$/.test(t) && !/^해당 없음/.test(t))
+  .filter((t) => t && !/^<.*>$/.test(t) && !RE_NA.test(t))
 const squash = (s) => s.replace(/\s+/g, '')
 const testsPresent = (files, sentences) => {
   const bodies = files.map((f) => readEvidence(resolve(ROOT ?? DIR, f))).filter((s) => s !== null).map(squash)
@@ -128,7 +129,7 @@ const taskCommits = (id) => commitRecords
 /** 작업별 실행 기록이 있는지 확인한다. */
 const planBody = stripComments(docs.plan.lines.join('\n'))
 /** 변경 기록 하위 섹션의 작업 ID를 실행 증거로 집계하지 않는다. */
-const logSection = (/##\s*실행 기록[\s\S]*?(?=\n##\s|\n*$)/.exec(planBody)?.[0] ?? '')
+const logSection = (sectionBlock(SECTION.executionLog).exec(planBody)?.[0] ?? '')
   .replace(/\n#{3,}\s*변경 기록[\s\S]*$/, '')
 const loggedIds = new Set(idsIn(logSection).filter((x) => x.startsWith('WP-')))
 

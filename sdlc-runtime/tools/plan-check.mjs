@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs'
 import { resolve, join, relative, basename, dirname } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { RESULT as RESULTS, SECTION, canonical, sectionHeading } from './keywords.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const argv = process.argv.slice(2)
@@ -62,16 +63,17 @@ if (CMD === 'mark') {
   if (!TASK) die('어느 작업인지 없다 — `mark <WP-id>`')
   const NOTE = flag('--note')
   const RESULT = flag('--result') ?? '완료'
+  const RESULT_KEY = canonical(RESULT, RESULTS)
   const PR = flag('--pr') ?? 'PR 없음'
   if (!NOTE) die('`--note "<계획과의 차이>"` 가 없다 — 기계가 만들 수 없는 값이라 비워 둘 수 없다. 차이가 없으면 `--note 없음`.')
-  if (!['완료', '부분', '실패'].includes(RESULT)) die('`--result` 는 완료 · 부분 · 실패 중 하나다.')
+  if (!RESULT_KEY) die('`--result` 는 완료·부분·실패 (또는 done·partial·failed) 중 하나다.')
 
   const row = progress.rows.find((r) => r.id === TASK)
   if (!row) die(`${TASK} 가 plan.md 의 작업이 아니다. 있는 것: ${progress.rows.map((r) => r.id).join(' · ')}`)
   if (row.done) die(`${TASK} 는 이미 체크돼 있다 — 다시 적지 않는다. 기록을 고치려면 손으로 §실행 기록을 편집한다.`, 0)
 
   // 완료 기록은 증거가 필요하다. 실패·부분 기록은 증거 없이 허용한다.
-  if (RESULT === '완료') {
+  if (RESULT_KEY === 'done') {
     if (!row.commits.length) die(`${TASK} 에 귀속 커밋이 없다 — \`SDLC-Task: ${TASK}\` trailer 가 붙은 커밋이 있어야 한다.\n  아직 합류 전이면 \`task-worktree.mjs <스펙> commit|merge ${TASK}\` 가 먼저다.`)
     if (!row.verified.length) die(`${TASK} 에 합류점 verify 기록이 없다 — 통과했다는 주장의 증거는 그 로그다.\n  \`verify-run.mjs <스펙> --level <N> --tasks ${TASK} -- "<프로필 verify>"\` 를 먼저 돌린다.`)
   }
@@ -90,7 +92,7 @@ if (CMD === 'mark') {
   let next = planText.replace(box, '$1[x]$2')
 
   // 작업 실행 기록은 변경 기록 등 하위 섹션 앞에 추가한다.
-  const secStart = /^##\s*실행 기록.*$/m.exec(next)
+  const secStart = sectionHeading(SECTION.executionLog).exec(next)
   if (!secStart) die('§실행 기록 절이 없다 — plan 템플릿의 필수 절이다.')
   const bodyFrom = secStart.index + secStart[0].length
   const after = next.slice(bodyFrom)
@@ -99,7 +101,7 @@ if (CMD === 'mark') {
     return m ? bodyFrom + m.index : next.length
   })()
   let body = next.slice(bodyFrom, stop)
-  const placeholder = /^[ \t]*해당 없음[^\n]*$/m.exec(body)
+  const placeholder = /^[ \t]*(?:N\/A|해당\s*없음)[^\n]*$/mi.exec(body)
   if (placeholder) {
     body = body.slice(0, placeholder.index) + line + body.slice(placeholder.index + placeholder[0].length)
   } else {

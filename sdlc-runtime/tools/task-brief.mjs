@@ -5,6 +5,8 @@ import { resolve, join, relative, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { loadDir, levelsOf, wpFiles, wpField, frontmatter, loadAdrDir } from './artifact-parse.mjs'
 import { adrSeam, adrDigest, adrsForFiles } from './adr-check.mjs'
+import { FIELD } from './keywords.mjs'
+const FIELD_LINE = new RegExp(`^\\s*(?:${[...FIELD.basis, ...FIELD.acceptance].join('|')})\\s*:`, 'i')
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 
@@ -46,7 +48,7 @@ if (docs.spec) {
     const req = docs.spec.ents.get(id)
     if (!req) { missing.push(id); continue }
     reqLines.push(`- **${id} — ${req.title}**${req.priority ? ` \`${req.priority}\`` : ''}`)
-    const body = req.bodyLines.filter((l) => l.trim() && !/^\s*(근거|수용 기준)\s*:/.test(l) && !/^\s*[-*]\s+\[[ xX]\]/.test(l))
+    const body = req.bodyLines.filter((l) => l.trim() && !FIELD_LINE.test(l) && !/^\s*[-*]\s+\[[ xX]\]/.test(l))
     for (const l of body) reqLines.push(`  ${l.trim()}`)
     const mine = acs.filter((a) => a.parent === id && (acIds.size === 0 || acIds.has(a.id)))
     for (const a of mine) reqLines.push(`  - [ ] ${a.id} — ${a.title}`)

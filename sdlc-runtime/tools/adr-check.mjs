@@ -2,26 +2,33 @@
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { resolve, join, relative } from 'node:path'
 import { ADR_FILENAME, idsIn, stripComments, isNull, loadAdrDir } from './artifact-parse.mjs'
+import { SECTION, CHOSEN, hasAlias, RE_TRADEOFF, RE_DEADLINE_ONLY } from './keywords.mjs'
+/** 채택안 표시. 괄호까지 포함해 본다 — 본문에 «채택» 이 그냥 나오는 것과 구분한다. */
+const CHOSEN_RE = new RegExp(`\\((?:${CHOSEN.join('|')})\\)`, 'i')
 
 export const ADR_STATUS = ['draft', 'in_review', 'accepted', 'deprecated', 'superseded', 'rejected']
 /** 참조할 수 없는 ADR 상태. */
 export const ADR_DEAD = ['deprecated', 'superseded', 'rejected']
-const SECTIONS = ['결정', '문맥과 결정 요인', '대안', '결과', '확인과 재검토']
+/** ADR 은 사슬 문서와 달리 절 제목을 문자열로 본다 — 다섯 절이 곧 문서의 형식이다. */
+const SECTION_KEYS = ['decision', 'forces', 'alternatives', 'consequences', 'revisit']
+const SECTIONS = SECTION_KEYS.map((k) => SECTION[k][1])
+/** 별칭 중 실제로 문서에 있는 제목을 찾아 그 이름으로 절을 읽는다. */
+const titleIn = (doc, key) => SECTION[key].find((t) => sectionText(doc, t) != null) ?? SECTION[key][1]
 /** 섹션 제목의 ‘및’과 ‘과’를 동일하게 처리한다. */
 const sameTitle = (a, b) => a.replace(/\s*및\s*/g, '과').replace(/\s+/g, '') === b.replace(/\s*및\s*/g, '과').replace(/\s+/g, '')
 
 /** 대안은 제목 또는 비교표에서 읽는다. 제목이 있으면 표를 중복 집계하지 않는다. */
 export function alternativesOf(doc) {
   const heads = [...doc.ents.values()].filter((e) => e.id.startsWith('ALT-'))
-    .map((e) => ({ id: e.id, title: e.title, chosen: /\(채택\)/.test(e.title) }))
+    .map((e) => ({ id: e.id, title: e.title, chosen: CHOSEN_RE.test(e.title) }))
   if (heads.length) return heads
-  const sec = sectionText(doc, '대안')
+  const sec = sectionText(doc, titleIn(doc, 'alternatives'))
   if (!sec) return []
   const row = sec.text.split('\n').map((l) => l.trim()).find((l) => l.startsWith('|'))
   if (!row) return []
   const cells = row.split('|').slice(1, -1).map((c) => c.trim()).filter(Boolean)
   // 첫 번째 열은 평가 항목이므로 대안 수에서 제외한다.
-  return cells.slice(1).map((t, i) => ({ id: `표 ${i + 1}번째 열`, title: t, chosen: /\(채택\)/.test(t) }))
+  return cells.slice(1).map((t, i) => ({ id: `표 ${i + 1}번째 열`, title: t, chosen: CHOSEN_RE.test(t) }))
 }
 
 /** adr_dir은 로컬 ADR, adr_repo·adr_manifest는 외부 ADR을 지정한다. 미설정과 빈 목록을 구분한다. */
@@ -140,7 +147,7 @@ export function checkAdr(doc, { seam, siblings = [] }, push) {
     }
   }
 
-  const found = Object.fromEntries(SECTIONS.map((t) => [t, sectionText(doc, t)]))
+  const found = Object.fromEntries(SECTION_KEYS.map((k, i) => [SECTIONS[i], sectionText(doc, titleIn(doc, k))]))
   for (const t of SECTIONS) {
     if (found[t]) continue
     // 확인·재검토 섹션은 효력이 있는 ADR에만 필수다.
@@ -164,7 +171,7 @@ export function checkAdr(doc, { seam, siblings = [] }, push) {
 
   // 채택안의 효과와 감수할 제약을 모두 확인한다.
   if (found['결과'] && !['draft', 'rejected'].includes(status)) {
-    if (!/감수|대가|비용|포기|제약을 진다|trade-?off/i.test(found['결과'].text)) {
+    if (!RE_TRADEOFF.test(found['결과'].text)) {
       err('«결과» 에 감수하는 제약이 없다', '얻는 것만 있는 결정은 없다. 무엇을 대가로 지불하기로 했는지 적는다 — 그 줄이 이 문서의 핵심 기록이다.')
     }
   }
@@ -179,7 +186,7 @@ export function checkAdr(doc, { seam, siblings = [] }, push) {
   for (const id of rvs) if (declared.length && !declared.includes(id)) warn(`${id} 가 \`revisit:\` 에 없다`, '프런트매터가 기계가 읽는 목록이다 — 빠지면 finding 이 그 조건을 못 깨운다.')
   for (const rv of [...doc.ents.values()].filter((e) => e.id.startsWith('RV-'))) {
     // JavaScript의 단어 경계(\b)는 한글을 단어 문자로 취급하지 않는다.
-    if (/\d\s*(개월|달|주|분기|년)|다음 분기|뒤에 재검토|정기 검토/.test(rv.title)) {
+    if (RE_DEADLINE_ONLY.test(rv.title)) {
       warn(`${rv.title} 이 시한으로 쓰였다`, 'RV-* 는 참·거짓이 판정되는 조건이다. «6개월 뒤 재검토» 는 아무도 판정하지 않는다.')
     }
   }
@@ -294,7 +301,7 @@ export function checkPins(docs, { seam }, push) {
 
 /** 구현 프롬프트에는 결정·제외 범위·기각한 대안의 요약만 전달한다. */
 export function adrDigest(doc) {
-  const dec = sectionText(doc, '결정')
+  const dec = sectionText(doc, titleIn(doc, 'decision'))
   const alts = alternativesOf(doc)
   // 결정 본문은 Non-goals 하위 섹션 앞까지다.
   const decBody = dec ? dec.text.split(/^###\s/m)[0].trim() : ''

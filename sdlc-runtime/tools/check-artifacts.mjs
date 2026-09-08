@@ -12,6 +12,7 @@ import { adrSeam, checkAdr, checkPins } from './adr-check.mjs'
 import { LOCK_FILE, upstreamSeam, loadLock, verifyLock, findUpstream, headOf, sameRepo } from './upstream.mjs'
 import { loadBands, revisedBy } from './bands.mjs'
 import { loadPolicy, routeActive, STAGES } from './autonomy.mjs'
+import { FIELD, MARKER, BLOCKED, SECTION, hasAlias, sectionBlock, RE_NA, RE_NA_WITH_BASIS } from './keywords.mjs'
 
 const argv = process.argv.slice(2)
 if (argv.includes('--version')) {
@@ -382,8 +383,8 @@ else if (!TEMPLATE) {
 
 
 const tierOf = (m) => !m ? null
-  : /조건부/.test(m) ? 'conditional' : /선택/.test(m) ? 'optional'
-  : /모든\s*티어/.test(m) ? 'light' : /standard\+/.test(m) ? 'standard'
+  : hasAlias(m, MARKER.conditional) ? 'conditional' : hasAlias(m, MARKER.optional) ? 'optional'
+  : hasAlias(m, MARKER.allTiers) ? 'light' : /standard\+/.test(m) ? 'standard'
   : /\bfull\b/.test(m) ? 'full' : 'unknown'
 const required = (n) => n === 'light' || (n === 'standard' && TIER !== 'light') || (n === 'full' && TIER === 'full')
 
@@ -409,9 +410,9 @@ for (const d of Object.values(docs)) {
       continue
     }
     /** 섹션 전체가 ‘해당 없음’일 때만 근거를 요구한다. 본문 필드 값은 제외한다. */
-    const none = content.length <= 2 ? content.find((l) => /^\s*해당\s*없음/.test(l)) : undefined
+    const none = content.length <= 2 ? content.find((l) => RE_NA.test(l)) : undefined
     if (none) {
-      if (!/해당\s*없음\s*[—–-]\s*\S/.test(none)) {
+      if (!RE_NA_WITH_BASIS.test(none)) {
         err(d.name, `${where} 의 \`해당 없음\` 에 근거가 없다`, '근거 없는 «해당 없음» 은 «정말 없다» 와 «안 봤다» 를 같은 글자로 만든다.')
       }
       continue
@@ -460,12 +461,12 @@ const wps = of('plan', 'WP')
 
 // 요구사항의 근거는 OUT 또는 CON이어야 한다.
 for (const r of reqs) {
-  if (idsIn(field(r, '근거')).some((x) => /^(OUT|CON)-/.test(x))) continue
+  if (idsIn(field(r, ...FIELD.basis)).some((x) => /^(OUT|CON)-/.test(x))) continue
   err('spec.md', `${r.id} 에 \`근거:\` 가 없다`, '어느 OUT-*/CON-* 에서 왔는지 없으면 이 요구사항이 왜 존재하는지 아무도 답할 수 없다.')
 }
 // 모든 Must 목표 결과에 요구사항이 연결돼야 한다.
 if (docs.spec) {
-  const covered = new Set(reqs.flatMap((r) => idsIn(field(r, '근거'))))
+  const covered = new Set(reqs.flatMap((r) => idsIn(field(r, ...FIELD.basis))))
   for (const o of outs) {
     if (!isMust(o) || covered.has(o.id)) continue
     err('spec.md', `${o.id}(Must) 를 덮는 요구사항이 없다`, 'intent 가 Must 로 약속한 결과인데 명세가 다루지 않는다. 요구사항을 더하거나 intent 에서 우선순위를 내린다.')
@@ -556,7 +557,7 @@ if (UP.isUpstream && docs.spec && !TEMPLATE && schemaVersion(docs.spec.fm) >= 6)
 
 // 가설은 관측 근거를 참조해야 한다.
 for (const h of of('finding', 'HYP')) {
-  if (idsIn(field(h, '근거')).some((x) => x.startsWith('EV-'))) continue
+  if (idsIn(field(h, ...FIELD.basis)).some((x) => x.startsWith('EV-'))) continue
   err('finding.md', `${h.id} 이 어느 관측도 가리키지 않는다`, '§관측 의 EV-* 를 `근거:` 로 든다. 기계가 잰 것에 안 걸린 가설은 모델의 짐작이지 발견이 아니다.')
 }
 
@@ -591,7 +592,7 @@ if (!TEMPLATE) {
     if (!d || (RANK[d.fm.status] ?? 0) < 2) continue
     for (const q of of(d.kind, prefix)) {
       const txt = q.body + ' ' + q.title
-      if (!/막힘/.test(txt) || !/\bOpen\b/i.test(txt) || /<[^<>]*막힘/.test(txt)) continue
+      if (!hasAlias(txt, BLOCKED) || !/\bOpen\b/i.test(txt) || /<[^<>]*(?:막힘|blocked)/i.test(txt)) continue
       err(d.name, `\`${d.fm.status}\` 인데 «막힘» 질문이 Open 이다 — ${q.id}`, '막는 질문이 열려 있는 동안에는 다음 단계의 확정적 작업을 시작하지 않는다.')
     }
   }
@@ -601,7 +602,7 @@ if (!TEMPLATE) {
     if (open.length) err('plan.md', `\`completed\` 인데 미완료 작업이 있다: ${open.map((w) => w.id).join(' · ')}`,
       '모든 작업과 검증을 끝낸 뒤 completed 로 바꾼다.')
     const planText = stripComments(docs.plan.lines.join('\n'))
-    const log = /##\s*실행 기록[\s\S]*?(?=\n##\s|\n*$)/.exec(planText)?.[0] ?? ''
+    const log = sectionBlock(SECTION.executionLog).exec(planText)?.[0] ?? ''
     const logged = new Set(idsIn(log).filter((id) => id.startsWith('WP-')))
     const missing = wps.filter((w) => !logged.has(w.id))
     if (missing.length) err('plan.md', `\`completed\` 인데 실행 기록이 없는 작업이 있다: ${missing.map((w) => w.id).join(' · ')}`,

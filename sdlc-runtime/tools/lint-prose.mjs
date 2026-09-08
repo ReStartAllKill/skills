@@ -7,6 +7,9 @@ import {
   SUPPORTED_SCHEMA_VERSIONS, schemaVersion,
 } from './artifact-parse.mjs'
 import { loadLock } from './upstream.mjs'
+/** 수용 기준이 서술문으로 끝나는지. 한국어는 «다», 영문은 마침표가 그 자리다 — 어미 규칙이라
+ *  lang 번들로 옮길 첫 후보다. */
+const AC_SENTENCE = /(?:다|다\.|[.!?])$/
 
 const argv = process.argv.slice(2)
 if (argv.includes('--version')) {
@@ -211,7 +214,7 @@ for (const d of Object.values(docs)) {
           : '한 항목이 길어지면 그것은 대개 두 항목이다. 갈라 쓰거나 아래 층(spec·plan)으로 내린다.')
     }
     // 수용 기준은 서술문으로 작성해야 한다.
-    if (e.kind === 'ac' && !/(다|다\.)$/.test(e.title.trim())) {
+    if (e.kind === 'ac' && !AC_SENTENCE.test(e.title.trim())) {
       add('warn', d.name, e.line + 1, 'untestable-ac', `${e.id} 이 서술문으로 끝나지 않는다`,
         '«<언제>이면 시스템은 <무엇을> 한다» 꼴로 쓴다. 명사로 끝나면 그건 기준이 아니라 항목 이름이다.')
     }
