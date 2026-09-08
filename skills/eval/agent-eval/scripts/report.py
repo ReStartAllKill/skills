@@ -79,13 +79,18 @@ def main():
     weights = WEIGHTS_LEGACY if args.weights == "legacy" else WEIGHTS_V2
     by_case = collections.OrderedDict()
     for path in files:
-        data = json.load(open(path))
+        try:
+            with open(path) as source:
+                data = json.load(source)
+            scored = score(data, weights)
+        except (OSError, ValueError) as error:
+            ap.exit(1, f"{path}: {error}\n집계를 중단했다. 입력을 보완한 뒤 다시 실행한다.\n")
         case_id, label = data.get("case", "?"), data.get("label", "?")
         bucket = by_case.setdefault(case_id, [])
         if any(s["label"] == label for s in bucket):
             print(f"[!] {case_id}/{label} 가 두 번 들어왔다 — 표에는 마지막 것만 나오고 평균은 둘 다 센다: {path}",
                   file=sys.stderr)
-        bucket.append(score(data, weights))
+        bucket.append(scored)
 
     roots = args.cases_root or default_cases_roots(files)
     if not any(load_tiers(case_id, roots) for case_id in by_case):
@@ -183,7 +188,7 @@ def main():
                   md_table(["케이스", "설정", "축", "점수", "내역"], weak), ""]
 
     # ── 판정
-    # 즉시 FAIL·하네스 오류는 점수보다 먼저 나온다
+    # 즉시 FAIL은 점수보다 먼저 표시한다. 하네스 오류는 입력 검사에서 거부한다.
     trust = []
     for case_id, scores in by_case.items():
         for s in scores:
@@ -192,13 +197,6 @@ def main():
     if trust:
         lines = lines[:1] + ["", "> **즉시 FAIL 있음 — 점수와 무관하게 반려 대상이다.**", "",
                              md_table(["케이스", "설정", "회차", "사유"], trust), ""] + lines[1:]
-    harness = [[c, s["label"], str(s["harness_errors"])]
-               for c, scores in by_case.items() for s in scores if s["harness_errors"]]
-    if harness:
-        lines += ["## 하네스 오류 (에이전트 실패 아님)", "",
-                  md_table(["케이스", "설정", "회차"], harness),
-                  "", "이 회차들은 다시 돌려야 한다 — 지금 점수에는 미검출로 계상돼 있다.", ""]
-
     if len(labels) >= 2:
         base_label, *rest = labels
         verdicts = []

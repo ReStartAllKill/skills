@@ -122,12 +122,72 @@ def gate_credit(reported, actual):
     return 1.0 if r[1] & a[1] else 0.5
 
 
+def validate_runs(data, weights):
+    """미채점·실행 오류는 집계하지 않는다. 미검출 null과 대조군의 빈 detected는 유효하다."""
+    if not isinstance(data, dict) or not isinstance(data.get("runs"), list) or not data["runs"]:
+        raise ValueError("runs에는 실행 결과가 하나 이상 있어야 한다")
+    problems = []
+    defects = None
+    seen = set()
+    drift_values = []
+    for index, run in enumerate(data["runs"], 1):
+        if not isinstance(run, dict):
+            problems.append(f"회차 {index}: 실행 결과는 객체여야 한다")
+            continue
+        number = run.get("n")
+        prefix = f"회차 {number if type(number) is int else index}"
+        if type(number) is not int or number < 1:
+            problems.append(f"{prefix}: n은 양의 정수여야 한다")
+        elif number in seen:
+            problems.append(f"{prefix}: 중복 회차")
+        else:
+            seen.add(number)
+        if run.get("harness_error"):
+            problems.append(f"{prefix}: 하네스 실행 오류 — 해당 회차를 다시 실행한다")
+        for field in ("gate_reported", "gate_actual"):
+            if not isinstance(run.get(field), str) or not run[field].strip():
+                problems.append(f"{prefix}: {field} 누락 또는 미채점")
+        for field in ("evidence_cited", "evidence_total", "false_positives"):
+            value = run.get(field)
+            if type(value) is not int or value < 0:
+                problems.append(f"{prefix}: {field}는 0 이상의 정수여야 한다 (누락·미채점 불가)")
+        cited, total = run.get("evidence_cited"), run.get("evidence_total")
+        if type(cited) is int and type(total) is int and cited > total:
+            problems.append(f"{prefix}: evidence_cited가 evidence_total을 초과한다")
+        if "drift_isolated" not in run or (run["drift_isolated"] is not None and type(run["drift_isolated"]) is not bool):
+            problems.append(f"{prefix}: drift_isolated는 true·false·null 중 하나여야 한다")
+        drift_values.append(run.get("drift_isolated"))
+        detected = run.get("detected")
+        if not isinstance(detected, dict):
+            problems.append(f"{prefix}: detected 누락 또는 형식 오류")
+            continue
+        if defects is None:
+            defects = set(detected)
+        elif set(detected) != defects:
+            problems.append(f"{prefix}: detected의 결함 ID가 다른 회차와 다르다")
+        for defect, severity in detected.items():
+            if severity is not None and (not isinstance(severity, str) or severity.upper() not in SEVERITY_ORDER):
+                problems.append(f"{prefix}: {defect} 심각도는 Info·Low·Medium·High·Critical 또는 null이어야 한다")
+    # 모든 회차가 null이면 선행 결함이 없는 케이스다. 일부만 null이면 채점 누락이다.
+    if any(value is None for value in drift_values) and any(value is not None for value in drift_values):
+        problems.append("drift_isolated 일부 회차 미채점 — 선행 결함이 없을 때만 모든 회차에 null을 사용한다")
+    expected = data.get("expected_severity")
+    if isinstance(expected, dict) and expected and set(expected) != defects:
+        problems.append("detected의 결함 ID가 expected_severity와 다르다")
+    if weights.get("심각도 정확도", 0) and defects:
+        for defect in sorted(defects):
+            value = expected.get(defect) if isinstance(expected, dict) else None
+            if not isinstance(value, str) or any(s.strip().upper() not in SEVERITY_ORDER for s in value.split("|")):
+                problems.append(f"expected_severity.{defect} 누락 또는 형식 오류")
+    if problems:
+        raise ValueError(f"{data.get('label', '?')}: 평가 입력이 유효하지 않다\n  " + "\n  ".join(problems))
+
+
 def score(data, weights=None):
     weights = weights or WEIGHTS
+    validate_runs(data, weights)
     runs = data["runs"]
     k = len(runs)
-    if k == 0:
-        raise SystemExit(f"{data.get('label', '?')}: 회차가 하나도 없다 — 실행이 전부 실패했는지 확인해라")
     defects = list(runs[0]["detected"].keys()) if runs else []
     opportunities = k * len(defects)
 
@@ -219,7 +279,6 @@ def score(data, weights=None):
         "detection_ratio": found / opportunities if opportunities else 0,
         "immediate_fails": fails,
         "run_totals": run_totals,
-        "harness_errors": [r["n"] for r in runs if r.get("harness_error")],
         "cost": {
             "tokens": mean_of(runs, "tokens"),
             "tools": mean_of(runs, "tools"),
@@ -334,9 +393,6 @@ def verdict(scores):
         if s["immediate_fails"]:
             detail = "; ".join(f"run {n}: {why}" for n, why in s["immediate_fails"])
             print(f"\n[즉시 FAIL] {s['label']} — {detail}")
-        if s["harness_errors"]:
-            print(f"[!] {s['label']}: 하네스 오류로 비정상 종료한 회차 {s['harness_errors']} "
-                  "— 에이전트 실패로 세지 말고 다시 돌려라")
     if len(scores) < 2:
         return
     base, *rest = scores
@@ -379,17 +435,11 @@ def main():
     weights = WEIGHTS_LEGACY if args.weights == "legacy" else WEIGHTS_V2
     scores = []
     for path in args.files:
-        data = json.load(open(path))
-        # 미채점 null 은 축마다 다른 방향으로 조용히 점수가 된다(오탐 null→만점, 드리프트 null→해당없음).
-        # 채점이 덜 된 채로 집계하지 않도록 전 필드를 본다.
-        for field in ("gate_reported", "evidence_cited", "false_positives", "drift_isolated"):
-            blank = [r["n"] for r in data["runs"] if r.get(field) is None]
-            if blank and not (field == "drift_isolated" and len(blank) == len(data["runs"])):
-                print(f"[!] {path}: {field} 미채점 회차 {blank} — 채점 후 다시 돌려라", file=sys.stderr)
-        blank_detect = [r["n"] for r in data["runs"] if all(v is None for v in r["detected"].values())]
-        if blank_detect:
-            print(f"[!] {path}: detected 가 통째로 비어 있다 (회차 {blank_detect})", file=sys.stderr)
-        scores.append(score(data, weights))
+        try:
+            with open(path) as source:
+                scores.append(score(json.load(source), weights))
+        except (OSError, ValueError) as error:
+            ap.exit(1, f"{path}: {error}\n집계를 중단했다. 입력을 보완한 뒤 다시 실행한다.\n")
 
     for s in scores:
         print_raw(s, args.md)

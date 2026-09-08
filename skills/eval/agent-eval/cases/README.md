@@ -88,6 +88,15 @@ python3 ${CLAUDE_PLUGIN_ROOT}/skills/eval/agent-eval/scripts/report.py <BEFORE �
 
 인자 순서가 곧 비교 기준이다 — **첫 라벨이 BEFORE** 로 잡힌다.
 
+`scorecard.py`와 `report.py`는 필수 채점값 누락이나 하네스 실행 오류가 있으면 종료 코드 1로
+집계를 중단한다. 기존 보고서는 덮어쓰지 않는다. 미채점 회차는 보완하고 실행 오류 회차는 다시 실행한다.
+`evidence_cited`·`evidence_total`·`false_positives`는 0 이상의 정수여야 하며, 인용 수는 전체 증거 수를
+초과할 수 없다. 기본 배점(v2)에서는 각 결함의 `expected_severity`가 필요하다.
+
+`detected`의 `null`은 미검출, 빈 객체는 결함 없는 대조군을 뜻하므로 유효하다.
+`drift_isolated`는 선행 결함이 없는 케이스에서 모든 회차가 `null`일 때만 해당 없음으로 처리한다.
+일부 회차만 `null`이면 채점 누락이다. 회차 번호와 결함 ID도 일관되어야 한다.
+
 ## 병렬
 
 ```bash
