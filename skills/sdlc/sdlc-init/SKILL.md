@@ -19,7 +19,8 @@ description: '저장소에 SDLC 프로필·승인 가드·산출물 검사·CI �
    `.claude/agents`에서 역할을 조사한다. 근거를 찾지 못한 값은 비우고 필요한 판단을 묻는다.
    `spec_dir`는 기본 `.sdlc/specs`이며 문서와 검증 로그는 커밋할 수 있어야 한다.
    `lang`은 산출물 언어이며 레포 설정이다(기본 `ko`). 대화 언어를 따르지 않는다 —
-   기존 문서의 언어를 보고 정하고, 번들이 없는 언어는 적지 않는다.
+   기존 문서의 언어를 보고 정한다. 문체 번들(`<sdlc_runtime>/locales/<lang>.mjs`)과 템플릿
+   (`assets/<lang>/`)이 둘 다 있는 언어만 적는다. 지금은 `ko`와 `en`이다.
    초안을 보여주고 사용자 확인 후 `.claude/spec-profile.yml`에 저장한다.
    PR 키(`pr_base`·`pr_workspace_dirs`·`pr_split_dir`·`pr_split_hint`·`pr_review_focus`)는
    `/create-pr`을 쓸 때만 필요하다. 워크스페이스 설정과 CI의 라벨·경로 규칙에서 근거를 찾고,

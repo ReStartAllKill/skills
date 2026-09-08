@@ -327,6 +327,12 @@ node <sdlc_runtime>/tools/lint-prose.mjs      <산출물 폴더> [--strict]
 1. `.claude/spec-profile.yml`을 읽는다. 없으면 `/sdlc-init`을 먼저 돌린다 — 프로필을 지어내지
    않는다. 버전 없는 프로필은 v1, `sdlc_runtime`이 없으면 `references/runtime.md`의 발견
    순서를 따른다.
+
+   **산출물 언어는 프로필의 `lang`이다**(없으면 `ko`). **대화 언어를 따르지 않는다** — 사슬은
+   커밋되는 계약이라 한 레포에 한 언어여야 하고, CI에는 언어를 물어볼 대화가 없다. 대화 언어와
+   다르면 산출물은 `lang`으로 쓰고 그 사실을 한 줄로 알린다. 템플릿도 그 언어판을 쓴다.
+   계약 낱말(`근거:`·`basis:`)은 `lang`과 무관하게 양쪽 다 통한다 — 위 「계약 낱말은 두 언어를
+   다 받는다」.
 2. 이 문서와 `references/prose.md`를 읽는다. 다른 참조는 스킬이 지정할 때만 읽는다. 런타임
    도구의 소스는 읽지 않는다 — 검사기가 하는 말은 실행하면 나온다.
 3. `schema_version`은 사슬의 첫 문서(finding·intent)면 프로필의 `sdlc_version`, 하위(spec·plan)면

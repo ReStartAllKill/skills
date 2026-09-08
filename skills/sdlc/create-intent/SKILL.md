@@ -19,7 +19,7 @@ description: '변경의 목적·목표·범위를 intent.md로 작성한다. 구
    두 경로는 각각 자기 문서의 폴더를 기준으로 하며 같은 문서 쌍을 가리켜야 한다.
 2. 문제를 겪는 대상, 기대 결과, 제약, 범위 밖 항목을 확인한다. 입력에 없는 제품 판단만 묻는다.
 3. 규약의 기준으로 위험 등급(`tier`)을 정하고 근거를 한 줄로 보고한다.
-4. `assets/intent-template.md`를 사용해 `<spec_dir>/<YYYY-MM-DD>-<slug>/intent.md`에 쓴다.
+4. `assets/<lang>/intent-template.md`를 사용해 `<spec_dir>/<YYYY-MM-DD>-<slug>/intent.md`에 쓴다.
    `OUT-*`에는 관찰 가능한 결과와 `확인:` 방법을 적는다. Must 결과는 후속 명세의 요구사항과 연결한다.
 5. 되돌리기 어려운 결정은 `<sdlc_runtime>/references/adr.md`의 「판정」 기준에 따라 ADR로 관리한다.
    기존 ADR을 `decisions:`에 버전을 고정해 참조한다. ADR이 없으면 `/create-adr`로 먼저 작성하고

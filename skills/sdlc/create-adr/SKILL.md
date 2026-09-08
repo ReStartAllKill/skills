@@ -35,7 +35,7 @@ node <sdlc_runtime>/tools/adr-index.mjs <저장소 루트> --next
 
 ## 2. 작성
 
-`assets/adr-template.md`를 사용해 `<adr_dir>/ADR-{NNN}-{kebab-slug}.md`에 작성한다.
+`assets/<lang>/adr-template.md`를 사용해 `<adr_dir>/ADR-{NNN}-{kebab-slug}.md`에 작성한다.
 
 - **적용 범위(`scope`):** 결정이 적용되는 코드 경로를 적는다. 구현 에이전트에게 ADR을 전달하고
   `confirms`의 구현 불일치를 검사하는 기준이다.

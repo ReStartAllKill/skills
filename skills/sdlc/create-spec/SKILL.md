@@ -26,7 +26,7 @@ description: '승인된 intent.md를 바탕으로 동작 명세와 수용 기준
    변경이 여러 코드 저장소에 걸쳐도 **spec은 한 벌**이다. 수용 기준마다 어느 저장소가 만드는지를
    `` `scope: <repo>` ``로 적는다(규약 「변경이 여러 레포에 걸치면」). 프로필에 `spec_consumers`가
    있으면 배정되지 않은 Must 수용 기준을 검사기가 막는다.
-5. `assets/spec-template.md`로 작성한다. FR/NFR의 `근거:`에 OUT/CON을 연결하고,
+5. `assets/<lang>/spec-template.md`로 작성한다. FR/NFR의 `근거:`에 OUT/CON을 연결하고,
    정상·오류·경계 동작을 검증 가능한 수용 기준으로 쓴다.
    외부 인터페이스의 필드·이벤트는 spec에, 내부 구조·함수·파일·라이브러리는 plan에 둔다.
 6. 명세 디렉터리에서 `git log -1 --format=%h -- intent.md`를 실행해 `intent_version`에 기록한다.

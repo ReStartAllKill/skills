@@ -12,7 +12,7 @@ import { adrSeam, checkAdr, checkPins } from './adr-check.mjs'
 import { LOCK_FILE, upstreamSeam, loadLock, verifyLock, findUpstream, headOf, sameRepo } from './upstream.mjs'
 import { loadBands, revisedBy } from './bands.mjs'
 import { loadPolicy, routeActive, STAGES } from './autonomy.mjs'
-import { FIELD, MARKER, BLOCKED, SECTION, hasAlias, sectionBlock, RE_NA, RE_NA_WITH_BASIS } from './keywords.mjs'
+import { FIELD, MARKER, BLOCKED, SECTION, hasAlias, sectionBlock, RE_NA, RE_NA_WITH_BASIS, RE_BAND_NO_CHANGE } from './keywords.mjs'
 import { useLocale } from './locale.mjs'
 
 const argv = process.argv.slice(2)
@@ -182,7 +182,7 @@ if (docs.finding && !TEMPLATE) {
   /** 밴드를 조정했다면 등록부 기록을 요구하고, 조정하지 않았다면 근거를 요구한다. */
   if (f.fm.status === 'rejected') {
     const body = stripComments(f.lines.join('\n'))
-    const noChange = /밴드\s*조정\s*:\s*«?\s*조정\s*없음\s*[—–-]\s*\S/.test(body)
+    const noChange = RE_BAND_NO_CHANGE.test(body)
     if (!noChange) {
       if (!band) {
         err(f.name, '기각인데 `band` 도 «조정 없음» 도 없다',

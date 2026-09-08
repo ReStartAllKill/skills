@@ -171,7 +171,7 @@ claude plugin install restart-harness
 ```
 .claude-plugin/     plugin.json (skills 배열이 정본) · marketplace.json
 skills/             스킬만 산다 — 여기 있는 것은 전부 SKILL.md 를 가진다
-  sdlc/<이름>/      SKILL.md · assets/ · references/ · scripts/ · evals/
+  sdlc/<이름>/      SKILL.md · assets/<언어>/ · references/ · scripts/ · evals/
   eval/agent-eval/  SKILL.md · rubrics/ · scripts/ · cases/
 sdlc-runtime/       규약 · 검사기 · 참조 문서. 스킬 · 훅 · CI 가 함께 쓴다
 agents/             eval-case-author · eval-grader

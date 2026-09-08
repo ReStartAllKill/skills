@@ -18,7 +18,7 @@ finding의 `accepted`는 사람의 승인이 아니라 경로 확정을 뜻한�
 
 1. 신호 출처와 `trigger`, 허용 범위를 확인한다. `band_breach`면 `<sdlc_runtime>/references/bands.md`와
    프로필의 밴드 등록부를 읽는다. 밴드는 지표의 허용 범위이며, 기준값이나 권한을 추정해서 채우지 않는다.
-2. `assets/finding-template.md`로 작성한다.
+2. `assets/<lang>/finding-template.md`로 작성한다.
    - `EV-*`: 측정값·기준·시각·재현 명령.
    - `HYP-*`: EV를 가리키는 `근거:`와 반증 방법.
    - 조치: 실제 수행한 일, 결과, 허용 근거. 조사하지 못한 범위와 수행하지 않은 조치도 적는다.

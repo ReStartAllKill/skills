@@ -21,7 +21,7 @@ description: '승인된 spec.md를 바탕으로 구현 계획과 작업 목록�
    상류에서 온 spec이면 **`scope`가 이 레포인 수용 기준만** 이 계획의 몫이다. 남의 몫을 `covers`에
    적으면 검사기가 막는다.
 2. 현재 코드를 `file:line`으로 기록한다. 확인하지 못한 제약은 가정으로 구분한다.
-3. `assets/plan-template.md`로 작성한다. `target_branch`, `pr_strategy`, 롤백 방법과
+3. `assets/<lang>/plan-template.md`로 작성한다. `target_branch`, `pr_strategy`, 롤백 방법과
    적용할 추가 게이트를 채운다. 설계 결정에는 선택 이유와 기각한 대안을 남긴다.
 4. 작업을 나누고 `files`, `depends`, `covers`, `tests`, `verify`를 채운다.
    의존 관계를 기준으로 순서를 정하고 저장소의 아키텍처 계층 경계를 지킨다.

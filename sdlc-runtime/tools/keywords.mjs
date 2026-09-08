@@ -20,6 +20,8 @@ export const isAlias = (text, aliases) => aliases.some((a) => squash(text) === s
 export const canonical = (text, table) =>
   Object.entries(table).find(([, aliases]) => isAlias(text, aliases))?.[0] ?? null
 
+const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
 /** 항목의 필드 키. `근거:` 처럼 줄 앞에 선다. WP 필드(files·depends·covers·tests·verify)는 처음부터 영어다. */
 export const FIELD = {
   basis: ['basis', '근거'],
@@ -57,7 +59,6 @@ export const SECTION = {
   revisit: ['Review and revisit', '확인과 재검토'],
 }
 
-const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 /** `## <절 이름>` 부터 다음 `##` 앞까지. 별칭 전부를 받는다. */
 export const sectionBlock = (aliases) =>
   new RegExp(`##\\s*(?:${aliases.map(esc).join('|')})[\\s\\S]*?(?=\\n##\\s|\\n*$)`)
@@ -68,3 +69,14 @@ export const sectionHeading = (aliases) =>
 /** 필수 절을 «정말 없다» 로 면제하는 말. 근거를 요구하는 것이 요점이라 두 형태를 함께 본다. */
 export const RE_NA = /^\s*(?:N\/A|해당\s*없음)/i
 export const RE_NA_WITH_BASIS = /(?:N\/A|해당\s*없음)\s*[—–-]\s*\S/i
+
+/** 별칭을 정규식 조각으로 바꾼다. 낱말 사이의 공백은 없어도 되게 푼다 — 원래 규칙이 `밴드조정` 도
+ *  받았고, 별칭을 그대로 이어붙이면 그 여유가 사라진다. */
+const loose = (aliases) => aliases.map((a) => esc(a).replace(/\\?\s+/g, '\\s*')).join('|')
+
+/** finding 을 기각하면서 밴드는 안 건드리기로 했다는 선언. 근거를 요구하는 것이 요점이다.
+ *  «조정 없음» 만 적고 왜인지 안 적으면, 같은 신호가 다음 실행에서 새 발견으로 다시 선다. */
+export const BAND_ADJUSTMENT = ['band adjustment', '밴드 조정']
+export const NO_ADJUSTMENT = ['no adjustment', '조정 없음']
+export const RE_BAND_NO_CHANGE = new RegExp(
+  `(?:${loose(BAND_ADJUSTMENT)})\\s*:\\s*«?\\s*(?:${loose(NO_ADJUSTMENT)})\\s*[—–-]\\s*\\S`, 'i')

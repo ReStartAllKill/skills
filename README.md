@@ -181,7 +181,7 @@ that prompt change help?" with a number rather than an impression.
 ```
 .claude-plugin/     plugin.json (the skills array is authoritative) · marketplace.json
 skills/             skills only — everything here has a SKILL.md
-  sdlc/<name>/      SKILL.md · assets/ · references/ · scripts/ · evals/
+  sdlc/<name>/      SKILL.md · assets/<lang>/ · references/ · scripts/ · evals/
   eval/agent-eval/  SKILL.md · rubrics/ · scripts/ · cases/
 sdlc-runtime/       conventions, checkers, reference docs — used by skills, hooks and CI
 agents/             eval-case-author · eval-grader

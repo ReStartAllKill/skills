@@ -4,6 +4,14 @@
 
 ### Added
 
+- **English templates, and the rule that says which one to use.** Every artifact template moves to
+  `assets/<lang>/`, `en` versions sit beside the Korean ones, and the shared skill procedure now
+  states that artifacts are written in the profile's `lang` and never in the conversation's
+  language. Section titles are not part of the contract, so a missing section in one language
+  would fail nothing and simply never be written by anyone using it — a smoke test holds the two
+  sets to the same shape. The last contract literal, the band adjustment a dismissed finding
+  declares, gained its English form; that is fourteen, not thirteen.
+
 - **English artifacts are supported.** `lang: en` selects `sdlc-runtime/locales/en.mjs`, with its
   own vagueness, wordiness and self-reference lists and its own budgets. The word lists now take
   regular expressions as well as substrings, because English needs word boundaries — without them

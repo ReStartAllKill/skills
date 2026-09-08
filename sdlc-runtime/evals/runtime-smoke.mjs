@@ -1107,6 +1107,27 @@ ${body}
   assert(!/long-item/.test(r.out), `세 문장짜리 항목을 길다고 했다 — 마침표를 종결부호로 세고 있다:\n${r.out}`)
 })
 
+test('템플릿의 언어판은 같은 구조여야 한다 — 한쪽만 고치면 그 절이 조용히 사라진다', () => {
+  /** 절 제목은 계약이 아니라 검사기가 안 본다. 그래서 en 템플릿에서 절 하나가 빠져도 아무도
+   *  실패하지 않고, 그 언어로 쓰는 사람만 그 절을 영영 안 쓰게 된다. */
+  const shape = (file) => readFileSync(file, 'utf8').split('\n')
+    .filter((l) => /^#{2,3} /.test(l))
+    .map((l) => `${l.match(/^#+/)[0]} ${(l.match(/\b(OUT|CON|Q|SCN|FR|NFR|EDGE|SQ|SD|TD|WP|RISK|PQ|EV|HYP|FQ|ALT|RV|ASM)-\d+/) ?? ['prose'])[0]}`)
+
+  for (const [skill, name] of [['create-intent', 'intent'], ['create-spec', 'spec'], ['create-plan', 'plan'],
+                               ['create-adr', 'adr'], ['create-finding', 'finding']]) {
+    const dir = join(findSkill(skill, HERE), 'assets')
+    const langs = readdirSync(dir).filter((l) => existsSync(join(dir, l, `${name}-template.md`)))
+    assert(langs.includes('ko'), `${skill}: ko 템플릿이 없다`)
+    const base = shape(join(dir, 'ko', `${name}-template.md`))
+    for (const lang of langs) {
+      const other = shape(join(dir, lang, `${name}-template.md`))
+      assert(base.length === other.length && base.every((v, i) => v === other[i]),
+        `${skill} 의 ko 와 ${lang} 이 어긋난다 (${base.length}절 vs ${other.length}절):\n  ko  ${base.join(' | ')}\n  ${lang}  ${other.join(' | ')}`)
+    }
+  }
+})
+
 console.log('\n런타임 스모크 평가\n')
 for (const r of results) {
   console.log(`  ${r.ok ? '통과' : '✗ 실패'}  ${r.name}`)
