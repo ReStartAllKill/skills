@@ -976,6 +976,9 @@ test('번들은 같은 모양이어야 한다 — 키 하나가 빠지면 그 �
       assert(m.budget[kind]?.doc > 0, `${name}: budget.${kind} 이 없다`)
     }
     assert(m.limits.sentences > 0 && m.limits.title > 0 && m.limits.ac > 0, `${name}: limits 가 비었다`)
+    // written 은 산출물에 그대로 들어간다 — 키가 빠지면 계획서에 `undefined` 가 적힌다.
+    for (const k of ['divergence', 'none', 'noPr']) assert(typeof m.written[k] === 'string' && m.written[k], `${name}: written.${k} 이 없다`)
+    for (const k of ['done', 'partial', 'failed']) assert(typeof m.written.result[k] === 'string' && m.written.result[k], `${name}: written.result.${k} 이 없다`)
     // /g 가 붙은 정규식은 .test 가 상태를 가져 한 줄 걸러 한 번씩만 걸린다.
     for (const w of m.vague) assert(!(w instanceof RegExp) || !w.flags.includes('g'), `${name}: vague 에 /g 정규식이 있다 — ${w}`)
     for (const [w] of m.translationese) assert(!(w instanceof RegExp) || !w.flags.includes('g'), `${name}: translationese 에 /g 정규식이 있다 — ${w}`)
@@ -1131,6 +1134,71 @@ test('템플릿의 언어판은 같은 구조여야 한다 — 한쪽만 고치�
     }
   }
 })
+
+test('mark 는 파생 필드를 안 적고 계획대로 끝난 작업을 한 줄에 묶는다', () => {
+  /** 커밋 SHA·검증 로그 이름은 plan-progress 가 trailer 와 로그 폴더에서 직접 찾는다. 그 사본을
+   *  줄에 적으면 아무도 안 읽는 글자가 작업 수만큼 쌓이고, 정작 이 줄에만 있는 값인
+   *  «계획과의 차이» 가 그 사이에 묻힌다. */
+  const d = temp('sdlc-mark')
+  put(join(d, '.claude/spec-profile.yml'), 'sdlc_version: 4\nspec_dir: .sdlc/specs\nverify: echo ok\n')
+  const spec = join(d, '.sdlc/specs/2026-09-08-m')
+  const plan = join(spec, 'plan.md')
+  const wp = (id, file) => `- [ ] **${id} — 변경 ${id}**\n` +
+    `  - files: \`${file}\`\n  - depends: 없음\n  - covers: FR-001 (AC-001)\n` +
+    `  - tests: 결과가 참이다\n  - verify: true\n`
+  put(plan, `---
+artifact: plan
+schema_version: 4
+status: in_progress
+---
+
+## 작업 \`[필수 · 모든 티어]\`
+
+${wp('WP-001', 'src/a.js')}
+${wp('WP-002', 'src/b.js')}
+${wp('WP-003', 'src/c.js')}
+## 실행 기록
+
+해당 없음 — 아직 실행 전
+
+### 변경 기록
+
+- 2026-09-08 eval — 초안 작성.
+`)
+  for (const f of ['a', 'b', 'c']) put(join(d, `src/${f}.js`), `test('결과가 참이다', () => {})\n`)
+  git(d, 'init', '-q'); git(d, 'config', 'user.email', 'eval@local'); git(d, 'config', 'user.name', 'eval')
+  git(d, 'add', '.claude', '.sdlc'); git(d, 'commit', '-qm', 'plan born')
+  const planPath = '.sdlc/specs/2026-09-08-m/plan.md'
+  for (const [id, f] of [['WP-001', 'a'], ['WP-002', 'b'], ['WP-003', 'c']]) {
+    git(d, 'add', `src/${f}.js`); git(d, 'commit', '-qm', `feat: ${f}`, '-m', `SDLC-Task: ${id}\nSDLC-Plan: ${planPath}`)
+  }
+  let r = run(process.execPath, [tool('verify-run.mjs'), spec, '--level', '1', '--tasks', 'WP-001,WP-002,WP-003', '--', 'echo ok'])
+  assert(r.code === 0, r.out)
+
+  const mark = (id, ...rest) => run(process.execPath, [tool('plan-check.mjs'), spec, 'mark', id, ...rest])
+  const logLines = () => readFileSync(plan, 'utf8').split('## 실행 기록')[1].split('### 변경 기록')[0]
+    .split('\n').filter((l) => l.startsWith('- '))
+
+  r = mark('WP-001', '--note', '없음')
+  assert(r.code === 0, r.out)
+  assert(!/commit:|verify:/.test(logLines().join('\n')), `파생 필드를 적었다:\n${logLines().join('\n')}`)
+
+  r = mark('WP-002', '--note', '없음')
+  assert(r.code === 0, r.out)
+  assert(logLines().length === 1, `계획대로 끝난 두 작업이 두 줄이 됐다:\n${logLines().join('\n')}`)
+  assert(/WP-001 WP-002/.test(logLines()[0]), `앞줄에 ID 를 안 보탰다:\n${logLines()[0]}`)
+
+  // 차이가 있는 작업은 제 줄을 가진다 — 묶으면 그 문장이 남의 줄에 얹힌다.
+  r = mark('WP-003', '--note', '캐시 무효화를 뒤로 미뤘다')
+  assert(r.code === 0, r.out)
+  assert(logLines().length === 2 && /캐시 무효화/.test(logLines()[1]), `차이 있는 줄을 따로 안 세웠다:\n${logLines().join('\n')}`)
+
+  // 묶인 줄도 검사기가 세 작업 모두의 기록으로 읽어야 한다.
+  r = run(process.execPath, [tool('plan-progress.mjs'), spec, '--json'])
+  const notes = JSON.parse(r.out).notes.filter((n) => n.msg.includes('§실행 기록'))
+  assert(notes.length === 0, `묶인 줄을 기록 없음으로 읽었다: ${JSON.stringify(notes)}`)
+})
+
 
 console.log('\n런타임 스모크 평가\n')
 for (const r of results) {

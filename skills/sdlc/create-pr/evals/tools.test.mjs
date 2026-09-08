@@ -74,7 +74,7 @@ pr_strategy: 단일 PR
 
 ## 실행 기록
 
-- 2026-09-08 WP-001 — 완료 · commit: \`abc1234\` · PR 없음 · 계획과의 차이: 없음
+- 2026-09-08 WP-001 — 완료 · PR 없음 · 계획과의 차이: 없음
 `)
   git(d, 'add', '-A'); git(d, 'commit', '-qm', 'feat: cancel')
   return d

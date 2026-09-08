@@ -608,7 +608,7 @@ if (!TEMPLATE) {
     const logged = new Set(idsIn(log).filter((id) => id.startsWith('WP-')))
     const missing = wps.filter((w) => !logged.has(w.id))
     if (missing.length) err('plan.md', `\`completed\` 인데 실행 기록이 없는 작업이 있다: ${missing.map((w) => w.id).join(' · ')}`,
-      '§실행 기록에 작업 ID, 결과, 커밋, 계획과의 차이를 남긴다.')
+      '§실행 기록에 작업 ID, 결과, 계획과의 차이를 남긴다. 계획대로 끝난 작업은 한 줄에 묶어도 된다.')
     const unchecked = docs.plan.lines.filter((line, i) => docs.plan.live[i] && /^\s*- \[ \]/.test(line))
     if (unchecked.length) err('plan.md', `\`completed\` 인데 체크되지 않은 완료 조건이 ${unchecked.length}개 있다`,
       '작업과 완료 정의의 체크박스를 모두 확인한다. 필수 수동 검증이 남았으면 completed 로 바꾸지 않는다.')

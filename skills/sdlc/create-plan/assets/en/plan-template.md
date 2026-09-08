@@ -155,9 +155,12 @@ affects: WP-002 · owner: <name> · state: Open
 
 ## Execution log `[required · all tiers]`
 
-<!-- Where the plan and reality differ. Before execution starts, write `N/A — not started`. -->
+<!-- Where the plan and reality differ. Before execution starts, write `N/A — not started`. Do not
+     write commit SHAs or verify log names — plan-progress finds both from the trailers and the log
+     directory. Tasks that went as planned are folded onto one line by `plan-check mark`. -->
 
-- YYYY-MM-DD WP-001 — <done/partial/failed> · commit: <SHA> · <PR link> · differs from plan: <none, or what>
+- YYYY-MM-DD WP-001 — <partial/failed> · <PR link> · differs from plan: <what differed, and how>
+- YYYY-MM-DD WP-002 WP-003 — done · no PR · differs from plan: none
 
 ### History
 

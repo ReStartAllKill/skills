@@ -105,3 +105,13 @@ export const limits = { sentences: 4, title: 88, field: 440, ac: 220 }
 export const tradeoff = /trade-?off|cost|give[s]? up|sacrific|accept(s|ed)? (the )?(risk|limit|constraint)|in exchange|at the price of/i
 /** Is a revisit condition only a deadline? */
 export const deadlineOnly = /\d\s*(months?|weeks?|quarters?|years?|days?)|next quarter|periodic(ally)? review|revisit (in|after)/i
+
+/** Words the runtime **writes into** an artifact. Where `keywords.mjs` is what a checker reads,
+ *  this is what a tool writes: reading accepts both languages, writing has to pick one, and the
+ *  profile's `lang` is that pick. */
+export const written = {
+  result: { done: 'done', partial: 'partial', failed: 'failed' },
+  divergence: 'differs from plan',
+  none: 'none',
+  noPr: 'no PR',
+}

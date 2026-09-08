@@ -4,7 +4,8 @@ import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs'
 import { resolve, join, relative, basename, dirname } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { RESULT as RESULTS, SECTION, canonical, sectionHeading } from './keywords.mjs'
+import { RESULT as RESULTS, SECTION, NO_DIVERGENCE, NO_PR, canonical, isAlias, sectionHeading } from './keywords.mjs'
+import { useLocale } from './locale.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const argv = process.argv.slice(2)
@@ -23,6 +24,9 @@ if (!dirArg || !['mark', 'commit'].includes(CMD ?? '')) {
 const DIR = resolve(dirArg)
 const PLAN = join(DIR, 'plan.md')
 if (!existsSync(PLAN)) die(`plan.md 가 없다 — ${DIR}`)
+/** 이 줄은 사람이 읽는 산출물에 들어간다 — 프로필의 `lang` 이 어느 낱말로 쓸지 고른다. */
+const W = useLocale(DIR).written
+const esc = (x) => String(x).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 let ROOT = null
 for (let d = DIR, prev = null; d !== prev; prev = d, d = resolve(d, '..')) {
@@ -62,10 +66,10 @@ if (status !== 'in_progress') {
 if (CMD === 'mark') {
   if (!TASK) die('어느 작업인지 없다 — `mark <WP-id>`')
   const NOTE = flag('--note')
-  const RESULT = flag('--result') ?? '완료'
+  const RESULT = flag('--result') ?? W.result.done
   const RESULT_KEY = canonical(RESULT, RESULTS)
-  const PR = flag('--pr') ?? 'PR 없음'
-  if (!NOTE) die('`--note "<계획과의 차이>"` 가 없다 — 기계가 만들 수 없는 값이라 비워 둘 수 없다. 차이가 없으면 `--note 없음`.')
+  const PR = flag('--pr') ?? W.noPr
+  if (!NOTE) die(`\`--note "<${W.divergence}>"\` 가 없다 — 기계가 만들 수 없는 값이라 비워 둘 수 없다. 차이가 없으면 \`--note ${W.none}\`.`)
   if (!RESULT_KEY) die('`--result` 는 완료·부분·실패 (또는 done·partial·failed) 중 하나다.')
 
   const row = progress.rows.find((r) => r.id === TASK)
@@ -79,12 +83,19 @@ if (CMD === 'mark') {
   }
 
   const today = new Date().toLocaleDateString('sv-SE')
-  const commits = row.commits.map((c) => `\`${c.slice(0, 7)}\``).join(' ')
-  const verify = row.verified.map((v) => `\`${v}\``).join(' ')
-  const line = `- ${today} ${TASK} — ${RESULT}` +
-    (commits ? ` · commit: ${commits}` : '') +
-    (verify ? ` · verify: ${verify}` : '') +
-    ` · ${PR} · 계획과의 차이: ${NOTE}`
+  /** 커밋 SHA 와 검증 로그 이름은 적지 않는다. plan-progress 는 trailer 와 로그 폴더에서 그 둘을
+   *  직접 찾고 그쪽을 증거로 삼으므로, 여기 적은 사본은 아무도 읽지 않으면서 줄만 길게 만든다.
+   *  이 줄에만 있는 값은 «계획과의 차이» 하나다. */
+  const line = `- ${today} ${TASK} — ${RESULT} · ${PR} · ${W.divergence}: ${NOTE}`
+
+  /** 계획대로 끝난 작업은 같은 날의 앞줄에 ID 만 보탠다. 한 작업에 한 줄씩 쌓으면 레벨 하나가
+   *  줄 여러 개가 되는데, 그 줄들이 함께 말하는 것은 «차이 없음» 하나뿐이다. */
+  const plain = RESULT_KEY === 'done' && isAlias(NOTE, NO_DIVERGENCE) && isAlias(PR, NO_PR)
+  const mergeInto = (text) => {
+    const re = new RegExp(`^(- ${today} WP-\\d{1,4}(?: WP-\\d{1,4})*) — ${esc(RESULT)} · ${esc(PR)} · ${esc(W.divergence)}: ${esc(NOTE)}[ \\t]*$`)
+    const m = re.exec(text)
+    return m ? `${m[1]} ${TASK} — ${RESULT} · ${PR} · ${W.divergence}: ${NOTE}` : null
+  }
 
   // 해당 작업의 체크박스만 갱신한다.
   const box = new RegExp(`^(\\s*[-*]\\s*)\\[ \\](\\s*\\*\\*${TASK}\\b)`, 'm')
@@ -102,13 +113,17 @@ if (CMD === 'mark') {
   })()
   let body = next.slice(bodyFrom, stop)
   const placeholder = /^[ \t]*(?:N\/A|해당\s*없음)[^\n]*$/mi.exec(body)
+  const entries = placeholder ? [] : [...body.matchAll(/^-[ \t][^\n]*(?:\n(?![ \t]*\n|[-*#][ \t]|#)[^\n]*)*/gm)]
+  const last = entries[entries.length - 1]
+  const merged = plain && last ? mergeInto(last[0]) : null
   if (placeholder) {
     body = body.slice(0, placeholder.index) + line + body.slice(placeholder.index + placeholder[0].length)
+  } else if (merged) {
+    body = body.slice(0, last.index) + merged + body.slice(last.index + last[0].length)
+  } else if (last) {
+    body = body.slice(0, last.index + last[0].length) + '\n' + line + body.slice(last.index + last[0].length)
   } else {
-    const entries = [...body.matchAll(/^-[ \t][^\n]*(?:\n(?![ \t]*\n|[-*#][ \t]|#)[^\n]*)*/gm)]
-    const last = entries[entries.length - 1]
-    if (last) body = body.slice(0, last.index + last[0].length) + '\n' + line + body.slice(last.index + last[0].length)
-    else body = body.replace(/\s*$/, '') + `\n\n${line}\n`
+    body = body.replace(/\s*$/, '') + `\n\n${line}\n`
   }
   next = next.slice(0, bodyFrom) + body + next.slice(stop)
 
@@ -116,10 +131,11 @@ if (CMD === 'mark') {
   const nextFm = /^---\n[\s\S]*?\n---\n/.exec(next)?.[0] ?? ''
   if (nextFm !== fm) die('프런트매터가 바뀌었다 — 도구의 버그다. 아무것도 쓰지 않았다.')
 
-  if (DRY) { console.log(`(dry-run) ${TASK} → [x]\n(dry-run) ${line}`); process.exit(0) }
+  const shown = merged ?? line
+  if (DRY) { console.log(`(dry-run) ${TASK} → [x]\n(dry-run) ${shown}`); process.exit(0) }
   writeFileSync(PLAN, next)
   console.log(`${TASK} → [x]  (${relative(ROOT, PLAN)})`)
-  console.log(`  ${line}`)
+  console.log(`  ${shown}`)
   console.log(`\n레벨의 나머지 작업까지 적었으면: plan-check.mjs ${relative(ROOT, DIR)} commit --level <N>`)
 }
 

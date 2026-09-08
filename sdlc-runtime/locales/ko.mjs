@@ -67,3 +67,12 @@ export const limits = { sentences: 4, title: 40, field: 200, ac: 100 }
 export const tradeoff = /감수|대가|비용|포기|제약을 진다|trade-?off|cost|give up|sacrifice/i
 /** 재검토 조건이 기한일 뿐인지. */
 export const deadlineOnly = /\d\s*(?:개월|달|주|분기|년|months?|weeks?|quarters?|years?)|다음 분기|next quarter|뒤에 재검토|정기 검토|periodic review/i
+
+/** 런타임이 산출물에 **써 넣는** 낱말. `keywords.mjs` 가 읽는 낱말이라면 이쪽은 쓰는 낱말이다 —
+ *  읽을 때는 두 언어를 다 받지만 쓸 때는 하나를 골라야 하고, 그 선택이 곧 프로필의 `lang` 이다. */
+export const written = {
+  result: { done: '완료', partial: '부분', failed: '실패' },
+  divergence: '계획과의 차이',
+  none: '없음',
+  noPr: 'PR 없음',
+}

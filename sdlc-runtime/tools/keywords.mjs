@@ -43,6 +43,13 @@ export const RESULT = {
   failed: ['failed', '실패'],
 }
 
+/** §실행 기록 줄의 «계획과의 차이» 라벨. `mark` 가 앞줄을 다시 읽어 묶을 때 본다. */
+export const DIVERGENCE = ['differs from plan', '계획과의 차이']
+/** 차이가 없다는 말. 이 말이면 같은 날의 앞줄에 작업 ID 를 묶는다. */
+export const NO_DIVERGENCE = ['none', '없음', 'N/A']
+/** PR 링크가 아직 없다는 자리표시. `/create-pr` 이 이 자리를 링크로 바꾼다. */
+export const NO_PR = ['no PR', 'PR 없음']
+
 /** 열린 질문이 진행을 막는다는 표시. */
 export const BLOCKED = ['blocked', '막힘']
 /** ADR 대안 중 채택안 표시. */
