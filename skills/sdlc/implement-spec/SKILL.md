@@ -1,180 +1,168 @@
 ---
 name: implement-spec
-description: "스펙의 작업 목록을 레벨 단위로 실행한다 — 같은 레벨은 워크트리 격리로 병렬, 합류점마다 전체 검증. Usage: /implement-spec <스펙 디렉토리 또는 plan.md 경로>"
+description: '승인된 plan.md의 작업을 의존 관계에 따른 실행 레벨 순서로 구현한다. 작업별 Git 워크트리 격리, 병합 후 검증, 완료 증거 기록을 관리하며 중단된 구현을 재개할 때도 사용한다.'
 disable-model-invocation: false
 ---
 
-# Spec Implementation
+# 명세 구현
 
-`/create-plan` 이 만든 `plan.md` 의 작업 목록을 실행한다. **구현은 지루해야 한다** — 창의가 필요하다고
-느껴지면 스펙이 덜 익은 것이고, 밀어붙이지 말고 사용자에게 알리고 `/iterate-spec` 을 권한다.
-코드에서 확인한 제약과 승인된 스펙이 충돌하면 어느 쪽도 임의로 덮어쓰지 않는다.
+사용법: `/implement-spec <명세 디렉터리 또는 plan.md 경로>`
 
-레벨 계산 · 워크트리 · 커밋 · 합류 · 검증 기록 · 프롬프트 생성 · 체크박스 갱신은 **도구가 한다.** 이 명령이 판단하는 것은
-넷뿐이다 — 언제 멈추나, 실패의 원인이 무엇인가, 체크박스를 올려도 되나, 무엇을 사용자에게 알리나.
-규칙의 이유는 `references/rationale.md` 에 있다. 실행에는 읽지 않아도 된다.
+`/create-plan`이 작성한 `plan.md`의 작업 목록을 실행한다. 코드에서 확인한 제약과 승인된 명세가
+충돌하면 임의로 변경하지 않고 `/iterate-spec`을 안내한다.
 
-## Step 0: 적재
+실행 레벨 계산·워크트리 관리·커밋·병합·검증 기록·프롬프트 생성·체크박스 갱신은 런타임 도구가
+수행한다. 에이전트는 중단 여부, 실패 원인, 수용 기준 충족 여부, 보고 내용을 판단한다.
+검증·초기화 명령, 경로, 브랜치는 프로필과 plan에 정의된 값을 사용한다.
+설계 배경이 필요할 때만 이 스킬의 `references/rationale.md`를 읽는다.
 
-1. `.claude/spec-profile.yml` 을 읽는다. 없으면 `/sdlc-init` 을 안내하고 멈춘다. `sdlc_runtime` 이
-   런타임을 찾는 순서는 `references/runtime.md` 가 정본이다.
-   `<sdlc_runtime>/conventions.md` 와 `references/tasks.md` 를 읽는다.
-2. 입력이 스펙 폴더면 `plan.md` 전체를 읽는다. `spec.md` 는 수동 검증 대조 때, `intent.md` 는 «왜» 가
-   필요할 때만 읽는다. 입력이 없으면 `<spec_dir>` 목록을 보여주고 고르게 한다.
-3. 폴더에 `plan.md` 가 없고 `tasks.md` 가 있으면 옛 형식이다 — `references/legacy-spec.md` 를 읽고
-   그 방식으로 한다. 아래 도구는 옛 형식을 읽지 않는다.
-4. 검사기와 실행 순서를 본다. 오류가 있으면 **실행하지 않는다** — 고칠 것은 `/iterate-spec` 이 고친다.
+## 0. 입력과 실행 순서 확인
+
+1. `.claude/spec-profile.yml`을 읽는다. 없으면 `/sdlc-init`을 안내하고 중단한다.
+   런타임 탐색 순서는 `${CLAUDE_PLUGIN_ROOT}/sdlc-runtime/references/runtime.md`를 따른다.
+   `<sdlc_runtime>/conventions.md`와 `<sdlc_runtime>/references/tasks.md`를 읽는다.
+2. `plan.md` 전체를 읽는다. 수용 기준을 대조할 때는 `spec.md`, 변경 목적을 확인할 때는
+   `intent.md`를 읽는다. 입력 경로가 없으면 `<spec_dir>` 목록에서 대상을 확인한다.
+3. `plan.md` 없이 `tasks.md`만 있으면 이 스킬의 `references/legacy-spec.md` 절차를 따른다.
+   아래 도구는 이전 작업 형식을 지원하지 않는다.
+4. 다음 명령으로 산출물과 실행 순서를 확인한다. 오류가 있으면 구현을 시작하지 않고
+   `/iterate-spec`으로 수정한다.
 
    ```sh
-   node <sdlc_runtime>/tools/check-artifacts.mjs <스펙 폴더>
-   node <sdlc_runtime>/tools/plan-levels.mjs   <스펙 폴더>
+   node <sdlc_runtime>/tools/check-artifacts.mjs <명세 디렉터리>
+   node <sdlc_runtime>/tools/plan-levels.mjs <명세 디렉터리>
    ```
 
-## Step 1: 상태 점검
+## 1. 작업 트리와 진행 상태 확인
 
-### 1a. 메인 트리
+메인 작업 트리는 결과를 병합할 현재 체크아웃이다. `git status --porcelain` 출력이 비어 있고
+현재 브랜치가 plan의 `target_branch`여야 한다.
 
-메인 트리는 이 세션이 앉아 있는 clone 이고 모든 레벨의 결과가 모이는 자리다. `git status --porcelain`
-이 비어 있고 브랜치가 plan 의 `target_branch` 여야 한다.
-
-- 더럽다 → 멈춘다. 병렬 결과가 모일 자리가 오염돼 있으면 무엇이 누구 변경인지 갈라낼 수 없다.
-- 브랜치가 없다 → base 에서 만들 것을 제안하고 승인받은 뒤 `git switch -c <target_branch> <base>`.
-- 다른 브랜치에 있다 → 확인받고 `git switch <target_branch>`. 조용히 바꾸지 않는다.
-
-### 1b. 진행 상태 — 체크박스만 믿지 않는다
+- 미커밋 변경이 있으면 중단한다.
+- 대상 브랜치가 없으면 사용자 승인 후 `git switch -c <target_branch> <base>`로 생성한다.
+- 다른 브랜치에 있으면 사용자 확인 후 `git switch <target_branch>`로 전환한다.
 
 ```sh
-node <sdlc_runtime>/tools/plan-progress.mjs <스펙 폴더>
+node <sdlc_runtime>/tools/plan-progress.mjs <명세 디렉터리>
 ```
 
-체크박스는 주장이고 `SDLC-Task` trailer 커밋 · tests 문장의 실재 · verify 기록이 사실이다.
+체크박스를 `SDLC-Task` 트레일러가 있는 커밋, 테스트 문장, 검증 기록과 대조한다.
 
-- `미체크인데 귀속 커밋 있음` → 다시 실행하지 않는다. 검증을 대조하고 §2e 로 간다.
-- `체크됐는데 귀속 커밋 없음` → 멈춘다. 합류가 실패했거나 trailer · 체크가 잘못된 것이다.
-- `더티` → §1a 와 같은 처리다.
+- 미완료로 표시됐지만 귀속 커밋이 있으면 다시 구현하지 않는다. 검증 결과를 대조하고 2e로 진행한다.
+- 완료로 표시됐지만 귀속 커밋이 없으면 중단하고 병합 결과·트레일러·체크박스를 확인한다.
 
-`plan-levels` 의 «다음» 이 시작 레벨이다. 컨텍스트가 날아간 뒤의 재개도 여기서 흡수된다.
-`assets/report-templates.md` 의 «진행 상태» 형식으로 보고하고, 첫 미완료 레벨을 시작하기 전에
-plan 의 status 를 `in_progress` 로 바꾸고 커밋한다.
+`plan-levels`가 표시하는 다음 실행 레벨에서 시작하거나 재개한다.
+`assets/report-templates.md`의 「진행 상태」 형식으로 보고하고, 첫 미완료 레벨을 실행하기 전에
+plan의 상태를 `in_progress`로 변경해 커밋한다.
 
-## Step 2: 레벨 단위 실행
+## 2. 실행 레벨별 구현
 
-`plan-levels` 가 준 레벨 순서대로, 레벨 안은 병렬, 레벨 사이는 직렬이다. 레벨의 `mode` 가 실행 방식이다.
+`plan-levels`가 정한 순서를 따른다. 실행 레벨은 작업 의존 관계로 구분한 단계이며,
+같은 레벨의 처리 방식은 `mode`에 따른다. 레벨 사이에는 순차적으로 진행한다.
 
-| mode | 뜻 | 실행 |
+| mode | 조건 | 실행 방식 |
 |---|---|---|
-| `main` | 작업 하나 | 메인 트리에서 바로. 워크트리를 만들지 않는다 |
-| `parallel` | 여럿 · bootstrap 있음 | 작업마다 워크트리, 한 메시지에서 동시에 |
-| `sequential` | 여럿 · bootstrap 없음 | 워크트리는 만들되 하나씩 |
+| `main` | 작업 하나 | 별도 워크트리 없이 메인 작업 트리에서 실행 |
+| `parallel` | 여러 작업, bootstrap 있음 | 작업별 워크트리에서 병렬 실행 |
+| `sequential` | 여러 작업, bootstrap 없음 | 작업별 워크트리에서 순차 실행 |
 
-### 2a. 워크트리
-
-```sh
-node <sdlc_runtime>/tools/task-worktree.mjs <스펙 폴더> add WP-003
-```
-
-`target_branch` 에서 작업 브랜치를 파고 bootstrap 을 돌린다. 이미 있으면 재개인지 확인한다.
-
-### 2b. 프롬프트를 만들어 `writer_agent` 에 넘긴다
+### 2a. 워크트리 준비
 
 ```sh
-node <sdlc_runtime>/tools/task-brief.mjs <스펙 폴더> WP-003 --worktree <워크트리 경로> [--snippets <파일>]
+node <sdlc_runtime>/tools/task-worktree.mjs <명세 디렉터리> add WP-003
 ```
 
-출력이 프롬프트 전문이다 — 템플릿은 `<sdlc_runtime>/references/writer-prompt.md` 이고 spec 의 AC 문장, 걸리는
-`.claude/rules`, 병렬 주의, 커밋 금지가 채워져 있다.
-손으로 고쳐 쓰지 않는다. 낯선 코드 영역이면 먼저 `pattern_agent` 로 관용구를 `file:line` 으로 뽑아
-`--snippets` 로 싣는다. 레벨의 작업들을 **한 메시지에서 동시에** 띄운다. Agent 의 `isolation` 옵션은
-쓰지 않는다. 에이전트는 되물을 수 없으니 되물어 오면 이 단계의 준비 부족이다.
+`target_branch`에서 작업 브랜치를 생성하고 bootstrap 명령으로 작업 환경을 초기화한다.
+워크트리가 이미 있으면 재개할 작업인지 확인한다.
 
-### 2c. 합류
+### 2b. 구현 에이전트 실행
 
 ```sh
-node <sdlc_runtime>/tools/task-worktree.mjs <스펙 폴더> commit WP-003 -m "<commit 관례의 제목>"
-node <sdlc_runtime>/tools/task-worktree.mjs <스펙 폴더> merge  WP-003
-node <sdlc_runtime>/tools/task-worktree.mjs <스펙 폴더> remove WP-003
+node <sdlc_runtime>/tools/task-brief.mjs <명세 디렉터리> WP-003 --worktree <워크트리 경로> [--snippets <파일>]
 ```
 
-`commit` 은 그 작업의 `files` 만 스테이징하고 `SDLC-Task` trailer 를 붙인다. files 밖의 변경은 싣지 않고
-경고한다 — 그 경고는 에이전트가 스코프를 넘었다는 신호이니 보고에 싣는다. 그 변경이 워크트리에 남아
-있으면 `remove` 가 거절한다. 버려도 되는지 사용자에게 보이고 `remove … --force` 로 치운다. `merge` 는 하나씩이고
-충돌이면 되돌리고 멈춘다. **충돌은 손으로 풀지 않는다** — `files` 줄이 실제와 달랐다는 뜻이니
-사용자에게 알린다. `main` 레벨은 `commit … --main` 으로 메인 트리에서 같은 규칙으로 커밋한다.
+출력된 프롬프트를 수정하지 않고 프로필의 `writer_agent`에게 전달한다. 프롬프트에는
+`<sdlc_runtime>/references/writer-prompt.md`를 바탕으로 AC 문장, 적용되는 `.claude/rules`,
+병렬 작업 제약, 커밋 금지 규칙이 포함된다.
 
-### 2d. 합류점 검증 — 기록으로 남긴다
+익숙하지 않은 코드 영역은 먼저 `pattern_agent`에게 구현 관례를 `file:line`으로 조사하게 하고
+`--snippets`로 전달한다. `parallel` 모드에서는 같은 레벨의 에이전트를 한 메시지에서 동시에
+실행한다. 워크트리는 도구가 관리하므로 Agent의 `isolation` 옵션은 사용하지 않는다.
+구현 에이전트가 추가 질문 없이 작업할 수 있도록 필요한 입력을 준비한다.
+각 구현 에이전트에는 해당 작업의 `files` 범위만 맡긴다.
+
+### 2c. 커밋과 병합
 
 ```sh
-node <sdlc_runtime>/tools/verify-run.mjs <스펙 폴더> --level <N> --tasks WP-003,WP-004 -- "<프로필 verify>"
-node <sdlc_runtime>/tools/verify-run.mjs <스펙 폴더> --level <N> --tasks WP-003,WP-004 --label <게이트> -- "<게이트 명령>"
+node <sdlc_runtime>/tools/task-worktree.mjs <명세 디렉터리> commit WP-003 -m "<커밋 규칙에 맞는 제목>"
+node <sdlc_runtime>/tools/task-worktree.mjs <명세 디렉터리> merge WP-003
+node <sdlc_runtime>/tools/task-worktree.mjs <명세 디렉터리> remove WP-003
 ```
 
-프로필의 `verify` 를 **한 번**, 걸리는 `extra_gates` 는 `--label` 로 각각. 로그가 `<verify_log_dir>/<slug>/`
-에 남고 그 경로를 §실행 기록에 적는다. 전체 검증의 `--tasks`에는 이번 레벨과 앞선 완료 작업의 ID를
-모두 넣는다. 최신 전체 검증 로그가 이 작업들을 함께 증명해야 한다.
-실패는 원인을 분류한다 — 이번 레벨의 변경이면 메인 트리에서
-고치고 관련 작업의 trailer 로 커밋한 뒤 다시 돌린다. 기존 실패 · 환경 · 스펙 충돌이면 범위를 넓히지 말고
-보고한 뒤 멈춘다. 실패 로그는 지우지 않는다.
+`commit`은 작업의 `files`만 스테이징하고 `SDLC-Task` 트레일러를 추가한다.
+`main` 모드는 `commit … --main`을 사용한다. 커밋 제목은 프로필의 `commit` 규칙을 따른다.
+범위 밖 변경은 경고와 함께 보고한다. 해당 변경 때문에 `remove`가 거부되면 사용자에게 내용을
+보여주고 폐기 승인을 받은 뒤 `remove … --force`를 사용한다.
 
-### 2e. 체크박스 갱신 — 훅으로 자동화하지 않는다
+병합은 순차적으로 수행한다. 충돌이 발생하면 병합을 취소하고 중단한다. 직접 충돌을 해결하지
+않고 작업의 `files` 선언과 실제 변경 범위를 확인해 사용자에게 보고한다.
+
+### 2d. 병합 후 검증
 
 ```sh
-node <sdlc_runtime>/tools/plan-check.mjs <스펙 폴더> mark WP-003 --note "<계획과의 차이>" [--pr <링크>]
-node <sdlc_runtime>/tools/plan-check.mjs <스펙 폴더> commit --level <N> [--gate <게이트 로그>]…
+node <sdlc_runtime>/tools/verify-run.mjs <명세 디렉터리> --level <N> --tasks WP-003,WP-004 -- "<프로필 verify>"
+node <sdlc_runtime>/tools/verify-run.mjs <명세 디렉터리> --level <N> --tasks WP-003,WP-004 --label <게이트> -- "<게이트 명령>"
 ```
 
-`mark` 는 그 작업을 `- [x]` 로 바꾸고 §실행 기록에 한 줄을 더한다 — 날짜 · 작업 ID · 결과 ·
-커밋 SHA · verify 로그 경로 · PR 은 도구가 `plan-progress` 에서 가져오고, **계획과의 차이**만
-이 명령이 준다. 기계가 만들 수 없는 값이라 `--note` 는 필수다(차이가 없으면 `--note 없음`).
-귀속 커밋이나 verify 기록이 없으면 도구가 **거절한다** — 증거 없이 체크가 서지 않는다.
-레벨의 작업을 다 적었으면 `commit` 이 계획서와 그 레벨의 검증 로그**만** 스테이징해 커밋하고,
-`plan-progress` 를 다시 돌려 남은 어긋남을 보인다. 어긋남이 0 인지 그 출력에서 확인한다.
+프로필의 전체 검증 명령 `verify`를 한 번 실행하고, 적용되는 `extra_gates`는 `--label`을 지정해
+각각 실행한다. 전체 검증의 `--tasks`에는 이번 레벨과 이전 레벨에서 완료한 모든 작업 ID를 넣는다.
+로그는 `<verify_log_dir>/<slug>/`에 저장되며 최신 전체 검증 로그가 해당 작업들을 증명해야 한다.
+같은 작업 트리에서 검증을 동시에 실행하지 않는다.
 
-훅으로 자동화하지 않는 이유는 그대로다 — «수용 기준을 만족시켰나» 와 «계획과 무엇이 달랐나» 는
-판정이고, 도구는 사실(커밋 · 검증 기록)만 대신 나른다. 차이가 크면 `/iterate-spec` 을 권한다.
-tests 문장이 파일에 없으면 테스트를 그 이름으로 쓰거나 `tests:` 줄을 실제 이름에 맞춘다 —
-체크를 그대로 두고 넘어가지 않는다.
+이번 레벨의 변경 때문에 실패했다면 메인 작업 트리에서 수정하고 관련 작업의 트레일러를 붙여
+커밋한 뒤 재검증한다. 기존 실패·환경 문제·명세 충돌이면 범위를 확대하지 않고 보고 후 중단한다.
+실패 로그는 보존하며, 검증을 통과해야 다음 레벨로 진행한다.
 
-`mark` 가 «status 가 in_progress 가 아니다» 로 거절하면 §1b 의 상태 전이가 빠졌거나
-`/iterate-spec` 이 실행 중 계획서를 `accepted` 로 되돌린 것이다. 체크박스를 손으로 찍어
-넘기지 말고 status 부터 바로잡는다 — 그대로 두면 남은 작업이 조용히 안 찍힌다.
+### 2e. 완료 상태와 실행 기록 갱신
 
-### 2f. 레벨 보고
+```sh
+node <sdlc_runtime>/tools/plan-check.mjs <명세 디렉터리> mark WP-003 --note "<계획과의 차이>" [--pr <링크>]
+node <sdlc_runtime>/tools/plan-check.mjs <명세 디렉터리> commit --level <N> [--gate <게이트 로그>]…
+```
 
-`assets/report-templates.md` 의 «레벨 완료» 형식. 수동 검증 서명을 기다리며 다음 자동 작업을 막지는
-않지만, 필수 수동 검증이 남아 있으면 plan 을 `completed` 로 바꾸거나 «구현 완료» 라고 보고하지 않는다.
+수용 기준 충족 여부와 계획 대비 차이를 판단한 뒤 `mark`를 실행한다. 차이가 없으면
+`--note 없음`을 사용한다. 도구는 귀속 커밋과 검증 기록을 확인하고 체크박스와 「실행 기록」을
+갱신한다. 차이가 크면 `/iterate-spec`을 안내한다.
 
-### 2g. push · PR — 사용자가 말할 때만
+테스트 문장이 파일에 없으면 해당 테스트를 작성하거나 `tests:`를 실제 테스트 이름에 맞춘다.
+상태가 `in_progress`가 아니어서 거부되면 상태를 먼저 수정한다. 체크박스를 직접 수정해
+검사를 우회하지 않는다.
 
-`target_branch` 로의 커밋과 머지는 실행 절차에 포함된다. `git push` 와 PR 생성은 사용자가 이번 실행에서
-명시적으로 요청할 때만 한다. `pr_strategy` 는 분할 방식이지 권한이 아니다. 커밋 제목은 프로필의 `commit`
-관례를 따른다.
+레벨의 작업을 모두 기록한 뒤 `commit`으로 계획서와 해당 레벨의 검증 로그만 커밋한다.
+`plan-progress`를 다시 실행해 기록이 일치하는지 확인한다. 스테이징은 위 도구에 맡기며
+`git add -A`와 `git add .`은 사용하지 않는다.
 
-## Step 3: 독립 감사와 완료 보고
+### 2f. 진행 보고와 외부 반영
 
-### 3a. 독립 감사 — 프로필에 `audit_agent` 가 있을 때
+`assets/report-templates.md`의 「레벨 완료」 형식으로 보고한다. 필수 수동 검증이 남아 있어도
+다음 자동 작업은 진행할 수 있지만, plan을 `completed`로 바꾸거나 구현 완료로 보고하지 않는다.
 
-쓴 쪽이 검증하면 테스트가 구현을 따라 쓰인다. `audit_agent` 가 있고 `writer_agent` 와 다르면
-`<sdlc_runtime>/references/audit-prompt.md` 를 채워 읽기 전용으로 띄운다 — `{spec_dir}` `{born}`(plan 최초 커밋)
-`{verify_logs}` `{acceptance}`(spec 의 FR/NFR 과 AC 전문). 없거나 같으면 건너뛰고 그 사실을 보고에
-적는다. 감사와 자기 대조가 갈리는 AC 는 «미확인» 으로 싣는다 — 같다고 우기지 않는다. 미충족이 하나라도
-있으면 끝난 것이 아니다.
+대상 브랜치로의 커밋과 병합은 구현 절차에 포함된다. `git push`와 PR 생성은 사용자가 이번 실행에서
+명시적으로 요청한 경우에만 수행한다. `pr_strategy`는 PR 분할 방식이며 실행 권한을 뜻하지 않는다.
 
-### 3b. 완료 보고
+## 3. 독립 감사와 완료 보고
 
-`assets/report-templates.md` 의 «완료 보고» 형식. 요구사항 대조가 이 명령의 결론이다 — `spec.md` 의
-`AC-*` 마다 만족시키는 코드와 테스트를 `file:line` 으로 댄다. 못 대는 기준이 있으면 그 작업은 끝나지
-않았다. 모든 자동 · 필수 수동 검증이 끝났을 때만 plan 을 `completed` 로 바꾸고 커밋한다.
+프로필의 `audit_agent`가 있고 `writer_agent`와 다르면
+`<sdlc_runtime>/references/audit-prompt.md`에 다음 값을 채워 읽기 전용 감사를 실행한다.
 
-## 규칙
+- `{spec_dir}`: 명세 디렉터리
+- `{born}`: plan의 최초 커밋
+- `{verify_logs}`: 검증 로그
+- `{acceptance}`: spec의 FR/NFR과 AC 전문
 
-1. **프로필과 plan 이 명령줄의 권위다.** 검증 · 부트스트랩 · 경로 · 브랜치를 지어내지 않는다.
-2. **레벨 순서를 지킨다.** 건너뛰거나 바꾸지 않는다.
-3. **합류점 검증 없이 다음 레벨로 가지 않는다.**
-4. **병렬은 워크트리로만.** 같은 트리에서 검증을 겹쳐 돌리지 않는다.
-5. **에이전트에게 스코프 밖 파일을 주지 않는다.** 병렬 레벨에서 이건 곧 손상이다.
-6. **수동 검증을 조용히 떨어뜨리지 않는다.** 매 레벨 보고에 실어 나른다.
-7. **완료는 셋이 증명한다.** 체크박스 · `SDLC-Task` 커밋 · verify 기록. 갈리면 멈추고 대조한다.
-8. **커밋과 머지는 실행 절차에 포함하고, push · PR 은 승인 대상이다.** 스테이징은 도구가 한다 — 작업의 코드는 `task-worktree commit`, 계획서와 검증 로그는 `plan-check commit`. `git add -A` · `git add .` 금지.
-9. **스펙이 틀렸으면 밀어붙이지 않는다.** 보고하고 `/iterate-spec`.
-10. **에이전트 역할을 섞지 않는다.** 구현 · 감사 · 조사는 서로 다른 에이전트의 일이다.
-11. **도구가 내는 값을 손으로 다시 만들지 않는다.** 레벨 · 워크트리 · 커밋 · 프롬프트 · 검증 기록 · 체크박스와 §실행 기록은 도구의 출력이고, 이 명령은 그 위에서 판단만 한다.
+감사 에이전트가 없거나 구현 에이전트와 같으면 감사를 생략하고 보고에 명시한다.
+감사 결과와 자체 대조 결과가 다른 AC는 미확인으로 보고한다. 미충족 기준이 있으면 완료 처리하지 않는다.
+
+`assets/report-templates.md`의 「완료 보고」 형식으로 각 `AC-*`를 충족하는 코드와 테스트를
+`file:line`으로 제시한다. 근거를 제시할 수 없는 기준은 미확인으로 보고하고 완료 처리하지 않는다.
+모든 자동 검증과 필수 수동 검증을 마친 뒤에만 plan을 `completed`로 변경하고 커밋한다.
