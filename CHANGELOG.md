@@ -15,6 +15,7 @@
   v5 와 똑같이 동작한다.
 
 - **평가 신뢰성** — 검사기 종료 코드 검증, 런타임 단독 실행 수정, 미채점·하네스 오류 결과의 집계 거부
+- **자체 CI** — Linux·macOS에서 스킬 등록과 평가 러너·채점·문서·런타임 회귀 테스트 실행
 - **스킬 문서** — 9개 스킬의 한국어·기술 용어 통일, 중복 설명 정리, 평가 실행·집계 절차 명확화
 - **사슬 스킬 8개** — `sdlc-init` · `create-finding` · `create-intent` · `create-spec` ·
   `create-plan` · `implement-spec` · `iterate-spec` · `create-adr`

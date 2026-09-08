@@ -202,7 +202,13 @@ CI 러너에는 플러그인도 홈 디렉터리도 없으니, 검사기를 머�
 claude plugin validate .
 claude plugin details restart-harness           # 컴포넌트와 토큰 비용
 node sdlc-runtime/evals/run.mjs                 # 검사기 · 런타임 스위트
+node --test sdlc-runtime/evals/runner.test.mjs   # 평가 러너 회귀 테스트
+python3 -m unittest discover -s skills/eval/agent-eval/scripts -p 'test_*.py'
 ```
+
+GitHub Actions는 push·PR마다 Linux와 macOS에서 위 회귀 테스트와 스킬 등록 검사를 실행한다.
+환경은 Node.js 24·Python 3.12이며 모델 API를 호출하지 않는다. 세부 범위는
+[평가 안내](sdlc-runtime/evals/README.md)를 참고한다.
 
 ### 스킬을 더할 때
 
@@ -221,6 +227,8 @@ node sdlc-runtime/evals/run.mjs                 # 검사기 · 런타임 스위�
 ./scripts/list-skills.sh
 claude plugin validate .
 node sdlc-runtime/evals/run.mjs
+node --test sdlc-runtime/evals/runner.test.mjs
+python3 -m unittest discover -s skills/eval/agent-eval/scripts -p 'test_*.py'
 # 3. 밀면 끝
 git push
 ```

@@ -214,7 +214,13 @@ in the plugin cache, which does not move until `claude plugin update`.
 claude plugin validate .
 claude plugin details restart-harness           # components and token cost
 node sdlc-runtime/evals/run.mjs                 # checker + runtime suites
+node --test sdlc-runtime/evals/runner.test.mjs   # evaluation runner regression tests
+python3 -m unittest discover -s skills/eval/agent-eval/scripts -p 'test_*.py'
 ```
+
+GitHub Actions runs these regression tests and the skill registration check on Linux and
+macOS for every push and pull request, using Node.js 24 and Python 3.12 without model API
+calls. See the [evaluation guide](sdlc-runtime/evals/README.md) for coverage.
 
 ### Adding a skill
 
@@ -235,6 +241,8 @@ reports "already at the latest version".
 ./scripts/list-skills.sh
 claude plugin validate .
 node sdlc-runtime/evals/run.mjs
+node --test sdlc-runtime/evals/runner.test.mjs
+python3 -m unittest discover -s skills/eval/agent-eval/scripts -p 'test_*.py'
 # 3. Push
 git push
 ```
