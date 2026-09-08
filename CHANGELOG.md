@@ -1,25 +1,61 @@
-# CHANGELOG
+# Changelog
 
-## 0.1.0 (미공개)
+## 0.1.1 — 2026-09-08
 
-첫 배포.
+### Fixed
 
-- **스키마 v6 — 레포 경계** — 문서 레포가 상류이고 코드 레포가 소비자인 구조를 검사기가 안다.
-  spec 은 시스템 하나에 한 벌이고, 수용 기준마다 `` `scope: <repo>` `` 로 어느 레포가 만드는지
-  적는다. 코드 레포는 자기 몫만 덮고, 배정되지 않은 Must 는 상류에서 막힌다.
-- **`pull-spec.mjs` 와 `upstream.lock.json`** — 승인된 상류 문서를 끌어오고 상류 경로·커밋·내용
-  해시를 락에 찍는다. 사본을 손으로 고치면 해시가 막고, 상류가 앞서가면 검사기가 잡는다.
-  `spec_version` 의 대조 상대가 사본의 로컬 커밋에서 **락의 상류 커밋** 으로 바뀐다 — 레포
-  경계를 넘지 못하던 핀이 이제 넘는다.
-- **프로필 키 셋** — `repo` · `upstream_repo` · `spec_consumers`. 단일 레포는 셋 다 비우면
-  v5 와 똑같이 동작한다.
+- **The assignment rule now applies only to v6 specs.** The rule that rejects a Must acceptance
+  criterion assigned to no consumer fired on every spec in a repository declaring
+  `spec_consumers`, whatever the document's schema version. That contradicts the rule stated in
+  `schema.md` — a new error rule applies only from the schema that introduced it — and it made
+  declaring an upstream repository prohibitively expensive: one profile line would have turned
+  every existing chain red at once, so nobody would have added it.
 
-- **평가 신뢰성** — 검사기 종료 코드 검증, 런타임 단독 실행 수정, 미채점·하네스 오류 결과의 집계 거부
-- **자체 CI** — Linux·macOS에서 스킬 등록과 평가 러너·채점·문서·런타임 회귀 테스트 실행
-- **스킬 문서** — 9개 스킬의 한국어·기술 용어 통일, 중복 설명 정리, 평가 실행·집계 절차 명확화
-- **사슬 스킬 8개** — `sdlc-init` · `create-finding` · `create-intent` · `create-spec` ·
+## 0.1.0 — 2026-09-08
+
+First release.
+
+### Artifact chain
+
+- **Eight chain skills** — `sdlc-init` · `create-finding` · `create-intent` · `create-spec` ·
   `create-plan` · `implement-spec` · `iterate-spec` · `create-adr`
-- **런타임** — 산출물 규약, 검사기, 참조 문서. 스킬 · 훅 · CI 가 함께 쓴다
-- **훅 둘** — 쓰기 전에 서는 승인 가드, 저장 시점에 도는 산출물 게이트
-- **CI 검사기** — 레포의 모든 사슬을 한 번에 본다
-- **평가 하네스** — `agent-eval` 스킬, 채점 에이전트 둘, 루브릭과 실행 스크립트
+- **Runtime** — the artifact conventions, the checkers and the reference documents. Skills, hooks
+  and CI all read the same copy.
+- **Two hooks** — an approval guard that stands *before* a write, and an artifact gate that runs
+  the moment a document is saved.
+- **CI checker** — reads every chain in a repository at once, where the gate sees only the folder
+  you just touched.
+
+### Repo boundaries (schema v6)
+
+- **The checker understands a docs repo upstream of code repos.** A spec stays a single document
+  for the whole system rather than being split per repository; each acceptance criterion records
+  which repository builds it with `` `scope: <repo>` ``. A code repo covers only its own share,
+  and a Must criterion assigned to nobody is rejected upstream, where it is the only place it can
+  be seen.
+- **`pull-spec.mjs` and `upstream.lock.json`** — approved upstream documents are pulled in by a
+  tool, and the lock records the upstream path, commit and content hash. Editing a copy by hand
+  breaks the hash; when the upstream moves ahead the checker catches it. `spec_version` is
+  therefore compared against the locked upstream commit rather than the copy's local commit — a
+  pin that could not cross a repository boundary now does.
+- **Three profile keys** — `repo` · `upstream_repo` · `spec_consumers`. Leave all three empty and
+  a single-repo chain behaves exactly as it did under v5.
+
+### Evaluation
+
+- **Evaluation harness** — the `agent-eval` skill, two grading agents, the rubric and the runner.
+- **Result integrity** — the checker's exit code is verified, standalone runtime runs were fixed,
+  and ungraded or harness-error results are refused rather than folded into an aggregate.
+
+### Project
+
+- **Continuous integration** — skill registration plus the evaluation runner, grading, document
+  and runtime regression suites, on Linux and macOS.
+- **Skill documentation** — one voice across the skills, duplicated explanation removed, and the
+  evaluation and aggregation procedures spelled out.
+
+### Note on language
+
+Artifacts are written in Korean. The length budgets were measured on Korean text and the style
+checks are lists of Korean phrasings, so an English document earns a `lang-unsupported` warning
+rather than silence — a check that never fires is indistinguishable from one that passes.
