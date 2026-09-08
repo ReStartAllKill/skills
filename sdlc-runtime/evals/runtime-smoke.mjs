@@ -961,6 +961,27 @@ test('lang 은 문체 번들을 고르고, 번들이 없으면 조용히 통과�
     `번들이 없는 언어를 통과시켰다 — 미검사가 통과로 읽힌다:\n${missing.out}`)
 })
 
+
+test('번들은 같은 모양이어야 한다 — 키 하나가 빠지면 그 규칙이 조용히 꺼진다', async () => {
+  /** en 에 vague 가 없으면 모호어 검사가 «0건» 으로 보인다. 그것이 이 하네스가 가장 싫어하는 실패다. */
+  const [ko, en] = await Promise.all([
+    import(`file://${join(ROOT, 'locales/ko.mjs')}`),
+    import(`file://${join(ROOT, 'locales/en.mjs')}`),
+  ])
+  const keys = (m) => Object.keys(m).sort().join(' ')
+  assert(keys(ko) === keys(en), `번들의 export 가 다르다:\n  ko  ${keys(ko)}\n  en  ${keys(en)}`)
+  for (const [name, m] of [['ko', ko], ['en', en]]) {
+    assert(m.vague.length > 10 && m.translationese.length > 5 && m.meta.length > 2, `${name}: 낱말 목록이 비었다`)
+    for (const kind of ['intent', 'spec', 'plan', 'finding', 'adr']) {
+      assert(m.budget[kind]?.doc > 0, `${name}: budget.${kind} 이 없다`)
+    }
+    assert(m.limits.sentences > 0 && m.limits.title > 0 && m.limits.ac > 0, `${name}: limits 가 비었다`)
+    // /g 가 붙은 정규식은 .test 가 상태를 가져 한 줄 걸러 한 번씩만 걸린다.
+    for (const w of m.vague) assert(!(w instanceof RegExp) || !w.flags.includes('g'), `${name}: vague 에 /g 정규식이 있다 — ${w}`)
+    for (const [w] of m.translationese) assert(!(w instanceof RegExp) || !w.flags.includes('g'), `${name}: translationese 에 /g 정규식이 있다 — ${w}`)
+  }
+})
+
 console.log('\n런타임 스모크 평가\n')
 for (const r of results) {
   console.log(`  ${r.ok ? '통과' : '✗ 실패'}  ${r.name}`)

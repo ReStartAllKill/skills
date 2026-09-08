@@ -4,6 +4,15 @@
 
 ### Added
 
+- **English artifacts are supported.** `lang: en` selects `sdlc-runtime/locales/en.mjs`, with its
+  own vagueness, wordiness and self-reference lists and its own budgets. The word lists now take
+  regular expressions as well as substrings, because English needs word boundaries — without them
+  `most` fires inside `almost`. The English budgets are the Korean ones × 2.2, derived from nine
+  matching sections of this repository's parallel READMEs (mean 2.16, median 2.21, range
+  1.90–2.49); the bundle records the derivation, what is weak about it and what would replace it.
+  A first artifact pair checks out at 2.25 and 1.97. Skills and reference documents stay Korean —
+  the model reads those, not the user.
+
 - **The style rules are a bundle, chosen by `lang`.** The word lists, the character budgets and
   the sentence-ending rule move out of `lint-prose.mjs` into `sdlc-runtime/locales/ko.mjs`, and a
   new `lang` profile key selects which bundle measures a repository's artifacts. `lang` is a

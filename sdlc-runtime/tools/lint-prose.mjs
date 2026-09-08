@@ -31,6 +31,11 @@ const MAX_TITLE = L.limits.title
 const MAX_FIELD = L.limits.field
 const MAX_AC = L.limits.ac
 
+// 낱말 목록의 항목은 문자열이거나 정규식이다. 한국어는 부분문자열로 충분하지만 영어는 낱말 경계가
+// 필요하다 — `most` 가 `almost` 에, `fast` 가 `breakfast` 에 걸린다. 정규식은 /g 없이 쓴다(.test 가 상태를 갖는다).
+const hits = (needle, line) => (needle instanceof RegExp ? needle.test(line) : line.includes(needle))
+const shown = (needle) => (needle instanceof RegExp ? needle.source.replace(/\\b/g, '').replace(/\(\?:/g, '(') : needle)
+
 const problems = []
 const add = (level, doc, line, rule, msg, hint) => problems.push({ level, doc, line, rule, msg, hint })
 const notes = []
@@ -121,8 +126,8 @@ for (const d of Object.values(docs)) {
     if (!d.live[i] || /^\s*(?:[-*]\s+)?[A-Za-z가-힣_][A-Za-z가-힣_ ]{0,19}:\s/.test(line)) return
     const clean = stripComments(line)
     for (const [w, fix] of TRANSLATIONESE) {
-      if (!clean.includes(w)) continue
-      add('warn', d.name, i + 1, 'translationese', `번역체 — «${w}»`, fix)
+      if (!hits(w, clean)) continue
+      add('warn', d.name, i + 1, 'translationese', `번역체 — «${shown(w)}»`, fix)
     }
     for (const [re, fix] of META) {
       if (!re.test(clean)) continue
@@ -157,9 +162,9 @@ for (const d of Object.values(docs)) {
       const hay = e.kind === 'ac' ? [e.title] : [e.title, ...prose]
       for (const line of hay) {
         if (/\d/.test(line)) continue // 수치가 있으면 제외한다.
-        const hit = VAGUE.find((w) => line.includes(w))
+        const hit = VAGUE.find((w) => hits(w, line))
         if (!hit) continue
-        add(e.kind === 'ac' ? 'error' : 'warn', d.name, e.line + 1, 'vague', `${e.id} 에 «${hit}» — 측정 기준이 아니다`,
+        add(e.kind === 'ac' ? 'error' : 'warn', d.name, e.line + 1, 'vague', `${e.id} 에 «${shown(hit)}» — 측정 기준이 아니다`,
           e.kind === 'ac' ? '수용 기준은 참·거짓이 갈려야 한다. 수치·백분위·조건으로 바꾼다.'
             : '재는 자리다. «얼마나»를 수치나 조건으로 적는다.')
       }

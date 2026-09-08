@@ -5,17 +5,25 @@
 A Claude Code plugin that makes changes go through a written chain — intent, spec,
 plan, implementation — and checks that chain **as you write it**, not after.
 
-> **Artifacts are written in Korean.** The skills and reference documents are in
-> Korean, and so are the prose rules — the length budgets were measured on Korean
-> text, and the style checks are lists of Korean phrasings. Structure and
-> traceability checks are language-neutral and work either way.
+> **Artifacts are written in Korean or English**, set once per repository with
+> `lang` in the profile. It is a repository setting, not a person's: the chain is a
+> committed contract everyone in the repository reads, and CI has no conversation to
+> take a language from. Write to Claude in whichever language you like — the
+> artifacts follow `lang`.
 >
-> You can write artifacts in English and the chain still runs, but the linter will
-> say `lang-unsupported` on each one: the three style checks match nothing, and the
-> length limits are about twice too tight. That warning exists so the silence is
-> visible — a check that never fires is indistinguishable from a check that passes.
-> Supporting English properly needs English versions of those lists and limits
-> re-measured on real English artifacts.
+> The contract keywords take both forms always, whatever `lang` says: `basis:` and
+> `근거:`, `[required · all tiers]` and `[필수 · 모든 티어]`. Section titles were
+> never part of the contract — structure is decided by ID prefix and tier marker.
+>
+> `lang` selects the style bundle: the word lists and the character budgets in
+> `sdlc-runtime/locales/`. Korean's numbers are measured on this repository's 42
+> Korean artifacts. **English's are derived**, at 2.2× the Korean ones, from nine
+> matching sections of this README pair — the file says so, and says what would
+> replace it. The skills and reference documents are still Korean; they are read by
+> the model, not by you.
+>
+> A document written in a language `lang` does not name still gets `lang-unsupported`,
+> because a style check that matches nothing is indistinguishable from one that passed.
 
 ## The problem
 

@@ -1,0 +1,6 @@
+{
+  "kind": "negative-control · 영어 사슬",
+  "why": "lang: en 프로필 아래의 영문 intent+spec. 계약 낱말도 문체도 영어라, 이 케이스가 통과해야 en 번들이 «있다» 가 아니라 «돈다» 는 뜻이 된다. lang-unsupported 가 뜨면 판정 기준이 뒤집힌 것이다.",
+  "check": { "errors": 0, "warns": 0 },
+  "lint": { "errors": 0, "warns": 0 }
+}

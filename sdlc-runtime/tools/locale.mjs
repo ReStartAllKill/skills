@@ -9,8 +9,9 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve, join } from 'node:path'
 import * as ko from '../locales/ko.mjs'
+import * as en from '../locales/en.mjs'
 
-const BUNDLES = { ko }
+const BUNDLES = { ko, en }
 export const DEFAULT_LANG = 'ko'
 
 /** 산출물 경로에서 위로 올라가며 프로필의 `lang` 을 찾는다. 없으면 ko — 기존 레포는 아무것도 안 바뀐다. */

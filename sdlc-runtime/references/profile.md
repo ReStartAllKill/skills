@@ -9,7 +9,7 @@
 |---|---|---|
 | `sdlc_version` | 새 사슬이 쓸 스키마 | `1` — 기존 프로필 호환 |
 | `sdlc_runtime` | 규약·검사기가 있는 경로 | `runtime.md`의 발견 순서 |
-| `lang` | **산출물 언어.** 문체 번들(낱말 목록·글자 한도)을 고른다. 계약 낱말은 이 키와 무관하게 양쪽을 다 받는다 | `ko` |
+| `lang` | **산출물 언어** — `ko` · `en`. 문체 번들(낱말 목록·글자 한도)을 고른다. 계약 낱말은 이 키와 무관하게 양쪽을 다 받는다 | `ko` |
 | `spec_dir` | 문서 위치. **`.claude/` 아래에 두지 않는다** — 그 폴더의 편집은 Claude Code가 언제나 묻는다 | `.sdlc/specs` |
 | `owner` | 승인 다이얼로그에서 승인하는 사람의 이름 — `approved_by` 기본값 | `git config user.name` |
 | `verify` · `verify_scoped` · `scope_hint` | 전체·작업별 검증 | CI와 빌드 설정에서 조사 |
