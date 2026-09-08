@@ -911,6 +911,18 @@ test('사본을 손으로 고치면 해시가 막고, 상류가 앞서가면 검
   assert(stale.code !== 0 && stale.out.includes('상류가 이 사본보다 앞서 있다'), `상류 드리프트를 놓쳤다:\n${stale.out}`)
 })
 
+test('상류 프로필을 켜도 옛 스키마 사슬은 배정 검사에 걸리지 않는다', () => {
+  // 새 오류 규칙은 도입된 스키마 이상에서만 적용한다(schema.md). 프로필 한 줄로 옛 사슬이
+  // 전부 빨개지면 아무도 상류를 선언하지 않는다.
+  const { upChain } = twoRepos()
+  for (const f of ['intent.md', 'spec.md']) {
+    edit(join(upChain, f), (s) => s.replace('schema_version: 6', 'schema_version: 5'))
+  }
+  edit(join(upChain, 'spec.md'), (s) => s.replace(/ `scope: [^`]+`/g, ''))
+  const r = check(upChain)
+  assert(!r.out.includes('`scope` 가 없다'), `v5 사슬에 v6 배정 검사가 걸렸다:\n${r.out}`)
+})
+
 test('상류 문서 레포는 배정되지 않은 Must 수용 기준을 막는다', () => {
   const { up, upChain } = twoRepos()
   assert(check(upChain).code === 0, `배정이 끝난 상류 spec 이 실패했다:\n${check(upChain).out}`)

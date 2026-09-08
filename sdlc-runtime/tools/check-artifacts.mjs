@@ -531,7 +531,7 @@ if (docs.spec && !TEMPLATE && schemaVersion(docs.spec.fm) < 6) {
 
 // 상류 문서 레포는 배정을 진다 — 모든 Must 수용 기준이 어느 소비 레포엔가 걸려야 한다.
 // 소비 레포는 자기 몫만 보므로, 아무에게도 배정되지 않은 기준은 여기서만 보인다.
-if (UP.isUpstream && docs.spec && !TEMPLATE) {
+if (UP.isUpstream && docs.spec && !TEMPLATE && schemaVersion(docs.spec.fm) >= 6) {
   const known = (s) => UP.consumers.some((c) => sameRepo(c, s))
   for (const a of acs) {
     const parent = a.parent ? ent(a.parent) : null
