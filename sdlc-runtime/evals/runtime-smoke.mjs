@@ -982,6 +982,96 @@ test('번들은 같은 모양이어야 한다 — 키 하나가 빠지면 그 �
   }
 })
 
+
+test('승인 가드는 ADR 도 본다 — 사슬 밖에 산다고 예외가 아니다', () => {
+  /** references/adr.md 가 «ADR 은 그 규칙의 예외가 아니다» 라고 적어 둔 자리다. 관문이 ADR 을
+   *  걸러내면 가드의 ADR 처리(deprecated 전이까지 아는)가 통째로 죽은 코드가 된다. */
+  const d = temp('sdlc-guard-adr')
+  put(join(d, '.claude/spec-profile.yml'),
+    `sdlc_version: 5\nsdlc_runtime: "${ROOT}"\nspec_dir: ".sdlc/specs"\nadr_dir: "docs/adr"\n`)
+  const adr = join(d, 'docs/adr/ADR-001-something-hard-to-reverse.md')
+  put(adr, '---\nartifact: adr\nid: "ADR-001"\nstatus: in_review\napproved_by: null\n---\n\n## 결정\n\n초안\n')
+  const env = { ...process.env, CLAUDE_PROJECT_DIR: d }
+  const invoke = (payload) => run(tool('guard-approval.sh'), [], { env, input: JSON.stringify(payload) })
+  const asks = (r) => (r.out ?? '').includes('"permissionDecision":"ask"')
+
+  let r = invoke({ tool_name: 'Write', tool_input: { file_path: adr, content: 'status: in_review\napproved_by: null' } })
+  assert(r.code === 0, '초안 편집을 과잉 차단했다')
+
+  r = invoke({ tool_name: 'Write', tool_input: { file_path: adr, content: 'status: accepted\napproved_by: "agent"' } })
+  assert(asks(r), 'ADR 자기승인을 사람에게 안 물어본다 — 승인이 조용히 통과한다')
+
+  put(adr, '---\nartifact: adr\nid: "ADR-001"\nstatus: accepted\napproved_by: "human"\n---\n\n## 결정\n\n정해진 것\n')
+  r = invoke({ tool_name: 'Edit', tool_input: { file_path: adr, old_string: '정해진 것', new_string: '뒤집은 것' } })
+  assert(asks(r), 'accepted ADR 의 본문 변경을 조용히 허용했다 — 결정의 불변성이 무너진다')
+
+  // adr_dir 이 없는 레포는 ADR 을 안 쓴다. 무관한 파일까지 가드에 걸리면 안 된다.
+  put(join(d, '.claude/spec-profile.yml'), `sdlc_version: 5\nsdlc_runtime: "${ROOT}"\nspec_dir: ".sdlc/specs"\n`)
+  r = invoke({ tool_name: 'Write', tool_input: { file_path: adr, content: 'status: accepted\napproved_by: "agent"' } })
+  assert(r.code === 0 && !asks(r), 'adr_dir 이 없는데도 ADR 경로를 붙잡았다')
+})
+
+test('shim 은 프로필이 지목한 런타임을 설치본보다 먼저 쓴다', () => {
+  /** 안 그러면 훅만 설치본을 돌고 스킬·CI 는 지목된 사본을 돈다 — 같은 문서의 검사 결과가 갈리고,
+   *  런타임을 개발하는 레포에서는 훅이 언제나 옛 하네스로 검사한다. */
+  const d = temp('sdlc-shim-profile')
+  run(process.execPath, [tool('install-hook.mjs'), d])
+  const shim = join(d, '.claude/hooks/sdlc-gate.sh')
+
+  // 프로필이 지목하는 사본과, 홈에 놓인 설치본을 각각 다른 표식으로 만든다.
+  const marker = (dir, text) => {
+    const t = join(dir, 'tools')
+    mkdirSync(t, { recursive: true })
+    writeFileSync(join(t, 'gate-artifacts.sh'), `#!/usr/bin/env bash\necho ${text}\n`)
+    chmodSync(join(t, 'gate-artifacts.sh'), 0o755)
+  }
+  marker(join(d, 'vendor/rt'), 'PROFILE')
+  const home = temp('sdlc-shim-home')
+  marker(join(home, '.claude/plugins/cache/mkt/restart-harness/0.1.0/sdlc-runtime'), 'INSTALLED')
+
+  const call = () => spawnSync('bash', [shim], {
+    encoding: 'utf8', input: '{}', env: { ...process.env, HOME: home, CLAUDE_PROJECT_DIR: d },
+  }).stdout ?? ''
+
+  put(join(d, '.claude/spec-profile.yml'), 'sdlc_version: 5\n')
+  assert(call().includes('INSTALLED'), `프로필이 안 지목했으면 설치본을 써야 한다:\n${call()}`)
+
+  put(join(d, '.claude/spec-profile.yml'), 'sdlc_version: 5\nsdlc_runtime: "vendor/rt"   # 주석은 잘려야 한다\n')
+  assert(call().includes('PROFILE'), `프로필이 지목했는데 설치본을 썼다 — 훅이 다른 사본으로 검사한다:\n${call()}`)
+})
+
+test('node 를 못 찾으면 가드는 조용히 통과하지 않고 말한다', () => {
+  /** 조용한 통과는 «가드가 꺼진 것» 과 «통과» 를 같은 것으로 만든다. */
+  const d = temp('sdlc-node')
+  put(join(d, '.claude/spec-profile.yml'), `sdlc_version: 5\nsdlc_runtime: "${ROOT}"\nspec_dir: ".sdlc/specs"\n`)
+  const intent = join(d, '.sdlc/specs/change/intent.md')
+  put(intent, '---\nartifact: intent\nstatus: in_review\napproved_by: null\n---\n\n초안\n')
+  const selfApproval = JSON.stringify({
+    tool_name: 'Write',
+    tool_input: { file_path: intent, content: ['status:', 'accepted'].join(' ') + '\n' + ['approved_by:', '"agent"'].join(' ') },
+  })
+  // PATH 를 통째로 비우면 `#!/usr/bin/env bash` 가 bash 를 못 찾아 스크립트 자체가 안 뜬다.
+  // 시스템 경로만 남기고 node 만 없는 상태를 만든다. HOME 은 비워 ~/.nvm 도 안 걸리게 한다.
+  const sys = '/usr/bin:/bin'
+  const empty = temp('sdlc-nopath')
+
+  // PATH 에 없어도 SDLC_NODE 로 지목하면 판정한다.
+  const found = spawnSync(tool('guard-approval.sh'), [], {
+    encoding: 'utf8', input: selfApproval,
+    env: { ...process.env, PATH: sys, HOME: empty, SDLC_NODE: process.execPath, CLAUDE_PROJECT_DIR: d },
+  })
+  assert((found.stdout ?? '').includes('"permissionDecision":"ask"'),
+    `PATH 에 node 가 없다고 자기승인을 통과시켰다:\n${found.stdout}${found.stderr}`)
+
+  // 정말 못 찾으면 그 사실을 말한다. 시스템 경로에 node 가 있는 장비에서는 이 갈래가 안 선다.
+  if (['/opt/homebrew/bin/node', '/usr/local/bin/node', '/usr/bin/node'].some((f) => existsSync(f))) return
+  const missing = spawnSync(tool('guard-approval.sh'), [], {
+    encoding: 'utf8', input: selfApproval,
+    env: { ...process.env, PATH: sys, HOME: empty, CLAUDE_PROJECT_DIR: d, SDLC_NODE: '' },
+  })
+  assert(/node 를 못 찾았다/.test(missing.stderr ?? ''), `node 가 없는데 아무 말도 없이 통과했다:\n${missing.stderr}`)
+})
+
 console.log('\n런타임 스모크 평가\n')
 for (const r of results) {
   console.log(`  ${r.ok ? '통과' : '✗ 실패'}  ${r.name}`)

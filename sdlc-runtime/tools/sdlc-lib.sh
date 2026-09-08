@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 훅이 공유하는 해석 로직. 저장소 루트, 산출물 여부, 런타임 경로를 판정한다.
-# source해서 사용하며 TREE·SPEC_DIR·RUNTIME 전역 변수를 채운다.
+# source해서 사용하며 TREE·SPEC_DIR·ADR_DIR·RUNTIME 전역 변수를 채운다.
 
 sdlc_say() { printf 'sdlc: %s\n' "$1" >&2; }
 
@@ -11,10 +11,35 @@ sdlc_yml() {
           -e 's/[[:space:]]*$//'
 }
 
+# node 를 찾는다. 훅은 로그인 셸이 아니라 PATH 에 homebrew·nvm 이 없을 수 있고, 그때 조용히
+# 통과하면 «가드가 꺼진 것» 과 «통과» 가 구분되지 않는다 — 이 하네스가 다른 자리에서 계속
+# 금지하는 실패 방식이다. 그래서 흔한 설치 자리를 직접 훑고, 그래도 없으면 말한다.
+# SDLC_NODE 로 직접 지목할 수 있다 — 흔치 않은 설치 자리를 쓰는 장비의 탈출구다.
+sdlc_node() {
+  local c
+  [ -n "${SDLC_NODE-}" ] && [ -x "${SDLC_NODE}" ] && { printf '%s' "$SDLC_NODE"; return 0; }
+  command -v node >/dev/null 2>&1 && { command -v node; return 0; }
+  for c in /opt/homebrew/bin/node /usr/local/bin/node /usr/bin/node "$HOME/.local/bin/node"; do
+    [ -x "$c" ] && { printf '%s' "$c"; return 0; }
+  done
+  for c in "$(ls -td "$HOME"/.nvm/versions/node/*/bin/node 2>/dev/null | head -1)" \
+           "$(ls -td "$HOME"/.asdf/installs/nodejs/*/bin/node 2>/dev/null | head -1)"; do
+    [ -n "$c" ] && [ -x "$c" ] && { printf '%s' "$c"; return 0; }
+  done
+  return 1
+}
+
 # 훅 JSON에서 필드 하나를 뽑는다. python3가 없는 환경이 있어 node로 읽는다.
-# 읽지 못하면 빈 값을 내고 호출한 쪽이 통과시킨다.
+# 읽지 못하면 빈 값을 내고 호출한 쪽이 통과시킨다 — 다만 그 사실을 반드시 남긴다.
 sdlc_hook_field() {
-  SDLC_HOOK_JSON="${SDLC_HOOK_JSON-}" node -e '
+  local _node
+  if ! _node="$(sdlc_node)"; then
+    # 필드마다 되풀이하지 않는다. 한 번만 말하고 나머지는 조용히 빈 값을 낸다.
+    [ -n "${SDLC_NO_NODE-}" ] || sdlc_say "node 를 못 찾았다 — 훅 입력을 읽을 수 없어 이 검사를 건너뛴다. 통과가 아니라 미검사다."
+    SDLC_NO_NODE=1
+    return 0
+  fi
+  SDLC_HOOK_JSON="${SDLC_HOOK_JSON-}" "$_node" -e '
 const path = process.argv[1].split(".")
 let s = process.env.SDLC_HOOK_JSON ?? ""
 const emit = () => {
@@ -79,10 +104,20 @@ sdlc_resolve() {
 
   # 옛 스펙(requirements.md·design.md·tasks.md)은 검사 대상이 아니다.
   SPEC_DIR="$(sdlc_yml spec_dir "$profile")"; SPEC_DIR="${SPEC_DIR:-.sdlc/specs}"
+  # ADR 은 사슬 밖에 살지만 가드와 검사는 똑같이 받는다 — 승인된 결정의 불변성이 이 모음을
+  # 믿을 수 있게 만드는 유일한 근거라, 여기서 빠지면 accepted 를 아무도 안 지킨다.
+  # adr_dir 이 없는 레포는 ADR 을 안 쓰므로 그대로 통과시킨다.
+  ADR_DIR="$(sdlc_yml adr_dir "$profile")"
   case "$file" in
     "$TREE/$SPEC_DIR"/*/intent.md|"$TREE/$SPEC_DIR"/*/spec.md|\
     "$TREE/$SPEC_DIR"/*/plan.md|"$TREE/$SPEC_DIR"/*/finding.md) ;;
-    *) return 1 ;;
+    *)
+      [ -n "$ADR_DIR" ] || return 1
+      case "$file" in
+        "$TREE/$ADR_DIR"/ADR-[0-9][0-9][0-9]-*.md|"$TREE/$ADR_DIR"/ADR-[0-9][0-9][0-9][0-9]-*.md) ;;
+        *) return 1 ;;
+      esac
+      ;;
   esac
 
   # 프로필의 sdlc_runtime을 따른다. 훅과 스킬이 다른 버전을 읽으면 같은 문서의 검사 결과가 갈린다.

@@ -16,17 +16,24 @@ if [ ! -f "$RUNTIME/tools/check-artifacts.mjs" ]; then
   exit 0
 fi
 
+# 게이트도 훅과 같은 node 를 쓴다. PATH 에 없으면 검사 실패가 아니라 미검사다 —
+# 여기서 exit 2 를 내면 node 가 없는 장비에서 모든 산출물 편집이 막힌다.
+if ! NODE="$(sdlc_node)"; then
+  sdlc_say "node 를 못 찾았다 — 산출물 검사를 건너뛴다. 통과가 아니라 미검사다."
+  exit 0
+fi
+
 # 폴더 단위로 검사해 방금 고친 파일 때문에 옆 문서가 깨지는 경우를 잡는다.
 # 프로필의 sdlc_version은 따로 보지 않는다. 검사기가 문서의 schema_version을 확인한다.
 dir="$(dirname "$file")"
 
-if ! out="$(node "$RUNTIME/tools/check-artifacts.mjs" "$dir" 2>&1)"; then
+if ! out="$("$NODE" "$RUNTIME/tools/check-artifacts.mjs" "$dir" 2>&1)"; then
   printf '산출물 사슬 검사 실패 — 문서끼리 맞물리지 않는다\n\n%s\n' "$out" >&2
   exit 2
 fi
 
 # 린터는 오류만 차단하고 경고(번역체·길이·문체)는 출력만 한다.
-if ! lint="$(node "$RUNTIME/tools/lint-prose.mjs" "$dir" 2>&1)"; then
+if ! lint="$("$NODE" "$RUNTIME/tools/lint-prose.mjs" "$dir" 2>&1)"; then
   printf '산문 린트 실패\n\n%s\n' "$lint" >&2
   exit 2
 fi
