@@ -70,6 +70,10 @@ export const RE_NA_WITH_BASIS = /(?:N\/A|해당\s*없음)\s*[—–-]\s*\S/i
 /** Convert an alias to a regular-expression fragment with optional interword whitespace. */
 const loose = (aliases) => aliases.map((a) => esc(a).replace(/\\?\s+/g, '\\s*')).join('|')
 
+/** Match the deviation label and its colon so a linter can measure the note alone, not the
+ * date, task IDs and result that `mark` writes in front of it. */
+export const RE_DIVERGENCE = new RegExp(`(?:${loose(DIVERGENCE)})\\s*:\\s*`, 'i')
+
 /** Notation that explains why dismissing a finding does not adjust the band. */
 export const BAND_ADJUSTMENT = ['band adjustment', '밴드 조정']
 export const NO_ADJUSTMENT = ['no adjustment', '조정 없음']

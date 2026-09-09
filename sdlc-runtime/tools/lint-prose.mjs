@@ -5,6 +5,7 @@ import {
   loadDir, isTemplate, idsIn, stripComments, report, P_ALT, SDLC_VERSION, ADR_FILENAME, loadAdrDir,
   SUPPORTED_SCHEMA_VERSIONS, schemaVersion,
 } from './artifact-parse.mjs'
+import { SECTION, RE_DIVERGENCE, hasAlias } from './keywords.mjs'
 import { loadLock } from './upstream.mjs'
 import { useLocale } from './locale.mjs'
 
@@ -26,6 +27,7 @@ const MAX_SENTENCES = L.limits.sentences
 const MAX_TITLE = L.limits.title
 const MAX_FIELD = L.limits.field
 const MAX_AC = L.limits.ac
+const MAX_LOG = L.limits.logNote
 
 const hits = (needle, line) => (needle instanceof RegExp ? needle.test(line) : line.includes(needle))
 const shown = (needle) => (needle instanceof RegExp ? needle.source.replace(/\\b/g, '').replace(/\(\?:/g, '(') : needle)
@@ -49,9 +51,12 @@ const VENDOR = (() => {
   return lock && !lock.broken ? new Set(Object.keys(lock.files)) : new Set()
 })()
 const vendored = Object.keys(docs).filter((k) => VENDOR.has(docs[k].name)).map((k) => ({ k, name: docs[k].name }))
-for (const v of vendored) delete docs[v.k]
-if (vendored.length) notes.push(`벤더한 사본 ${vendored.map((v) => v.name).join(' · ')} 은 상류가 린트한다 — 여기서는 건너뛴다.`)
-if (Object.keys(docs).length === 0 && vendored.length) {
+// A vendored copy is not linted here, but it stays in `docs`: the plan's checks read the spec's
+// acceptance criteria and the intent's tier, and only the consumer repository holds both sides of
+// those. Dropping the document dropped the checks with it, which is the failure this guards.
+const LINTED = Object.fromEntries(Object.entries(docs).filter(([k]) => !vendored.some((v) => v.k === k)))
+if (vendored.length) notes.push(`벤더한 사본 ${vendored.map((v) => v.name).join(' · ')} 은 상류가 린트한다 — 여기서는 상호 참조로만 읽는다.`)
+if (Object.keys(LINTED).length === 0 && vendored.length) {
   process.exit(report({ title: `산문 린트 — ${basename(DIR)}`, notes, problems, json: argv.includes('--json') }))
 }
 if (Object.keys(docs).length === 0) {
@@ -61,20 +66,22 @@ if (Object.keys(docs).length === 0) {
 }
 const schema = schemaVersion((docs.intent ?? docs.finding ?? docs.spec ?? docs.plan ?? Object.values(docs)[0])?.fm)
 if (schema != null) notes.push(`산출물 schema v${schema}${schema === 1 ? ' (무버전 문서 호환)' : ''} · runtime ${SDLC_VERSION}`)
-if (isTemplate(docs) && !argv.includes('--json')) {
+if (isTemplate(LINTED) && !argv.includes('--json')) {
   console.log(`\n산문 린트 — ${basename(DIR)}\n  · 템플릿 원본이다 — 주석과 placeholder 가 있는 것이 정상이라 «항목을 행으로 접었나» 검사만 돈다.`)
 }
-const TEMPLATE = isTemplate(docs)
+const TEMPLATE = isTemplate(LINTED)
 
 const tokens = (s) => new Set(String(s).toLowerCase().match(/[가-힣a-z0-9]{2,}/g) ?? [])
 const sentences = (s) => (stripComments(s).replace(/\.(?=\S)/g, '').match(/[^.!?\n]*(?:다\.|[.!?])/g) ?? []).filter((x) => x.trim().length > 4).length
 
-const ADR_ONLY = Object.values(docs).every((d) => d.kind === 'adr')
-const TIER = docs.intent?.fm?.tier ?? docs.finding?.fm?.tier ?? (ADR_ONLY ? '—' : 'standard')
+const ADR_ONLY = Object.values(LINTED).every((d) => d.kind === 'adr')
+// The plan's own tier is the last resort, not the first: the intent is where the tier is decided,
+// and a plan whose frontmatter drifted from it should be measured by the decision, not the drift.
+const TIER = docs.intent?.fm?.tier ?? docs.finding?.fm?.tier ?? docs.plan?.fm?.tier ?? (ADR_ONLY ? '—' : 'standard')
 const mult = ADR_ONLY ? 1 : (TIER_MULT[TIER] ?? 1.6)
 const chars = (s) => stripComments(String(s)).replace(/\s+/g, '').length
 
-for (const d of Object.values(docs)) {
+for (const d of Object.values(LINTED)) {
   if (!TEMPLATE) {
     const prose = stripComments(
       d.lines.filter((_, i) => d.live[i]).join('\n').replace(/^---[\s\S]*?---/, ''),
@@ -192,8 +199,49 @@ for (const d of Object.values(docs)) {
   }
 
   if (d.kind !== 'plan') continue
+
+  // The execution log is not made of entities, so none of the item limits above reach it. Without
+  // a rule of its own a single 800-character entry passes as long as the section total fits.
+  const logH = d.hs.find((h) => h.depth === 2 && hasAlias(h.title, SECTION.executionLog))
+  if (logH) {
+    const entries = []
+    // ownEnd, not allEnd: §Change log is a `###` child of this section and is a different record.
+    for (let i = logH.line + 1; i < logH.ownEnd; i++) {
+      if (!d.live[i]) continue
+      const line = stripComments(d.lines[i])
+      if (/^-[ \t]/.test(line)) entries.push({ line: i, text: line })
+      else if (entries.length && line.trim()) entries[entries.length - 1].text += ' ' + line.trim()
+    }
+    for (const e of entries) {
+      const label = RE_DIVERGENCE.exec(e.text)
+      // Measure the note alone. The date, task IDs and result in front of it are written by
+      // `plan-check mark` and are not the author's to shorten.
+      const note = (label ? e.text.slice(label.index + label[0].length) : e.text.replace(/^-[ \t]*/, '')).trim()
+      if (note.length <= MAX_LOG) continue
+      add(note.length > MAX_LOG * 2 ? 'error' : 'warn', d.name, e.line + 1, 'long-log',
+        label ? `실행 기록 한 줄의 «${L.written.divergence}» 가 ${note.length}자다 (한도 ${MAX_LOG})`
+              : `실행 기록의 한 줄이 ${note.length}자다 (한도 ${MAX_LOG}) — «${L.written.divergence}» 라벨도 없다`,
+        '무엇이 어떻게 달랐는지만 남긴다. 원인 분석·시도한 것·로그 발췌는 커밋 메시지와 verify 로그에 이미 있고, 옮겨 적으면 훑어야 할 차이가 그 사이에 묻힌다.')
+    }
+  }
+
   const specAcs = new Map([...(docs.spec?.ents ?? new Map())].filter(([id]) => id.startsWith('AC-')))
-  for (const w of [...d.ents.values()].filter((e) => e.kind === 'wp')) {
+  const wps = [...d.ents.values()].filter((e) => e.kind === 'wp')
+
+  // The overlap check assumes `tests:` and the acceptance criteria are written in one language.
+  // Where test names are code identifiers and the criteria are not, every task scores zero and the
+  // rule fires on all of them — as useless as being off, and louder about it.
+  const testText = wps.map((w) => w.fields.get('tests') ?? '').join(' ')
+  const mine = (testText.match(SCRIPT.test) ?? []).length
+  const other = (testText.match(SCRIPT.against) ?? []).length
+  if (mine + other >= 40 && mine / (mine + other) < SCRIPT.minRatio) {
+    add('warn', d.name, null, 'test-drift-lang',
+      `\`tests:\` 의 언어가 산출물 언어(${SCRIPT.name})와 달라 겹침을 잴 수 없다 (${SCRIPT.name} ${Math.round((mine / (mine + other)) * 100)}%)`,
+      `수용 기준은 프로필의 \`lang\` 으로 쓰고 테스트 이름은 코드의 언어로 쓰는 레포다. 낱말 겹침으로는 표류를 못 잡으니 \`covers\` 의 기준과 \`tests:\` 가 같은 것을 가리키는지 사람이 본다.`)
+    continue
+  }
+
+  for (const w of wps) {
     const tests = w.fields.get('tests')
     if (!tests) continue
     const covered = idsIn(w.fields.get('covers') ?? '')
@@ -214,6 +262,6 @@ for (const d of Object.values(docs)) {
 
 process.exit(report({
     json: argv.includes('--json'),
-  title: TEMPLATE ? '' : `산문 린트 — ${basename(DIR)}  (문서 ${Object.keys(docs).length}개)`,
+  title: TEMPLATE ? '' : `산문 린트 — ${basename(DIR)}  (문서 ${Object.keys(LINTED).length}개)`,
   notes, problems, strict: STRICT, ruleDoc: '`conventions.md` 의 «산출물 문법» 절과 `references/prose.md` 에 있다.',
 }))

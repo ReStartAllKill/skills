@@ -23,7 +23,9 @@ if (!dirArg || !['mark', 'commit'].includes(CMD ?? '')) {
 const DIR = resolve(dirArg)
 const PLAN = join(DIR, 'plan.md')
 if (!existsSync(PLAN)) die(`plan.md 가 없다 — ${DIR}`)
-const W = useLocale(DIR).written
+const L = useLocale(DIR)
+const W = L.written
+const MAX_NOTE = L.limits.logNote
 const esc = (x) => String(x).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 let ROOT = null
@@ -66,6 +68,12 @@ if (CMD === 'mark') {
   const RESULT_KEY = canonical(RESULT, RESULTS)
   const PR = flag('--pr') ?? W.noPr
   if (!NOTE) die(`\`--note "<${W.divergence}>"\` 가 없다 — 기계가 만들 수 없는 값이라 비워 둘 수 없다. 차이가 없으면 \`--note ${W.none}\`.`)
+  if (NOTE.length > MAX_NOTE) {
+    die(`\`--note\` 가 ${NOTE.length}자다 (한도 ${MAX_NOTE}) — 무엇이 어떻게 달랐는지만 한 문장으로 적는다.\n` +
+        `  원인 분석·시도한 것·로그 발췌는 커밋 메시지와 verify 로그에 이미 있다. 여기 옮겨 적으면\n` +
+        `  §실행 기록이 그것들의 사본이 되고, 정작 훑어야 할 «계획과 달랐다» 가 묻힌다.\n` +
+        `  계획 자체가 틀렸던 것이면 줄이지 말고 \`/iterate-spec\` 으로 계획서를 고친다.`)
+  }
   if (!RESULT_KEY) die('`--result` 는 완료·부분·실패 (또는 done·partial·failed) 중 하나다.')
 
   const row = progress.rows.find((r) => r.id === TASK)

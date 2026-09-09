@@ -157,7 +157,9 @@ covers: FR-001
 
 <!-- Where the plan and reality differ. Before execution starts, write `N/A — not started`. Do not
      write commit SHAs or verify log names — plan-progress finds both from the trailers and the log
-     directory. Tasks that went as planned are folded onto one line by `plan-check mark`. -->
+     directory. Tasks that went as planned are folded onto one line by `plan-check mark`.
+     Keep each note to one sentence: what differed and how. Cause, attempts and log excerpts are
+     already in the commit message and the verify log — `plan-check mark` refuses a longer note. -->
 
 - YYYY-MM-DD WP-001 — <부분/실패> · <PR 링크> · 계획과의 차이: <무엇이 어떻게 달랐는가>
 - YYYY-MM-DD WP-002 WP-003 — 완료 · PR 없음 · 계획과의 차이: 없음

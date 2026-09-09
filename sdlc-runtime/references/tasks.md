@@ -40,6 +40,8 @@ The evidence is the header above `---`: it contains the fingerprints, repository
 
 Do not put commit SHAs or verification-log names in the Execution log section. `plan-progress.mjs` finds both directly from trailers and the log directory. The only value unique to that line is a deviation from the plan. For tasks completed as planned, `mark` appends their IDs to the earlier line from the same day; the checker scans the whole section, so grouped IDs still count individually.
 
+Write that deviation as one sentence: what differed and how. `mark` refuses a `--note` longer than the profile language's limit, and `lint-prose.mjs` reports `long-log` for a hand-edited entry over it. Cause, attempts and log excerpts belong in the commit message and the verify log; copied here they bury the one thing this section exists to show. If the plan itself was wrong, run `/iterate-spec` instead of writing a longer note.
+
 `plan-progress.mjs` uses the newest log for the same spec and full verification command. It never substitutes an older success for a newer failure. All of these conditions must hold:
 
 - Exit code 0, no label, and a command equal to the profile's `verify`.

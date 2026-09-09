@@ -65,7 +65,7 @@ export const budget = {
 }
 
 /** `sentences` is a count, not a length — it does not scale with the language. The rest are ×2.2. */
-export const limits = { sentences: 4, title: 88, field: 440, ac: 220 }
+export const limits = { sentences: 4, title: 88, field: 440, ac: 220, logNote: 260 }
 
 /** Does an ADR's consequences section name a cost? */
 export const tradeoff = /trade-?off|cost|give[s]? up|sacrific|accept(s|ed)? (the )?(risk|limit|constraint)|in exchange|at the price of/i

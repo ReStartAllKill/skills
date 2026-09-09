@@ -51,8 +51,11 @@ export const budget = {
   adr: { doc: 2600, section: 900, entity: 400 },
 }
 
-/** Limits for titles, fields, and sentence counts based on Korean text density. */
-export const limits = { sentences: 4, title: 40, field: 200, ac: 100 }
+/** Limits for titles, fields, and sentence counts based on Korean text density.
+ * `logNote` is an execution-log deviation note. It sits between `ac` and `field` because the line
+ * is scanned in a list: only what differed and how. Cause, attempts and log excerpts already live
+ * in the commit message and the verify log, and copying them here is what makes the section grow. */
+export const limits = { sentences: 4, title: 40, field: 200, ac: 100, logNote: 120 }
 
 /** Detect whether an ADR consequences section names a cost. */
 export const tradeoff = /감수|대가|비용|포기|제약을 진다|trade-?off|cost|give up|sacrifice/i

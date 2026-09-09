@@ -925,7 +925,7 @@ await test('locale bundles have matching shapes so a missing key cannot silently
     for (const kind of ['intent', 'spec', 'plan', 'finding', 'adr']) {
       assert(m.budget[kind]?.doc > 0, `${name}: budget.${kind} 이 없다`)
     }
-    assert(m.limits.sentences > 0 && m.limits.title > 0 && m.limits.ac > 0, `${name}: limits 가 비었다`)
+    assert(m.limits.sentences > 0 && m.limits.title > 0 && m.limits.ac > 0 && m.limits.logNote > 0, `${name}: limits 가 비었다`)
     for (const k of ['divergence', 'none', 'noPr']) assert(typeof m.written[k] === 'string' && m.written[k], `${name}: written.${k} 이 없다`)
     for (const k of ['done', 'partial', 'failed']) assert(typeof m.written.result[k] === 'string' && m.written.result[k], `${name}: written.result.${k} 이 없다`)
     for (const w of m.vague) assert(!(w instanceof RegExp) || !w.flags.includes('g'), `${name}: vague 에 /g 정규식이 있다 — ${w}`)
@@ -1045,6 +1045,155 @@ ${body}
   assert(!/long-item/.test(r.out), `세 문장짜리 항목을 길다고 했다 — 마침표를 종결부호로 세고 있다:\n${r.out}`)
 })
 
+await test('a long execution-log note is caught even when the section total fits', () => {
+  // The fixture name must not contain the rule name — the linter prints the directory in its title.
+  const d = temp('sdlc-logline')
+  put(join(d, '.claude/spec-profile.yml'), 'sdlc_version: 5\nspec_dir: "."\n')
+  const entry = (note) => `- 2026-09-08 WP-001 — 부분 · PR 없음 · 계획과의 차이: ${note}`
+  const plan = (note) => `---
+artifact: plan
+id: "CHG-2026-001"
+status: in_progress
+schema_version: 5
+---
+
+## 작업 \`[필수 · 모든 티어]\`
+
+- [x] **WP-001 — 캐시를 지운다**
+  - files: \`src/a.js\`
+  - depends: 없음
+  - covers: FR-001 (AC-001)
+  - tests: 캐시가 비어 있다
+  - verify: true
+
+## 실행 기록 \`[필수 · 모든 티어]\`
+
+${entry(note)}
+
+### 변경 기록
+
+- 2026-09-08 eval — 초안 작성. ${'묶인 변경을 적는다. '.repeat(12)}
+`
+  put(join(d, 'plan.md'), plan('캐시 무효화를 뒤로 미뤘다'))
+  let r = run(process.execPath, [tool('lint-prose.mjs'), d])
+  assert(!/long-log/.test(r.out), `한 문장짜리 기록을 길다고 했다:\n${r.out}`)
+
+  put(join(d, 'plan.md'), plan(`캐시 무효화를 뒤로 미뤘다. ${'그렇게 한 까닭은 다음과 같다. '.repeat(6)}`))
+  r = run(process.execPath, [tool('lint-prose.mjs'), d])
+  assert(/long-log/.test(r.out), `장황한 기록이 절 예산 안에 숨었다 — 항목 한도가 실행 기록에 닿지 않는다:\n${r.out}`)
+  assert(!/변경 기록|묶인 변경/.test(r.out), `§변경 기록까지 재고 있다 — allEnd 로 훑었다:\n${r.out}`)
+})
+
+
+await test('a vendored intent and spec are still read for the tier and the acceptance criteria', () => {
+  const d = temp('sdlc-vendored')
+  put(join(d, '.claude/spec-profile.yml'), 'sdlc_version: 5\nspec_dir: "."\n')
+  put(join(d, 'upstream.lock.json'), JSON.stringify({ repo: 'x/rwa-docs', files: { 'intent.md': {}, 'spec.md': {} } }))
+  put(join(d, 'intent.md'), `---
+artifact: intent
+id: "CHG-2026-001"
+status: draft
+tier: full
+schema_version: 5
+---
+
+# Intent: 풀을 둘 이상 세운다
+
+## 문제 \`[필수 · 모든 티어]\`
+
+풀이 하나라는 전제가 배포 스크립트에 박혀 있다.
+`)
+  put(join(d, 'spec.md'), `---
+artifact: spec
+id: "SPEC-2026-001"
+status: draft
+schema_version: 5
+---
+
+## 요구사항 \`[필수 · 모든 티어]\`
+
+### FR-001 — 풀마다 좌수 토큰을 세운다 \`Must\`
+
+- [ ] AC-001 — 풀을 둘 세우면 좌수 토큰이 풀마다 하나씩 선다
+`)
+  // Long enough to clear the full budget too, so a tier is named either way — which one it names
+  // is the assertion.
+  const filler = '풀별 배포 경로를 그대로 옮겨 적는다. '.repeat(500)
+  put(join(d, 'plan.md'), `---
+artifact: plan
+id: "PLAN-2026-001"
+status: in_progress
+tier: full
+schema_version: 5
+---
+
+## 입력과 범위 \`[필수 · 모든 티어]\`
+
+${filler}
+
+## 작업 \`[필수 · 모든 티어]\`
+
+- [ ] **WP-001 — 풀마다 토큰을 세운다**
+  - files: \`script/a.sol\`
+  - depends: 없음
+  - covers: FR-001 (AC-001)
+  - tests: 볼트 수수료 정산이 반올림된다
+  - verify: true
+`)
+  const r = run(process.execPath, [tool('lint-prose.mjs'), d])
+  assert(/full 한도/.test(r.out) && !/standard 한도/.test(r.out),
+    `벤더한 intent 를 빼면서 tier 도 잃었다 — 계획서가 남의 예산으로 재였다:\n${r.out}`)
+  assert(/test-drift/.test(r.out),
+    `벤더한 spec 의 수용 기준을 못 읽어 tests 표류 검사가 조용히 꺼졌다:\n${r.out}`)
+  assert(/상호 참조/.test(r.out), `벤더 사본을 어떻게 다뤘는지 말하지 않는다:\n${r.out}`)
+})
+
+
+await test('test drift reports once that it cannot measure rather than firing on every task', () => {
+  const d = temp('sdlc-drift-lang')
+  put(join(d, '.claude/spec-profile.yml'), 'sdlc_version: 5\nspec_dir: "."\n')
+  put(join(d, 'spec.md'), `---
+artifact: spec
+id: "SPEC-2026-001"
+status: draft
+schema_version: 5
+---
+
+## 요구사항 \`[필수 · 모든 티어]\`
+
+### FR-001 — 풀마다 좌수 토큰을 세운다 \`Must\`
+
+- [ ] AC-001 — 풀을 둘 세우면 좌수 토큰이 풀마다 하나씩 선다
+`)
+  const wp = (id) => `- [ ] **${id} — 풀마다 토큰을 세운다**
+  - files: \`script/${id}.sol\`
+  - depends: 없음
+  - covers: FR-001 (AC-001)
+  - tests: test_DeployAll_BindsEachPoolsUnitsTokenToThatPoolAlone_${id}
+  - verify: true
+`
+  put(join(d, 'plan.md'), `---
+artifact: plan
+id: "PLAN-2026-001"
+status: in_progress
+tier: light
+schema_version: 5
+---
+
+## 작업 \`[필수 · 모든 티어]\`
+
+${wp('WP-001')}
+${wp('WP-002')}
+${wp('WP-003')}
+`)
+  const r = run(process.execPath, [tool('lint-prose.mjs'), d])
+  const drift = (r.out.match(/\[test-drift\]/g) ?? []).length
+  assert(drift === 0, `잴 수 없는 겹침을 작업마다 표류로 불렀다 (${drift}건) — 늘 걸리는 검사는 꺼진 것과 같다:\n${r.out}`)
+  assert((r.out.match(/test-drift-lang/g) ?? []).length === 1,
+    `잴 수 없다는 사실을 한 번 말하지 않았다 — 조용히 건너뛰면 통과와 구분되지 않는다:\n${r.out}`)
+})
+
+
 await test('localized templates have matching structures so sections cannot disappear silently', () => {
   const shape = (file) => readFileSync(file, 'utf8').split('\n')
     .filter((l) => /^#{2,3} /.test(l))
@@ -1115,6 +1264,10 @@ ${wp('WP-003', 'src/c.js')}
   assert(r.code === 0, r.out)
   assert(logLines().length === 1, `계획대로 끝난 두 작업이 두 줄이 됐다:\n${logLines().join('\n')}`)
   assert(/WP-001 WP-002/.test(logLines()[0]), `앞줄에 ID 를 안 보탰다:\n${logLines()[0]}`)
+
+  r = mark('WP-003', '--note', `캐시 무효화를 뒤로 미뤘다. ${'덧붙인 설명. '.repeat(20)}`)
+  assert(r.code === 2 && /한도 120/.test(r.out), `장황한 --note 를 그대로 적었다 — 실행 기록은 훑는 줄이다:\n${r.out}`)
+  assert(!/덧붙인 설명/.test(readFileSync(plan, 'utf8')), '거부해 놓고 계획서에는 썼다')
 
   r = mark('WP-003', '--note', '캐시 무효화를 뒤로 미뤘다')
   assert(r.code === 0, r.out)
