@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.3.0 — 2026-09-09
+
+### Added
+
+- **`--json` on `check-artifacts.mjs` and `lint-prose.mjs`.** Both emit structured diagnostics, so
+  the artifact gate's warning count and the schema migration read a machine-readable result rather
+  than parsing terminal output whose wording changes with the profile language.
+- **More contract keyword aliases.** The change-history section title, the legacy ADR header-table
+  status values, and case variations of every parsed section title are now accepted in both
+  languages.
+
+### Changed
+
+- **Runtime sources and tests use English prose.** Reference documents, prompt templates,
+  JavaScript comments, and test names now use English consistently. Redundant comments were
+  removed while preserving the compatibility fixtures for bilingual artifact contracts.
+- **Generated hook comments use English.** The approval and artifact-gate shims now explain
+  runtime discovery and their responsibilities in English, and the README title is `Skills`.
+
+### Fixed
+
+- ADR indexes render in the profile language and check against that same rendering. Legacy status
+  tables accept English and Korean values and reject unknown states.
+- English change-history headings no longer count task IDs as execution evidence; ADR summaries
+  remove both chosen markers and accept section-title case variations.
+- Runtime smoke tests await asynchronous checks before recording their results, including the
+  locale bundle and template parity checks — a failure in either was recorded as a pass.
+- `repository` in `plugin.json` named `ReStartAllKill/restart-harness`, which does not exist. The
+  plugin lives in `ReStartAllKill/skills`.
+
 ## 0.2.0 — 2026-09-09
 
 ### Added
@@ -14,24 +44,8 @@
   branch changes an artifact set, the body cites the approved intent and spec instead of deriving
   their rationale from the diff. Repository-specific PR settings live in the profile.
 
-### Fixed
-
-- ADR indexes now render in the profile language and check against that same rendering.
-  Legacy status tables accept English and Korean values and reject unknown states.
-- English change-history headings no longer count task IDs as execution evidence; ADR
-  summaries remove both chosen markers and accept section-title case variations.
-- Hook warning counts and schema migration consume structured checker diagnostics instead
-  of parsing localized terminal output. Both checkers expose `--json`.
-- Runtime smoke tests now await asynchronous checks before recording their results, including
-  locale bundle and template parity checks.
-
 ### Changed
 
-- **Runtime sources and tests use English prose.** Reference documents, prompt templates,
-  JavaScript comments, and test names now use English consistently. Redundant comments were
-  removed while preserving compatibility fixtures for bilingual artifact contracts.
-- **Generated hook comments use English.** The approval and artifact-gate shims now explain
-  runtime discovery and their responsibilities in English, and the README title is `Skills`.
 - **Artifact language is repository-owned.** The profile's `lang` selects artifact templates,
   prose rules, and pull request body rules. Progress reports follow the conversation language
   because they are not committed to the repository.
