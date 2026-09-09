@@ -1,10 +1,8 @@
-/** 작업 정의와 파일 내용의 지문을 계산한다. 체크박스·실행 기록은 제외한다. */
 import { readFileSync, lstatSync, readlinkSync } from 'node:fs'
 import { resolve, relative } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 
-/** 큰 바이너리 파일도 읽을 수 있도록 자식 프로세스 출력 버퍼를 확장한다. */
 const MAX_BUFFER = 512 * 1024 * 1024
 
 export function taskFiles(task) {
@@ -13,7 +11,6 @@ export function taskFiles(task) {
   return (quoted.length ? quoted : value.split(',')).map((s) => s.trim()).filter(Boolean)
 }
 
-/** 디렉터리는 Git 파일 목록으로 확장하고 일반 파일은 null을 반환한다. ls-tree의 디렉터리 판정 전 끝의 /를 제거한다. */
 function expandDir(root, name, ref) {
   const git = (...args) => execFileSync('git', ['-C', root, ...args], { stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: MAX_BUFFER })
   const bare = name.replace(/\/+$/, '')
@@ -39,7 +36,6 @@ export function taskFingerprint(root, task, ref = null) {
       const entry = git('ls-tree', ref, '--', name).toString().trim()
       if (!entry) { hash.update('missing'); return }
       const [mode, type, object] = entry.split(/[\t ]/)
-      // 서브모듈은 고정된 커밋 ID를 지문에 반영한다.
       if (type === 'commit') { hash.update(JSON.stringify({ type: 'gitlink' })); hash.update(object); return }
       if (type !== 'blob') throw new Error(`파일이 아닌 작업 경로: ${name}`)
       hash.update(JSON.stringify({ type: mode === '120000' ? 'link' : 'file', executable: mode === '100755' }))
@@ -49,7 +45,6 @@ export function taskFingerprint(root, task, ref = null) {
     try {
       const stat = lstatSync(path)
       if (stat.isDirectory()) {
-        // ls-files에 남은 디렉터리는 서브모듈이므로 인덱스의 커밋 ID를 사용한다.
         const git = (...args) => execFileSync('git', ['-C', root, ...args], { stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: MAX_BUFFER })
         const staged = git('ls-files', '--stage', '--', name).toString().trim().split(/[\t ]/)
         if (staged[0] !== '160000') throw new Error(`파일이 아닌 작업 경로: ${name}`)
@@ -65,14 +60,12 @@ export function taskFingerprint(root, task, ref = null) {
   for (const declared of taskFiles(task).sort()) {
     const members = expandDir(root, declared, ref)
     if (members === null) { one(declared); continue }
-    // 빈 디렉터리도 구분하도록 선언 경로를 지문에 포함한다.
     hash.update(JSON.stringify(declared))
     for (const member of members) one(member)
   }
   return hash.digest('hex')
 }
 
-/** 전체 저장소 지문에서 산출물·검증 로그·자체 실행 로그를 제외한다. */
 export function repositoryFingerprint(root, { specDir, logDir }, ref = null) {
   const git = (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: MAX_BUFFER })
   const names = ref ? git('ls-tree', '-r', '--name-only', '-z', ref)

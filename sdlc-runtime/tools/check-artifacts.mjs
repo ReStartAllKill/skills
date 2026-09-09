@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/** 산출물의 구조·추적성·상태·참조 버전을 검사한다. 사용법: node check-artifacts.mjs <명세 디렉터리> [--strict]. */
 import { readFileSync, existsSync, statSync, readdirSync } from 'node:fs'
 import { resolve, basename, dirname, join } from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -29,7 +28,6 @@ const STRICT = argv.includes('--strict')
 const DIR = resolve(argv.find((a) => !a.startsWith('--')) ?? '.')
 useLocale(DIR)   // 문체 번들을 프로필의 lang 으로 고른다
 
-/** 산출물 ID 검사에서 제외할 표준 약어와 문서 ID 접두. */
 const NOT_OURS = new Set(['UTF', 'ISO', 'RFC', 'SHA', 'AES', 'TLS', 'SLA', 'RTO', 'RPO', 'WCAG',
   'HTTP', 'HTTPS', 'ADR', 'DORA', 'MDM', 'MCP', 'ACP', 'PII', 'API', 'SDK', 'CHG', 'SPEC',
   'PLAN', 'FND', 'JSON', 'YAML', 'CSV', 'SQL', 'AWS', 'GCP', 'CPU', 'RAM'])
@@ -39,7 +37,6 @@ const STATUS = {
   intent: ['draft', 'in_review', 'accepted', 'rejected', 'superseded'],
   spec: ['draft', 'in_review', 'accepted', 'rejected', 'superseded'],
   plan: ['draft', 'in_review', 'accepted', 'in_progress', 'completed', 'rejected', 'superseded'],
-  // finding의 accepted는 승인 대신 처리 경로 확정을 뜻한다.
   finding: ['draft', 'in_review', 'accepted', 'rejected', 'superseded'],
 }
 const RANK = { draft: 0, in_review: 1, accepted: 2, in_progress: 3, completed: 4, rejected: -1, superseded: -2 }
@@ -58,7 +55,6 @@ const err = (doc, msg, hint) => problems.push({ level: 'error', doc, msg, hint }
 const warn = (doc, msg, hint) => problems.push({ level: 'warn', doc, msg, hint })
 const notes = []
 
-/** 프로필이 있는 가장 가까운 상위 디렉터리를 저장소 루트로 사용한다. */
 const REPO_ROOT = (() => {
   for (let d = DIR, prev = null; d !== prev; prev = d, d = resolve(d, '..')) {
     if (existsSync(resolve(d, '.claude/spec-profile.yml'))) return d
@@ -68,12 +64,10 @@ const REPO_ROOT = (() => {
 const SEAM = { ...adrSeam(REPO_ROOT), root: REPO_ROOT }
 const UP = upstreamSeam(REPO_ROOT)
 
-// ADR 입력은 상위 문서가 없는 파일 단위 검사로 처리한다.
 
 const ADR_TARGETS = (() => {
   const isDir = existsSync(DIR) && statSync(DIR).isDirectory()
   if (!isDir) return ADR_FILENAME.test(basename(DIR)) ? { dir: dirname(DIR), only: basename(DIR) } : null
-  // ADR 경로가 겹치더라도 intent·spec·plan이 있으면 산출물 검사를 우선한다.
   if (Object.values(CHAIN_FILES).some((f) => existsSync(join(DIR, f)))) return null
   const looksAdr = SEAM.dir === DIR || readdirSync(DIR).some((f) => ADR_FILENAME.test(f))
   return looksAdr ? { dir: DIR, only: null } : null
@@ -87,16 +81,17 @@ if (ADR_TARGETS) {
   }
   const targets = ADR_TARGETS.only ? all.filter((d) => d.name === ADR_TARGETS.only) : all
   if (!targets.length && !malformed.length) {
+    if (argv.includes('--json')) process.exit(report({ title: '', problems: [{ level: 'error', doc: DIR, rule: 'artifacts-missing', msg: `결정 기록이 없다 — ${DIR}` }], json: true }))
     console.error(`결정 기록이 없다 — ${DIR}`)
     process.exit(1)
   }
   for (const d of targets) {
-    // info 진단도 누락되지 않도록 별도 출력한다.
     checkAdr(d, { seam: SEAM, siblings: all }, (level, msg, hint) =>
       level === 'info' ? notes.push(`${d.name} — ${msg}`) : problems.push({ level, doc: d.name, msg, hint }))
   }
   if (!SEAM.configured) notes.push('프로필에 `adr_dir` 이 없다 — 등재하면 산출물 세트의 `decisions:` 핀 검사도 실행한다')
   process.exit(report({
+    json: argv.includes('--json'),
     title: `결정 기록 검사 — ${targets.length}장${malformed.length ? ` (이름 규칙 위반 ${malformed.length}개)` : ''}`,
     notes, problems, strict: STRICT, ruleDoc: '`references/adr.md` 에 있다.',
   }))
@@ -108,15 +103,14 @@ const docs = loadDir(DIR, (d, dup, first) =>
 const TEMPLATE = isTemplate(docs)
 
 if (Object.keys(docs).length === 0) {
+  if (argv.includes('--json')) process.exit(report({ title: '', problems: [{ level: 'error', doc: DIR, rule: 'artifacts-missing', msg: `산출물이 없다 — ${DIR} 에 intent.md / spec.md / plan.md / finding.md 가 하나도 없다.` }], json: true }))
   console.error(`산출물이 없다 — ${DIR} 에 intent.md / spec.md / plan.md / finding.md 가 하나도 없다.`)
   process.exit(1)
 }
-// finding만 있는 디렉터리도 유효하다.
 if (!TEMPLATE && !docs.intent && (docs.spec || docs.plan)) {
   err('(폴더)', 'intent.md 가 없다', '산출물 세트는 intent에서 시작한다. spec·plan만으로는 변경 이유를 추적할 수 없다.')
 }
 
-/** 템플릿은 내용·상태·버전 검사를 생략하되 구조와 ID 참조는 검사한다. */
 if (TEMPLATE) notes.push('템플릿 원본으로 판정했다(id 가 아직 `…-YYYY-NNN`) — 내용·상태·버전·층 검사는 건너뛰고 구조와 ID 그래프만 본다.')
 
 const ALL = new Map()
@@ -143,10 +137,8 @@ for (const d of Object.values(docs)) {
   }
 }
 
-// band_breach는 등록된 밴드를 참조해야 하며, 조정 내용은 등록부와 일치해야 한다.
 if (docs.finding && !TEMPLATE) {
   const f = docs.finding
-  /** Git 초기화 여부와 관계없이 프로필을 기준으로 루트를 찾는다. */
   let repoRoot = null
   for (let d = DIR, prev = null; d !== prev; prev = d, d = resolve(d, '..')) {
     if (existsSync(resolve(d, '.claude/spec-profile.yml'))) { repoRoot = d; break }
@@ -173,13 +165,11 @@ if (docs.finding && !TEMPLATE) {
         `등록부에 있는 밴드: ${Object.keys(reg.bands).join(' · ') || '(없음)'}. 오타이거나, 밴드를 먼저 등록부에 더해야 한다.`)
     } else if (f.fm.autonomy_tier && reg.bands[band].autonomy_tier &&
                f.fm.autonomy_tier !== reg.bands[band].autonomy_tier) {
-      // finding의 허용 범위는 밴드 설정을 초과할 수 없다.
       err(f.name, `\`autonomy_tier: ${f.fm.autonomy_tier}\` 가 등록부의 \`${band}\`(\`${reg.bands[band].autonomy_tier}\`) 와 다르다`,
         '무엇을 해도 되는지는 밴드가 정한다. 넓혀야 하면 등록부를 먼저 고친다.')
     }
   }
 
-  /** 밴드를 조정했다면 등록부 기록을 요구하고, 조정하지 않았다면 근거를 요구한다. */
   if (f.fm.status === 'rejected') {
     const body = stripComments(f.lines.join('\n'))
     const noChange = RE_BAND_NO_CHANGE.test(body)
@@ -198,7 +188,6 @@ if (docs.finding && !TEMPLATE) {
   }
 }
 
-// 스키마 v3 이상은 작성자와 승인자를 분리한다. finding은 처리 경로로 검증한다.
 const APPROVAL_SCHEMA = 3
 if (!TEMPLATE) {
   for (const d of [docs.intent, docs.spec, docs.plan].filter(Boolean)) {
@@ -213,7 +202,6 @@ if (!TEMPLATE) {
     const by = String(d.fm.approved_by).trim()
     const gen = isNull(d.fm.generated_by) ? '' : String(d.fm.generated_by).trim()
 
-    /** 정책 승인은 등록된 경로의 유효기간과 위임 범위를 검사한다. */
     if (by.startsWith('policy:')) {
       const routeId = by.slice('policy:'.length).trim()
       let repoRoot = null
@@ -240,7 +228,6 @@ if (!TEMPLATE) {
         err(d.name, `\`tier: ${d.fm.tier}\` 가 자율 경로 \`${routeId}\` 의 \`max_tier: ${route.max_tier}\` 를 넘는다`,
           '위임한 것보다 위험한 변경이 그 위임으로 통과했다. 사람이 직접 승인하거나 정책을 먼저 넓힌다.')
       } else if (STAGES.indexOf(d.name.replace(/\.md$/, '')) > STAGES.indexOf(String(route.advance_to))) {
-        /** 정책 승인은 advance_to 이후의 산출물에 적용할 수 없다. */
         err(d.name, `자율 경로 \`${routeId}\` 은 \`${route.advance_to}\` 까지 맡았는데 ${d.name} 를 승인했다`,
           `이 위임의 경계 밖이다. 사람이 직접 승인하거나, 정책의 \`advance_to\` 를 먼저 넓힌다 — 넓히는 것은 사람이 하는 결정이다.`)
       }
@@ -254,7 +241,6 @@ if (!TEMPLATE) {
   }
 }
 
-// 작성 메타데이터 누락은 경고한다. strict 모드에서는 실패로 처리한다.
 if (!TEMPLATE) {
   for (const d of Object.values(docs)) {
     if (!isNull(d.fm.generated_by)) continue
@@ -263,7 +249,6 @@ if (!TEMPLATE) {
   }
 }
 
-/** intent·spec·plan은 스키마 버전이 같아야 한다. 독립 입력인 finding은 예외다. */
 const chain = [docs.intent, docs.spec, docs.plan].filter(Boolean)
 const chainSchema = chain.length ? schemaVersion(chain[0].fm) : null
 for (const d of chain.slice(1)) {
@@ -276,7 +261,6 @@ for (const d of chain.slice(1)) {
 const shownSchema = chainSchema ?? (docs.finding ? schemaVersion(docs.finding.fm) : null)
 if (shownSchema != null) notes.push(`산출물 schema v${shownSchema}${shownSchema === 1 ? ' (무버전 문서 호환)' : ''} · runtime ${SDLC_VERSION}`)
 
-/** 위험 등급은 intent에서 상속한다. finding은 자체 등급을 사용한다. */
 const TIER = docs.intent?.fm?.tier ?? docs.finding?.fm?.tier ?? 'standard'
 for (const d of [docs.spec, docs.plan].filter(Boolean)) {
   if (d.fm.tier && d.fm.tier !== TIER) {
@@ -308,7 +292,6 @@ if (docs.finding) {
   }
 }
 
-/** from_finding과 routed_to의 양방향 연결을 확인한다. */
 if (docs.intent && !isNull(docs.intent.fm.from_finding)) {
   const fp = resolve(DIR, String(docs.intent.fm.from_finding))
   if (!existsSync(fp)) err('intent.md', `\`from_finding: ${docs.intent.fm.from_finding}\` 가 가리키는 파일이 없다`, '상대 경로를 확인한다.')
@@ -318,7 +301,6 @@ if (docs.intent && !isNull(docs.intent.fm.from_finding)) {
     if (up.status === 'accepted' && !r.startsWith('intent')) {
       err('intent.md', `상위 발견(${basename(fp)}) 은 \`${r || '경로 없음'}\` 로 나갔다고 적혀 있다`, '이 intent 가 그 발견에서 왔다면 발견의 `routed_to` 도 `intent:<이 경로>` 여야 한다.')
     } else if (r.startsWith('intent')) {
-      // 양쪽 경로가 같은 문서 쌍을 가리켜야 한다.
       const points = resolve(fp, '..', r.slice(r.indexOf(':') + 1).trim())
       if (points !== docs.intent.path) {
         err('intent.md', '상위 발견의 `routed_to` 는 다른 intent 를 가리킨다',
@@ -328,12 +310,10 @@ if (docs.intent && !isNull(docs.intent.fm.from_finding)) {
   }
 }
 
-// 상류가 다른 레포면 그 사실이 폴더 안에 파일로 있어야 검사기가 본다. 락이 그 파일이다.
 const LOCK = TEMPLATE ? null : loadLock(DIR)
 if (LOCK?.broken) {
   err(LOCK_FILE, `락을 읽을 수 없다 — ${LOCK.broken}`, '`pull-spec.mjs` 로 다시 끌어오면 새로 만든다.')
 } else if (LOCK) {
-  // 사본이 락과 다르면 손을 탄 것이다. 정본이 둘이 되는 것을 규율이 아니라 해시가 막는다.
   for (const pr of verifyLock(DIR, LOCK)) problems.push(pr)
   if (!UP.self) {
     err(LOCK_FILE, '상류에서 끌어왔는데 프로필에 `repo` 가 없다',
@@ -342,7 +322,6 @@ if (LOCK?.broken) {
   if (UP.self && sameRepo(UP.self, LOCK.repo)) {
     err(LOCK_FILE, `상류(${LOCK.repo})가 이 레포다`, '자기 자신에서 끌어오면 사본과 정본이 같은 자리에 산다. 락을 지운다.')
   }
-  // 신선도는 옆에 받아둔 체크아웃이 있을 때만 본다 — 검사기는 네트워크를 쓰지 않는다.
   const upRoot = findUpstream(LOCK, REPO_ROOT, null)
   if (!upRoot) {
     notes.push(`${LOCK.repo} 체크아웃이 없다 — 사본의 무결성만 봤다. CI 는 상류를 체크아웃하고 \`SDLC_UPSTREAM\` 으로 가리킨다.`)
@@ -357,14 +336,11 @@ if (LOCK?.broken) {
   }
 }
 
-// intent_version·spec_version을 상위 문서의 커밋과 대조한다. 락이 있으면 대조 상대는
-// 사본이 아니라 락이 가리키는 상류 커밋이다 — 그래야 핀이 레포 경계를 넘는다.
 const inGit = (() => { try { execFileSync('git', ['-C', DIR, 'rev-parse', '--git-dir'], { stdio: 'ignore' }); return true } catch { return false } })()
 const lastCommit = (f) => {
   try { return execFileSync('git', ['-C', DIR, 'log', '-1', '--format=%H', '--', f], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null }
   catch { return null }
 }
-// git 도 락도 없으면 대조할 상대가 없다 — 형식 검사까지 통째로 건너뛴다.
 if (!inGit && !LOCK?.files) notes.push('git 저장소가 아니다 — 버전 고정 검사만 건너뛴다.')
 else if (!TEMPLATE) {
   for (const [d, key, up] of [[docs.spec, 'intent_version', 'intent.md'], [docs.plan, 'spec_version', 'spec.md']]) {
@@ -403,7 +379,6 @@ for (const d of Object.values(docs)) {
     const where = `«${h.title}»`
 
     if (content.length === 0) {
-      /** 같은 깊이의 제목은 하위 내용으로 집계하지 않는다. */
       const next = d.hs.find((x) => x.line > h.line)
       const sibling = next && next.depth === h.depth && new RegExp(`^(${P_ALT})-\\d`).test(next.title)
       err(d.name, `${where} 이 비어 있다`, sibling
@@ -411,7 +386,6 @@ for (const d of Object.values(docs)) {
         : `\`${TIER}\` 티어에서 필수다. 없으면 \`해당 없음 — <근거>\`.`)
       continue
     }
-    /** 섹션 전체가 ‘해당 없음’일 때만 근거를 요구한다. 본문 필드 값은 제외한다. */
     const none = content.length <= 2 ? content.find((l) => RE_NA.test(l)) : undefined
     if (none) {
       if (!RE_NA_WITH_BASIS.test(none)) {
@@ -437,10 +411,8 @@ for (const d of Object.values(docs)) {
     if (!d.live[i]) return
     for (const id of idsIn(line)) {
       if (ALL.has(id)) continue
-      // 템플릿의 ID 자리표시자는 참조로 집계하지 않는다.
       if (TEMPLATE && /<[^<>]*-\d/.test(line)) continue
       const home = PREFIXES[id.split('-')[0]]
-      /** 아직 생성되지 않은 문서의 ID 참조는 오류로 처리하지 않는다. */
       const pending = !docs[home.doc]
       ;(pending ? warn : err)(d.name,
         pending ? `${id} 은 아직 없는 ${FILES[home.doc]} 의 ID 다`
@@ -461,12 +433,10 @@ const reqs = [...of('spec', 'FR'), ...of('spec', 'NFR')]
 const acs = of('spec', 'AC')
 const wps = of('plan', 'WP')
 
-// 요구사항의 근거는 OUT 또는 CON이어야 한다.
 for (const r of reqs) {
   if (idsIn(field(r, ...FIELD.basis)).some((x) => /^(OUT|CON)-/.test(x))) continue
   err('spec.md', `${r.id} 에 \`근거:\` 가 없다`, '어느 OUT-*/CON-* 에서 왔는지 없으면 이 요구사항이 왜 존재하는지 아무도 답할 수 없다.')
 }
-// 모든 Must 목표 결과에 요구사항이 연결돼야 한다.
 if (docs.spec) {
   const covered = new Set(reqs.flatMap((r) => idsIn(field(r, ...FIELD.basis))))
   for (const o of outs) {
@@ -474,13 +444,11 @@ if (docs.spec) {
     err('spec.md', `${o.id}(Must) 를 덮는 요구사항이 없다`, 'intent 가 Must 로 약속한 결과인데 명세가 다루지 않는다. 요구사항을 더하거나 intent 에서 우선순위를 내린다.')
   }
 }
-// Must 요구사항에는 수용 기준이 필요하다.
 for (const r of reqs) {
   if (!isMust(r)) continue
   if (acs.some((a) => a.parent === r.id)) continue
   err('spec.md', `${r.id}(Must) 에 수용 기준이 없다`, '`수용 기준:` 밑에 `- [ ] AC-00N — <언제>이면 시스템은 <무엇을> 한다` 를 적는다. Pass/Fail 로 못 재는 Must 는 끝났는지 아무도 말할 수 없다.')
 }
-// 작업의 필수 필드와 요구사항 참조를 검사한다.
 for (const w of wps) {
   const missing = WP_FIELDS.filter((k) => !w.fields.has(k))
   if (missing.length) err('plan.md', `${w.id} 에 \`${missing.join('\`·\`')}\` 줄이 없다`, `작업마다 ${WP_FIELDS.join(' · ')} 다섯 줄이 있어야 /implement-spec 이 이것을 굴린다.`)
@@ -488,27 +456,22 @@ for (const w of wps) {
   if (idsIn(field(w, 'covers')).some((x) => /^(FR|NFR|AC)-/.test(x))) continue
   err('plan.md', `${w.id} 이 어느 요구사항도 가리키지 않는다`, '어디에도 안 걸린 작업은 이 변경의 일이 아니다. covers 를 채우거나 작업을 뺀다.')
 }
-// 소비 레포는 상류 spec 의 자기 `scope` 몫만 덮는다. 단일 레포면 경계가 없어 전부가 내 몫이다.
 const CONSUMER = !!(LOCK && !LOCK.broken && UP.self)
 const MINE = (e, parent) => {
   if (!CONSUMER) return true
   const sc = scopeOf(e, parent)
-  // 범위가 없는 기준은 «아무의 몫도 아님» 이 아니라 «모두의 몫» 으로 읽는다. 조용히 빠지는 것보다 낫다.
   return sc.length === 0 || sc.some((s) => sameRepo(s, UP.self))
 }
 
-// 모든 Must 수용 기준에 구현 작업이 연결돼야 한다.
 if (docs.plan && docs.spec) {
   const done = new Set(wps.flatMap((w) => idsIn(field(w, 'covers'))))
   for (const a of acs) {
     const parent = a.parent ? ent(a.parent) : null
     if (!parent || !isMust(parent)) continue
     if (done.has(a.id) || done.has(a.parent)) continue
-    // 상류에서 끌어온 spec 은 여러 레포의 몫을 함께 담는다. 이 레포는 자기 `scope` 만 덮는다.
     if (!MINE(a, parent)) continue
     err('plan.md', `${a.id}(${a.parent} 의 수용 기준) 을 덮는 작업이 없다`, '수용 기준이 있는데 그것을 만드는 작업이 없으면 그 기준은 아무도 통과시키지 않는다.')
   }
-  // 남의 몫을 덮는 작업은 이 레포의 일이 아니다 — 두 레포가 같은 기준을 만들면 합류에서 갈린다.
   if (CONSUMER) {
     for (const w of wps) {
       const foreign = idsIn(field(w, 'covers')).map((id) => ent(id)).filter((e) => {
@@ -522,8 +485,6 @@ if (docs.plan && docs.spec) {
     }
   }
 }
-// `scope` 는 v6 문법이다. 옛 스키마로 선언한 문서에 쓰면 옛 런타임이 제목의 일부로 읽고
-// 배정이 조용히 사라진다 — 버전을 올려야 그 사실이 드러난다.
 if (docs.spec && !TEMPLATE && schemaVersion(docs.spec.fm) < 6) {
   const scoped = [...docs.spec.ents.values()].filter((e) => e.scope?.length)
   if (scoped.length) {
@@ -532,8 +493,6 @@ if (docs.spec && !TEMPLATE && schemaVersion(docs.spec.fm) < 6) {
   }
 }
 
-// 상류 문서 레포는 배정을 진다 — 모든 Must 수용 기준이 어느 소비 레포엔가 걸려야 한다.
-// 소비 레포는 자기 몫만 보므로, 아무에게도 배정되지 않은 기준은 여기서만 보인다.
 if (UP.isUpstream && docs.spec && !TEMPLATE && schemaVersion(docs.spec.fm) >= 6) {
   const known = (s) => UP.consumers.some((c) => sameRepo(c, s))
   for (const a of acs) {
@@ -557,13 +516,11 @@ if (UP.isUpstream && docs.spec && !TEMPLATE && schemaVersion(docs.spec.fm) >= 6)
   }
 }
 
-// 가설은 관측 근거를 참조해야 한다.
 for (const h of of('finding', 'HYP')) {
   if (idsIn(field(h, ...FIELD.basis)).some((x) => x.startsWith('EV-'))) continue
   err('finding.md', `${h.id} 이 어느 관측도 가리키지 않는다`, '§관측 의 EV-* 를 `근거:` 로 든다. 기계가 잰 것에 안 걸린 가설은 모델의 짐작이지 발견이 아니다.')
 }
 
-// 병렬 실행할 같은 레벨의 작업은 파일 범위가 겹치면 안 된다.
 if (wps.length) {
   const { level, cycles, unknown } = levelsOf(wps)
   for (const c of cycles) err('plan.md', `${c[0]} 의 \`depends\` 가 순환한다`, `${c.join(' → ')}. 순환하면 레벨이 정해지지 않아 실행 순서가 없다.`)
@@ -615,7 +572,6 @@ if (!TEMPLATE) {
   }
 }
 
-// ADR 참조의 버전과 유효 상태를 검사한다.
 
 if (!TEMPLATE) {
   checkPins(docs, { seam: SEAM }, (level, doc, msg, hint) => problems.push({ level, doc, msg, hint }))
@@ -638,6 +594,7 @@ if (!TEMPLATE) {
 
 
 process.exit(report({
+    json: argv.includes('--json'),
   title: `산출물 추적성 검사 — ${basename(DIR)}  (tier: ${TIER}, 문서 ${Object.keys(docs).length}개, ID ${ALL.size}개)`,
   notes, problems, strict: STRICT, ruleDoc: '`conventions.md` 의 «티어» · «ID 접두» · «상태와 승인» 절에 있다.',
 }))

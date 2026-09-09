@@ -47,6 +47,7 @@ export const CHOSEN = ['chosen', '채택']
 /** Section-title aliases for the two plan sections and five ADR sections parsed as text. */
 export const SECTION = {
   executionLog: ['Execution log', '실행 기록'],
+  changeLog: ['Change log', 'Changelog', '변경 기록'],
   releaseImpact: ['Release impact', '릴리스 영향'],
   decision: ['Decision', '결정'],
   forces: ['Context and forces', '문맥과 결정 요인'],
@@ -57,10 +58,10 @@ export const SECTION = {
 
 /** Match a section from `## <name>` to the next `##`, accepting every alias. */
 export const sectionBlock = (aliases) =>
-  new RegExp(`##\\s*(?:${aliases.map(esc).join('|')})[\\s\\S]*?(?=\\n##\\s|\\n*$)`)
+  new RegExp(`##\\s*(?:${aliases.map(esc).join('|')})[\\s\\S]*?(?=\\n##\\s|\\n*$)`, 'i')
 /** Match a single `## <name>` heading. */
 export const sectionHeading = (aliases) =>
-  new RegExp(`^##\\s*(?:${aliases.map(esc).join('|')}).*$`, 'm')
+  new RegExp(`^##\\s*(?:${aliases.map(esc).join('|')}).*$`, 'mi')
 
 /** Reason-bearing notation used to omit a required section. */
 export const RE_NA = /^\s*(?:N\/A|해당\s*없음)/i
@@ -74,3 +75,15 @@ export const BAND_ADJUSTMENT = ['band adjustment', '밴드 조정']
 export const NO_ADJUSTMENT = ['no adjustment', '조정 없음']
 export const RE_BAND_NO_CHANGE = new RegExp(
   `(?:${loose(BAND_ADJUSTMENT)})\\s*:\\s*«?\\s*(?:${loose(NO_ADJUSTMENT)})\\s*[—–-]\\s*\\S`, 'i')
+
+/** Legacy header tables normalize into the same status codes as frontmatter. */
+export const ADR_STATUS_ALIASES = {
+  draft: ['draft', 'proposed', '제안됨'],
+  in_review: ['in_review', 'in review', '검토중'],
+  accepted: ['accepted', 'approved', '승인됨'],
+  superseded: ['superseded', '대체됨'],
+  deprecated: ['deprecated', '폐기됨'],
+  rejected: ['rejected', '기각됨'],
+}
+export const LEGACY_STATUS_ROW = /^\|\s*(?:status|상태)\s*\|\s*([^|]+?)\s*\|/mi
+export const RE_CHANGE_LOG = new RegExp(`\\n#{3,}\\s*(?:${SECTION.changeLog.map(esc).join('|')})[^\\n]*[\\s\\S]*$`, 'i')

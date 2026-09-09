@@ -1,72 +1,53 @@
-# 작업 계약
+# Task contract
 
-plan의 작업은 다음 다섯 필드로 정의한다. 스키마 v4부터 커밋과 검증 기록을 완료 증거로 요구한다.
+A plan task has the following five fields. Since schema v4, its commit and verification log are required as completion evidence.
 
 ```markdown
-- [ ] **WP-001 — 기본 검색에서 보관 문서를 제외한다**
+- [ ] **WP-001 — Exclude archived documents from default search**
   - files: `search/query.ts`, `search/query.test.ts`
-  - depends: 없음
+  - depends: none
   - covers: FR-001 (AC-001, AC-002)
-  - tests: <AC-001 문장> · <AC-002 문장>
+  - tests: <AC-001 sentence> · <AC-002 sentence>
   - verify: npm run gate
 ```
 
-- 작업 하나는 에이전트 한 번 호출과 커밋 하나 정도로 나눈다.
-- 소스와 테스트를 같은 작업에 둔다. 회귀 테스트 추가 자체가 목적이면 별도 작업으로 둔다.
-- `tests`에는 `covers`에 해당하는 AC 문장을 적는다.
-- 같은 레벨의 작업은 `files`가 겹치지 않아야 한다. 겹치면 작업을 합치거나 `depends`로 순서를 정한다.
-- `verify`에는 프로필의 작업별 검증 명령을 적는다.
+- Size one task for roughly one agent invocation and one commit.
+- Keep source and tests in the same task. Use a separate task only when adding regression tests is itself the objective.
+- Put the AC sentences corresponding to `covers` in `tests`.
+- Tasks at the same level must not overlap in `files`. Merge overlapping tasks or order them with `depends`.
+- Put the profile's task-scoped verification command in `verify`.
 
-## 실행 도구
+## Execution tools
 
-`plan-levels.mjs`가 의존 관계로 레벨을 계산하고, `task-worktree.mjs`가 작업별 워크트리를 생성한다.
-`task-brief.mjs`는 AC와 적용 규칙을 `references/writer-prompt.md`에 채운다.
+`plan-levels.mjs` derives levels from dependencies, and `task-worktree.mjs` creates a worktree for each task. `task-brief.mjs` fills `references/writer-prompt.md` with the ACs and applicable rules.
 
-커밋 도구는 지정된 파일의 추가·수정·삭제만 스테이징한다. 범위 밖 파일이 이미 스테이징돼 있으면
-인덱스를 변경하지 않고 중단한다. 남은 미커밋 변경이 있는 워크트리도 기본적으로 제거하지 않는다.
+The commit tool stages only additions, modifications, and deletions among the declared files. If an out-of-scope file is already staged, it stops without changing the index. By default, it also refuses to remove a worktree that still has uncommitted changes.
 
-작업 커밋에는 두 trailer를 함께 기록한다. plan 경로는 레포 루트 기준이다.
+Every task commit contains both trailers. The plan path is relative to the repository root.
 
 ```text
 SDLC-Task: WP-001
 SDLC-Plan: .sdlc/specs/2026-09-05-search/plan.md
 ```
 
-작업 ID만 같고 plan 경로가 다른 커밋은 귀속시키지 않는다.
+A commit with the same task ID but a different plan path does not belong to the task.
 
-## 검증과 완료
+## Verification and completion
 
-`verify-run.mjs`로 프로필의 전체 `verify`를 실행한다. 추가 게이트는 `--label`을 붙여 별도로 실행한다.
-로그는 `<verify_log_dir>/<slug>/`에 남기고 plan 갱신과 함께 커밋한다.
+Run the profile's complete `verify` command through `verify-run.mjs`. Run additional gates separately with `--label`. Logs go under `<verify_log_dir>/<slug>/` and are committed with the plan update.
 
-로그의 증거는 `---` 위의 헤더다 — 지문·저장소 해시·HEAD·종료 코드가 거기 있고 검사기는 그것만 읽는다.
-`---` 아래의 명령 출력은 사람이 실패를 읽을 때 쓰는 재료라 **통과한 실행에서는 끝 40줄만 남긴다.**
-실패한 실행의 출력은 그것이 곧 용건이므로 2000줄까지 그대로 두고, 넘으면 앞 400줄과 끝을 남긴다.
-자른 자리는 헤더의 `sha256`이 지킨다 — 전체 출력의 해시라 잘린 로그도 조용히 고쳐 쓸 수 없다.
-헤더의 `output`이 무엇을 얼마나 남겼는지 말한다.
+The evidence is the header above `---`: it contains the fingerprints, repository hash, HEAD, and exit code, and the checker reads only that header. Output below `---` helps a person investigate failure, so a **passing run keeps only its final 40 lines**. A failed run keeps up to 2,000 lines; beyond that it retains the first 400 lines and the end. The header's `sha256` covers the complete output, preventing silent edits even when the stored log is truncated. Its `output` field describes what was retained.
 
-§실행 기록의 줄에는 커밋 SHA 와 검증 로그 이름을 적지 않는다. `plan-progress.mjs`가 trailer 와
-로그 폴더에서 그 둘을 직접 찾아 증거로 삼으므로, 줄에 적은 사본은 읽히지 않으면서 자리만 차지한다.
-이 줄에만 있는 값은 «계획과의 차이» 하나다. 계획대로 끝난 작업들은 `mark`가 같은 날의 앞줄에
-ID 만 보태 한 줄로 묶는다 — 검사기는 절 전체에서 ID 를 긁으므로 묶인 줄도 각 작업의 기록으로 읽는다.
+Do not put commit SHAs or verification-log names in the Execution log section. `plan-progress.mjs` finds both directly from trailers and the log directory. The only value unique to that line is a deviation from the plan. For tasks completed as planned, `mark` appends their IDs to the earlier line from the same day; the checker scans the whole section, so grouped IDs still count individually.
 
-`plan-progress.mjs`는 같은 spec과 전체 검증 명령의 최신 로그를 사용한다.
-최신 로그가 실패하면 과거 성공으로 대체하지 않는다. 다음 조건을 모두 만족해야 한다.
+`plan-progress.mjs` uses the newest log for the same spec and full verification command. It never substitutes an older success for a newer failure. All of these conditions must hold:
 
-- 종료 코드 0, label 없음, 프로필의 `verify`와 같은 명령.
-- 같은 spec 경로와 작업 ID, 같은 작업 정의·파일 내용 지문.
-- 전체 저장소 지문 일치. 추적 파일과 Git이 무시하지 않는 미추적 파일을 포함하며,
-  `spec_dir`, `verify_log_dir`, `.claude/autonomy-runs.jsonl`은 제외한다.
-- 검증 중 작업 파일과 전체 저장소 지문이 바뀌지 않음.
-- 검증한 Git HEAD가 현재 이력에 있고, 해당 작업 커밋들을 포함함.
+- Exit code 0, no label, and a command equal to the profile's `verify`.
+- The same spec path and task IDs, and matching task-definition and file-content fingerprints.
+- A matching whole-repository fingerprint, including tracked files and untracked files not ignored by Git, while excluding `spec_dir`, `verify_log_dir`, and `.claude/autonomy-runs.jsonl`.
+- Neither the task-file nor repository fingerprint changed during verification.
+- The verified Git HEAD remains in current history and contains the task commits.
 
-진행 중인 계획은 현재 파일을 대조한다. 완료된 계획이 커밋되어 있으면 마지막 plan 커밋 당시의
-파일·테스트·프로필·검증 로그를 함께 읽어 이후 산출물 세트의 변경을 소급하지 않는다.
-체크박스·실행 기록 수정은 작업 지문에 포함하지 않는다.
-기존 로그에 작업·저장소 지문이 없거나 작업 커밋에 `SDLC-Plan`이 없으면 v4 완료 증거로 인정하지 않는다.
-기록을 임의로 채우지 말고 재검증하거나 실제 작업 이력을 확인한다.
+An active plan is compared with current files. For a committed completed plan, the tool reads the files, tests, profile, and verification logs as of the final plan commit, so later artifact-set changes are not applied retroactively. Checkbox and Execution log edits do not affect a task fingerprint. A legacy log without task and repository fingerprints, or a task commit without `SDLC-Plan`, is not v4 completion evidence. Reverify or inspect the real task history instead of fabricating records.
 
-각 레벨의 전체 검증에는 이번 레벨과 앞선 완료 작업의 ID를 모두 `--tasks`에 포함한다.
-Git이 무시하는 환경 파일, 외부 서비스 상태는 지문에 포함되지 않으므로 해당 조건이 바뀌면 재검증한다.
-테스트 이름 존재 여부는 보조 검사다. 테스트가 해당 동작을 검증하는지는 AC별 코드·테스트 대조와
-독립 감사로 판단한다. 추가 게이트와 필수 수동 검증의 완료 여부도 별도로 확인한다.
+Full verification for each level passes every task ID from that level and earlier completed levels to `--tasks`. Git-ignored environment files and external-service state are outside the fingerprint, so reverify after those conditions change. Test-name presence is only a supporting check. Determine whether a test verifies its behavior by comparing code and tests against each AC and by independent audit. Check additional gates and required manual verification separately.

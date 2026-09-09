@@ -123,9 +123,12 @@ ID는 항목을 삭제한 뒤에도 **재사용하지 않는다.** 그래야 `FR
 ## 설치
 
 ```bash
-claude plugin marketplace add ReStartAllKill/restart-harness
+claude plugin marketplace add ReStartAllKill/skills
 claude plugin install restart-harness
 ```
+
+두 이름이 다른 것은 가리키는 대상이 다르기 때문이다. `skills`는 마켓플레이스를 담은 저장소이고,
+`restart-harness`는 그 안의 플러그인이다.
 
 그다음 산출물 체계를 사용할 **저장소마다** 한 번 실행한다.
 

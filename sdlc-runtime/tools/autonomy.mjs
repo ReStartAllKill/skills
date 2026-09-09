@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/** 자율 실행 정책의 위험 등급·허용 단계·만료일·책임자를 검사한다. 사용법: node autonomy.mjs <repo-root> [--strict]. */
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve, join, relative, basename } from 'node:path'
 
@@ -7,7 +6,6 @@ export const STAGES = ['finding', 'intent', 'spec', 'plan', 'implement']
 export const TIERS = ['light', 'standard', 'full']
 const REQUIRED = ['trigger', 'max_tier', 'advance_to', 'expires', 'tools']
 
-/** 최상위 스칼라와 routes의 경로별 필드·목록을 읽는다. */
 export function parsePolicy(text) {
   const out = { version: null, owner: null, routes: {}, problems: [] }
   const bad = (line, msg) => out.problems.push({ line, msg })
@@ -47,7 +45,6 @@ export function parsePolicy(text) {
       const v = strip(m[2])
       if (v === '') { listKey = m[1]; out.routes[cur][listKey] = []; return }
       listKey = null
-      // 인라인 배열도 지원한다.
       out.routes[cur][m[1]] = v.startsWith('[')
         ? v.slice(1, -1).split(',').map((s) => strip(s)).filter(Boolean)
         : v
@@ -87,7 +84,6 @@ export function validate(pol, today = new Date()) {
     if (r.max_tier && !TIERS.includes(r.max_tier)) {
       err(r.line, `경로 \`${id}\` 의 \`max_tier: ${r.max_tier}\` 가 셋 중 하나가 아니다`, TIERS.join(' · '))
     }
-    /** full 등급은 자율 실행을 허용하지 않는다. */
     if (r.max_tier === 'full') {
       err(r.line, `경로 \`${id}\` 이 \`max_tier: full\` 이다`,
         'full 은 되돌리기 어려운 변경이다(마이그레이션 · 공개 계약 · 개인정보 · 보안 경계). 자율로 열지 않는다 — standard 까지가 한계다.')
@@ -95,7 +91,6 @@ export function validate(pol, today = new Date()) {
     if (r.advance_to && !STAGES.includes(r.advance_to)) {
       err(r.line, `경로 \`${id}\` 의 \`advance_to: ${r.advance_to}\` 를 못 읽었다`, STAGES.join(' → '))
     }
-    /** implement 정책은 기본 브랜치와 다른 target_branch가 필요하다. */
     if (r.advance_to === 'implement' && !r.target_branch) {
       err(r.line, `경로 \`${id}\` 이 \`implement\` 까지 가는데 \`target_branch\` 가 없다`,
         '코드를 쓰는 자율 경로는 기본 브랜치로 바로 가면 안 된다. 사람이 보는 마지막 자리는 PR 리뷰다 — 전용 브랜치를 적는다.')
@@ -112,7 +107,6 @@ export function validate(pol, today = new Date()) {
   return problems
 }
 
-/** 디스패처와 검사기가 공유하는 정책 유효기간 판정. */
 export const routeActive = (r, today = new Date()) =>
   !!r && /^\d{4}-\d{2}-\d{2}$/.test(r.expires ?? '') && new Date(r.expires) >= today
 

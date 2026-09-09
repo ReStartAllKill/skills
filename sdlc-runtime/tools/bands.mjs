@@ -1,12 +1,10 @@
 #!/usr/bin/env node
-/** 지표 허용 범위와 조정 이력을 검사한다. 사용법: node bands.mjs <repo-root> [--strict]. */
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve, join, relative } from 'node:path'
 
 export const AUTONOMY = ['log', 'diagnose', 'propose']
 const REQUIRED = ['metric', 'source', 'window', 'rule', 'autonomy_tier', 'owner']
 
-/** 최상위 스칼라, bands의 ID별 필드, revised 목록을 읽는다. */
 export function parseBands(text) {
   const out = { version: null, bands: {}, problems: [] }
   const bad = (line, msg) => out.problems.push({ line, msg })
@@ -63,7 +61,6 @@ export function parseBands(text) {
   return out
 }
 
-/** 밴드의 필수 필드와 재현 명령을 확인한다. */
 export function validate(reg) {
   const problems = reg.problems.map((p) => ({ level: 'error', ...p }))
   const err = (line, msg, hint) => problems.push({ level: 'error', line, msg, hint })
@@ -93,7 +90,6 @@ export function validate(reg) {
   return problems
 }
 
-/** finding의 밴드 조정이 등록부에도 기록됐는지 확인한다. */
 export const revisedBy = (reg, bandId, findingId) =>
   (reg.bands[bandId]?.revised ?? []).some((r) => r.includes(findingId))
 

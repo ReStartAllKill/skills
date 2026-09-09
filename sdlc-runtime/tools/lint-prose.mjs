@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/** 산출물의 문체·분량·표 구조·템플릿 잔재를 검사한다. 사용법: node lint-prose.mjs <명세 디렉터리> [--strict]. */
 import { existsSync, statSync } from 'node:fs'
 import { resolve, basename, dirname } from 'node:path'
 import {
@@ -17,13 +16,10 @@ if (argv.includes('--version')) {
 const STRICT = argv.includes('--strict')
 const DIR = resolve(argv.find((a) => !a.startsWith('--')) ?? '.')
 
-/** 목표 결과·요구사항·수용 기준의 본문에만 적용한다. */
 const MEASURED = /^(OUT|FR|NFR|AC)-/
 
-// 티어 배수는 «위험이 크면 더 길게 써도 된다» 는 규칙이라 언어와 무관하다.
 const TIER_MULT = { light: 1, standard: 1.6, full: 2.4 }
 
-// 낱말 목록·글자 한도·어미 규칙은 언어마다 다르다 — 프로필의 lang 이 고른다.
 const L = useLocale(DIR)
 const { vague: VAGUE, translationese: TRANSLATIONESE, meta: META, budget: BUDGET, script: SCRIPT } = L
 const MAX_SENTENCES = L.limits.sentences
@@ -31,8 +27,6 @@ const MAX_TITLE = L.limits.title
 const MAX_FIELD = L.limits.field
 const MAX_AC = L.limits.ac
 
-// 낱말 목록의 항목은 문자열이거나 정규식이다. 한국어는 부분문자열로 충분하지만 영어는 낱말 경계가
-// 필요하다 — `most` 가 `almost` 에, `fast` 가 `breakfast` 에 걸린다. 정규식은 /g 없이 쓴다(.test 가 상태를 갖는다).
 const hits = (needle, line) => (needle instanceof RegExp ? needle.test(line) : line.includes(needle))
 const shown = (needle) => (needle instanceof RegExp ? needle.source.replace(/\\b/g, '').replace(/\(\?:/g, '(') : needle)
 
@@ -40,7 +34,6 @@ const problems = []
 const add = (level, doc, line, rule, msg, hint) => problems.push({ level, doc, line, rule, msg, hint })
 const notes = []
 
-/** ADR 파일과 ADR 디렉터리도 검사한다. */
 const docs = (() => {
   const isDir = existsSync(DIR) && statSync(DIR).isDirectory()
   const adrDir = isDir ? DIR : dirname(DIR)
@@ -50,7 +43,6 @@ const docs = (() => {
   if (found.length) return Object.fromEntries(found.map((d) => [d.name, d]))
   return isDir ? loadDir(DIR) : {}
 })()
-// 벤더한 사본은 상류에서 이미 린트됐다. 여기서 또 보면 고칠 수 없는 자리를 계속 지적한다.
 const VENDOR = (() => {
   const isDir = existsSync(DIR) && statSync(DIR).isDirectory()
   const lock = isDir ? loadLock(DIR) : null
@@ -59,27 +51,22 @@ const VENDOR = (() => {
 const vendored = Object.keys(docs).filter((k) => VENDOR.has(docs[k].name)).map((k) => ({ k, name: docs[k].name }))
 for (const v of vendored) delete docs[v.k]
 if (vendored.length) notes.push(`벤더한 사본 ${vendored.map((v) => v.name).join(' · ')} 은 상류가 린트한다 — 여기서는 건너뛴다.`)
-// 아직 plan 을 쓰기 전이면 남는 문서가 없다. 그것은 오류가 아니다.
 if (Object.keys(docs).length === 0 && vendored.length) {
-  console.log(`\n산문 린트 — ${basename(DIR)}\n  · 벤더한 사본뿐이다 — 상류가 린트한다.`)
-  process.exit(0)
+  process.exit(report({ title: `산문 린트 — ${basename(DIR)}`, notes, problems, json: argv.includes('--json') }))
 }
 if (Object.keys(docs).length === 0) {
+  if (argv.includes('--json')) process.exit(report({ title: '', problems: [{ level: 'error', doc: DIR, rule: 'artifacts-missing', msg: `산출물이 없다 — ${DIR} 에 intent.md / spec.md / plan.md / finding.md / ADR-*.md 가 하나도 없다.` }], json: true }))
   console.error(`산출물이 없다 — ${DIR} 에 intent.md / spec.md / plan.md / finding.md / ADR-*.md 가 하나도 없다.`)
   process.exit(1)
 }
-// ADR 전용 디렉터리는 현재 스키마 버전으로 표시한다.
 const schema = schemaVersion((docs.intent ?? docs.finding ?? docs.spec ?? docs.plan ?? Object.values(docs)[0])?.fm)
 if (schema != null) notes.push(`산출물 schema v${schema}${schema === 1 ? ' (무버전 문서 호환)' : ''} · runtime ${SDLC_VERSION}`)
-if (isTemplate(docs)) {
+if (isTemplate(docs) && !argv.includes('--json')) {
   console.log(`\n산문 린트 — ${basename(DIR)}\n  · 템플릿 원본이다 — 주석과 placeholder 가 있는 것이 정상이라 «항목을 행으로 접었나» 검사만 돈다.`)
 }
 const TEMPLATE = isTemplate(docs)
 
 const tokens = (s) => new Set(String(s).toLowerCase().match(/[가-힣a-z0-9]{2,}/g) ?? [])
-// 문장을 끝내는 마침표는 **뒤에 공백이나 줄 끝이 오는 것**뿐이다. 붙어 있는 마침표는 소수점이거나
-// 파일 확장자다 — «2.2 배» 와 «prose.md» 가 각각 두 문장으로 세어진다. 한국어 산문에는 둘 다 드물어
-// 영문 산출물을 쓰기 전까지 드러나지 않았다.
 const sentences = (s) => (stripComments(s).replace(/\.(?=\S)/g, '').match(/[^.!?\n]*(?:다\.|[.!?])/g) ?? []).filter((x) => x.trim().length > 4).length
 
 const ADR_ONLY = Object.values(docs).every((d) => d.kind === 'adr')
@@ -106,7 +93,6 @@ for (const d of Object.values(docs)) {
     if (!/^\s*\|/.test(line)) return
     if (!/^\s*\|[\s:|-]+\|\s*$/.test(d.lines[i + 1] ?? '')) return
     const cols = line.trim().replace(/^\||\|$/g, '').split('|').length
-    // 첫 번째 열이 항목 ID인 표만 구조 위반으로 처리한다.
     let rowIds = 0
     for (let j = i + 2; j < d.lines.length && /^\s*\|/.test(d.lines[j]); j++) {
       const first = (d.lines[j].trim().replace(/^\||\|$/g, '').split('|')[0] ?? '').replace(/`/g, '').trim()
@@ -124,7 +110,6 @@ for (const d of Object.values(docs)) {
   })
   if (TEMPLATE) continue
 
-  // 번역체와 메타 표현은 경고로 처리한다.
   d.lines.forEach((line, i) => {
     if (!d.live[i] || /^\s*(?:[-*]\s+)?[A-Za-z가-힣_][A-Za-z가-힣_ ]{0,19}:\s/.test(line)) return
     const clean = stripComments(line)
@@ -145,7 +130,6 @@ for (const d of Object.values(docs)) {
   })
 
   for (const e of d.ents.values()) {
-    // AC는 제목이 기준 문장이므로 길이 경고를 중복 출력하지 않는다.
     if (e.kind !== 'ac' && e.title.length > MAX_TITLE) {
       add('warn', d.name, e.line + 1, 'long-title', `${e.id} 의 제목이 ${e.title.length}자다`,
         `제목은 목록에서 훑어보는 라벨이다. ${MAX_TITLE}자 안으로 줄이고 자세한 것은 본문에 쓴다.`)
@@ -180,7 +164,6 @@ for (const d of Object.values(docs)) {
         e.kind === 'ac' ? '수용 기준은 한 문장이다. 길어지면 기준이 둘 이상 섞인 것이다.'
           : '한 항목이 길어지면 그것은 대개 두 항목이다. 갈라 쓰거나 아래 층(spec·plan)으로 내린다.')
     }
-    // 수용 기준은 서술문으로 작성해야 한다.
     if (e.kind === 'ac' && !L.acSentence.test(e.title.trim())) {
       add('warn', d.name, e.line + 1, 'untestable-ac', `${e.id} 이 서술문으로 끝나지 않는다`,
         '«<언제>이면 시스템은 <무엇을> 한다» 꼴로 쓴다. 명사로 끝나면 그건 기준이 아니라 항목 이름이다.')
@@ -208,7 +191,6 @@ for (const d of Object.values(docs)) {
     }
   }
 
-  // 작업의 tests와 수용 기준 문장을 대조한다.
   if (d.kind !== 'plan') continue
   const specAcs = new Map([...(docs.spec?.ents ?? new Map())].filter(([id]) => id.startsWith('AC-')))
   for (const w of [...d.ents.values()].filter((e) => e.kind === 'wp')) {
@@ -231,6 +213,7 @@ for (const d of Object.values(docs)) {
 }
 
 process.exit(report({
+    json: argv.includes('--json'),
   title: TEMPLATE ? '' : `산문 린트 — ${basename(DIR)}  (문서 ${Object.keys(docs).length}개)`,
   notes, problems, strict: STRICT, ruleDoc: '`conventions.md` 의 «산출물 문법» 절과 `references/prose.md` 에 있다.',
 }))

@@ -32,7 +32,6 @@ const declared = yml('sdlc_version', profileText)
 const profileVer = declared === '' ? 1 : Number(declared)
 const specDir = resolve(ROOT, yml('spec_dir', profileText) || '.sdlc/specs')
 
-/** 산출물이 하나 이상 있는 디렉터리를 선택한다. */
 const chains = []
 const walk = (dir, depth = 0) => {
   if (depth > 4 || !existsSync(dir)) return
@@ -48,13 +47,11 @@ const schemaOf = (text) => {
   const v = yml('schema_version', text)
   return v === '' ? 1 : Number(v)
 }
-/** schema_version을 수정하거나 artifact 뒤에 추가한다. */
 const setSchema = (text, n) =>
   /^schema_version:/m.test(text)
     ? text.replace(/^schema_version:.*$/m, `schema_version: ${n}`)
     : text.replace(/^(artifact:.*)$/m, `$1\nschema_version: ${n}`)
 
-/** 임시 사본에 새 버전을 적용한 뒤 검사기로 호환성을 확인한다. */
 function dryRun(chain, target) {
   const tmp = mkdtempSync(join(tmpdir(), 'sdlc-mig-'))
   mkdirSync(join(tmp, '.claude'), { recursive: true })
@@ -65,8 +62,7 @@ function dryRun(chain, target) {
   mkdirSync(work, { recursive: true })
   for (const f of chain.files) writeFileSync(join(work, f), setSchema(readFileSync(join(chain.dir, f), 'utf8'), target))
   try {
-    execFileSync(process.execPath, [join(HERE, 'check-artifacts.mjs'), work], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
-    // 임시 사본에는 원본 Git 이력이 없어 실행된 plan의 v4 증거를 검증할 수 없다. 자동 변환에서 제외한다.
+    execFileSync(process.execPath, [join(HERE, 'check-artifacts.mjs'), work, '--json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
     const plan = join(chain.dir, 'plan.md')
     if (target >= 4 && existsSync(plan)) {
       const text = readFileSync(plan, 'utf8')
@@ -76,16 +72,11 @@ function dryRun(chain, target) {
     }
     return []
   } catch (e) {
-    const out = ((e.stdout ?? '') + (e.stderr ?? '')).split('\n')
-    const start = out.findIndex((l) => /^✗/.test(l))
-    if (start < 0) return ['(오류 목록을 읽지 못했다)']
-    const res = []
-    for (let i = start + 1; i < out.length; i++) {
-      if (/^(✗|⚠)/.test(out[i])) break
-      const m = /^ {2}(\S+\.md)\s{2}(.*)$/.exec(out[i])
-      if (m) res.push(`${m[1]}  ${m[2]}`)
-    }
-    return res
+    try {
+      const result = JSON.parse(e.stdout ?? '')
+      const errors = result.problems.filter((p) => p.level === 'error')
+      return errors.length ? errors.map((p) => `${p.doc}  ${p.msg}`) : ['Checker failed without error diagnostics']
+    } catch { return ['Could not read checker diagnostics'] }
   }
 }
 

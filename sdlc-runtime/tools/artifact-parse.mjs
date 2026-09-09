@@ -1,13 +1,10 @@
-/** 검사기와 린터가 공유하는 산출물 파서. 제목의 ID, AC 체크박스, WP 작업 필드를 읽는다. */
 import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { join, dirname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-/** 버전이 없는 문서는 스키마 v1으로 읽는다. */
 export const SDLC_VERSION = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../VERSION'), 'utf8').trim()
 export const CURRENT_SCHEMA_VERSION = Number(SDLC_VERSION)
 export const LEGACY_SCHEMA_VERSION = 1
-/** 지원하는 이전 스키마도 함께 허용한다. */
 export const SUPPORTED_SCHEMA_VERSIONS =
   Array.from({ length: CURRENT_SCHEMA_VERSION - LEGACY_SCHEMA_VERSION + 1 }, (_, i) => LEGACY_SCHEMA_VERSION + i)
 export const schemaVersion = (fm = {}) => {
@@ -16,7 +13,6 @@ export const schemaVersion = (fm = {}) => {
   return Number.isInteger(n) ? n : null
 }
 
-/** ID 접두를 변경할 때 conventions.md도 함께 갱신한다. */
 export const PREFIXES = {
   OUT: { doc: 'intent', label: '목표 결과' },
   CON: { doc: 'intent', label: '제약' },
@@ -39,13 +35,10 @@ export const PREFIXES = {
   ALT: { doc: 'adr', label: '대안' },
   RV: { doc: 'adr', label: '재검토 조건' },
 }
-/** ASM은 intent의 가정과 ADR의 전제에 공통으로 사용한다. */
 PREFIXES.ASM.also = ['adr']
 
 export const P_ALT = 'RISK|EDGE|HYP|NFR|OUT|CON|ASM|SCN|ALT|FR|AC|EV|FQ|SQ|SD|TD|WP|PQ|RV|Q'
-/** loadDir이 읽는 산출물 파일명. */
 export const CHAIN_FILES = { finding: 'finding.md', intent: 'intent.md', spec: 'spec.md', plan: 'plan.md' }
-/** ADR 이름표는 오류 메시지에 사용한다. */
 export const FILES = { ...CHAIN_FILES, adr: 'ADR-*.md' }
 export const ADR_FILENAME = /^ADR-(\d{3,4})-([a-z0-9]+(?:-[a-z0-9]+)*)\.md$/
 export const WP_FIELDS = ['files', 'depends', 'covers', 'tests', 'verify']
@@ -55,7 +48,6 @@ export const stripComments = (s) => s.replace(/<!--[\s\S]*?-->/g, '')
 export const unquote = (s) => s.trim().replace(/^["']|["']$/g, '')
 export const isNull = (v) => v == null || v === 'null' || v === '' || (Array.isArray(v) && v.length === 0)
 
-/** 프런트매터의 스칼라·인라인 배열·블록 목록만 지원한다. */
 export function frontmatter(text) {
   const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)
   if (!m) return null
@@ -77,7 +69,6 @@ export function frontmatter(text) {
   return out
 }
 
-/** 코드 블록 안의 예시는 정의로 집계하지 않는다. */
 export function outsideFence(lines) {
   const ok = new Array(lines.length).fill(true)
   let fence = false
@@ -88,7 +79,6 @@ export function outsideFence(lines) {
   return ok
 }
 
-/** 제목의 티어 표기를 섹션 검사에 사용한다. */
 export function headings(lines, live) {
   const hs = []
   lines.forEach((line, i) => {
@@ -109,7 +99,6 @@ export function headings(lines, live) {
   return hs
 }
 
-/** ‘키: 값’과 ‘- 키: 값’을 필드로 읽는다. */
 export function fieldsOf(lines) {
   const f = new Map()
   for (const raw of lines) {
@@ -123,15 +112,12 @@ export function fieldsOf(lines) {
 
 export const sectionOf = (hs, line) => [...hs].reverse().find((h) => h.depth === 2 && h.line <= line)?.title ?? null
 
-/** 인라인 범위 표기. AC 는 한 줄이라 필드 줄을 달 자리가 없어 제목 끝에 붙인다. */
 export const SCOPE_TAG = /`scope:\s*([^`]+)`/i
 export const scopeList = (raw) => String(raw ?? '')
   .split(/[,·]/).map((s) => s.trim().replace(/^["'`]|["'`]$/g, '')).filter(Boolean)
 
-/** 항목의 유효 범위. 자기 것이 없으면 상위 요구사항에서 물려받는다. */
 export const scopeOf = (e, parent) => (e?.scope?.length ? e.scope : parent?.scope ?? [])
 
-/** 중복 ID의 처리는 호출자가 onDup으로 지정한다. */
 export function entities(doc, onDup = () => {}) {
   const { lines, live, hs } = doc
   const out = new Map()
@@ -174,7 +160,6 @@ export function entities(doc, onDup = () => {}) {
   return out
 }
 
-/** ADR 파일을 산출물 공통 구조로 읽는다. */
 export function loadAdr(path, onDup) {
   if (!existsSync(path)) return null
   const text = readFileSync(path, 'utf8')
@@ -186,7 +171,6 @@ export function loadAdr(path, onDup) {
   return d
 }
 
-/** 파일명이 규칙에 맞지 않으면 본문을 읽지 않고 이름만 반환한다. */
 export function loadAdrDir(dir, onDup) {
   if (!existsSync(dir)) return { docs: [], malformed: [] }
   const docs = [], malformed = []
@@ -199,7 +183,6 @@ export function loadAdrDir(dir, onDup) {
   return { docs, malformed }
 }
 
-/** 존재하는 산출물만 읽는다. 일부 문서만 있는 디렉터리도 허용한다. */
 export function loadDir(dir, onDup) {
   const docs = {}
   for (const [kind, name] of Object.entries(CHAIN_FILES)) {
@@ -216,14 +199,17 @@ export function loadDir(dir, onDup) {
   return docs
 }
 
-/** 템플릿 원본은 내용 검사에서 제외한다. */
 export const isTemplate = (docs) => Object.values(docs)
   .some((doc) => /YYYY-NNN/.test(String(doc?.fm?.id ?? '')))
 
-/** 검사기와 린터의 공통 출력 형식. */
-export function report({ title, notes = [], problems, strict, ruleDoc }) {
+export function report({ title, notes = [], problems, strict, ruleDoc, json = false }) {
   const errors = problems.filter((p) => p.level === 'error')
   const warns = problems.filter((p) => p.level === 'warn')
+  if (json) {
+    const exitCode = errors.length || (strict && warns.length) ? 1 : 0
+    console.log(JSON.stringify({ version: 1, title, notes, problems, counts: { errors: errors.length, warnings: warns.length }, exitCode }))
+    return exitCode
+  }
   const ESC = String.fromCharCode(27)
   const bold = (s) => (process.stdout.isTTY ? `${ESC}[1m${s}${ESC}[0m` : s)
   console.log(`\n${title}`)
@@ -246,7 +232,6 @@ export function report({ title, notes = [], problems, strict, ruleDoc }) {
   return 0
 }
 
-/** 작업 의존 관계와 실행 레벨을 검사기·실행 도구가 공유한다. */
 export const wpField = (e, k) => (e.fields.has(k) ? e.fields.get(k) : '')
 export const wpFiles = (w) => {
   const v = wpField(w, 'files')
@@ -255,7 +240,6 @@ export const wpFiles = (w) => {
 }
 export const wpDeps = (w) => idsIn(wpField(w, 'depends')).filter((x) => x.startsWith('WP-'))
 
-/** 반환값: {level, cycles, unknown}. 순환·미정의 의존 작업의 레벨은 0이다. */
 export function levelsOf(wps) {
   const byId = new Map(wps.map((w) => [w.id, w]))
   const level = new Map()

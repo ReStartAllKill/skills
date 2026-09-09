@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/** 기존 훅을 유지하며 승인 가드와 편집 후 검사 래퍼를 설치한다. 사용법: node install-hook.mjs <repo-root> [--force]. */
 import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync } from 'node:fs'
 import { resolve, join, relative } from 'node:path'
 
@@ -9,7 +8,6 @@ const ROOT = resolve(argv.find((a) => !a.startsWith('--')) ?? process.cwd())
 
 mkdirSync(join(ROOT, '.claude/hooks'), { recursive: true })
 
-/** 훅도 저장소가 고정한 런타임을 우선 사용한다. 런타임이 없으면 검사를 생략한다. */
 const shim = (tool, why) => `#!/usr/bin/env bash
 # ${why}
 #
@@ -73,7 +71,6 @@ for (const s of SHIMS) {
   console.log(`${existed ? '갱신' : '생성'}: ${relative(ROOT, p)}`)
 }
 
-// 기존 matcher의 훅 목록에 추가해 다른 훅을 보존한다.
 const sPath = join(ROOT, '.claude/settings.json')
 let settings = {}
 if (existsSync(sPath)) {
@@ -89,7 +86,6 @@ if (existsSync(sPath)) {
 let changed = false
 settings.hooks ??= {}
 
-// .claude 아래 산출물은 쓰기 승인이 필요할 수 있음을 알리되 설치는 허용한다.
 const profilePath = join(ROOT, '.claude/spec-profile.yml')
 const specDir = (existsSync(profilePath)
   ? (/^spec_dir:[ \t]*(.*)$/m.exec(readFileSync(profilePath, 'utf8'))?.[1] ?? '')
@@ -134,7 +130,6 @@ if (changed) {
   console.log(`갱신: ${relative(ROOT, sPath)}`)
 }
 
-// CI 워크플로는 수정하지 않고 연결할 검사 명령만 출력한다.
 console.log(`
 건 것 둘 — 시점이 다르다.
   PreToolUse   sdlc-approval.sh  Edit·Write·일반적인 Bash 자기승인을 막는다

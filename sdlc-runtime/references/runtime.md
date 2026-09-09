@@ -1,56 +1,49 @@
-# SDLC 런타임
+# SDLC runtime
 
-개인 용도는 sdlc 플러그인이 들고 있는 사본을 그대로 쓴다. 팀·CI는 규약·도구·참조 문서를
-`.claude/sdlc`에 고정한다.
+Personal use can rely on the runtime bundled with the SDLC plugin. Teams and CI should pin the conventions, tools, and references under `.claude/sdlc`.
 
-프로필에 `sdlc_runtime`이 없을 때 찾는 순서는 레포의 `.claude/sdlc`(벤더) → 설치된 restart-harness 플러그인의 `sdlc-runtime/` 다. **순서가 곧 정책이다** —
-레포가 고정한 사본이 가장 세다 — 팀과 CI 가 같은 검사기를 쓰게 하려는 것이 벤더의 유일한
-목적이라, 훅이 스킬과 다른 사본을 읽으면 그 목적이 무너진다.
+When the profile has no `sdlc_runtime`, discovery order is the repository's `.claude/sdlc` copy followed by `sdlc-runtime/` in the installed restart-harness plugin. **This order is policy:** the repository-pinned copy takes precedence so the team, hooks, and CI use the same checker.
 
-## 도구
+## Tools
 
-| 도구 | 역할 |
+| Tool | Purpose |
 |---|---|
-| `check-artifacts.mjs` | 산출물 세트 하나의 구조·추적성 검사 |
-| `lint-prose.mjs` | 산출물 문체 검사 |
-| `check-all.mjs` | 전체 산출물 세트·밴드·정책 검사 |
-| `plan-progress.mjs` | 완료 주장과 커밋·테스트 이름·검증 증거 대조 |
-| `verify-run.mjs` | 검증 명령 실행과 로그·작업 지문 기록 |
-| `task-evidence.mjs` | 작업 정의와 파일 내용의 지문 계산 |
-| `plan-levels.mjs` | 의존 관계, 실행 레벨과 방식 계산 |
-| `task-worktree.mjs` | 워크트리 생성·작업 커밋·병합·정리 |
-| `task-brief.mjs` | 작성 에이전트 프롬프트 생성 |
-| `guard-approval.sh` | 승인 전이와 승인 문서 편집의 사전 가드 |
-| `gate-artifacts.sh` | 편집 후 검사와 중복 경고 요약 |
-| `sdlc-lib.sh` | 훅의 프로필·경로 해석 |
-| `install-hook.mjs` | 기존 설정을 유지하며 훅 등록 |
-| `bands.mjs` · `autonomy.mjs` | 밴드·자율 정책 검사 |
-| `dispatch-auto.mjs` | 자율 경로 실행·검사·커밋·결과 기록 |
-| `migrate-schema.mjs` | 프로필·문서 버전 마이그레이션 |
-| `vendor-runtime.sh` | 런타임 고정·갱신·드리프트 검사 |
+| `check-artifacts.mjs` | Check one artifact set's structure and traceability |
+| `lint-prose.mjs` | Check artifact prose |
+| `check-all.mjs` | Check all artifact sets, bands, and policies |
+| `plan-progress.mjs` | Compare completion claims with commits, tests, and verification evidence |
+| `verify-run.mjs` | Run verification and record logs and fingerprints |
+| `task-evidence.mjs` | Calculate task-definition and file-content fingerprints |
+| `plan-levels.mjs` | Calculate dependencies and execution levels |
+| `task-worktree.mjs` | Create worktrees and commit, merge, and clean up tasks |
+| `task-brief.mjs` | Generate a writer-agent prompt |
+| `guard-approval.sh` | Guard approval transitions and edits to approved documents |
+| `gate-artifacts.sh` | Check edited artifacts and summarize duplicate warnings |
+| `sdlc-lib.sh` | Resolve profiles and paths for hooks |
+| `install-hook.mjs` | Register hooks while preserving existing settings |
+| `bands.mjs` · `autonomy.mjs` | Check bands and autonomous-execution policies |
+| `dispatch-auto.mjs` | Run, check, commit, and record an autonomous route |
+| `migrate-schema.mjs` | Migrate profile and document versions |
+| `vendor-runtime.sh` | Pin, update, and check runtime drift |
 
-## 훅과 CI
+## Hooks and CI
 
-로컬 훅은 빠른 피드백을 위한 장치다. 런타임이 없으면 실행되지 않을 수 있으므로 직접 검사와 CI를 병행한다.
-가드는 Edit·Write와 대표적인 Bash 승인 편집을 판정하며, 모든 셸 명령을 해석하는 보안 경계는 아니다.
+Local hooks provide fast feedback. They may not run when the runtime is unavailable, so use direct checks and CI as well. The guard recognizes Edit, Write, and common Bash edits to approval fields; it is not a security boundary that can interpret every shell command.
 
-- 승인 편집에는 `permissionDecision: "ask"`를 반환한다. `dontAsk` 모드에는 이유와 함께 차단을 반환한다.
-- 비대화형 실행에서는 사람이 응답할 수 없다. 정책 승인 처리는 `references/autonomy.md`를 따른다.
-- 게이트는 편집한 산출물 세트를, CI는 전체 산출물 세트를 검사한다.
+- Approval edits return `permissionDecision: "ask"`; in `dontAsk` mode they are denied with a reason.
+- A person cannot answer during noninteractive execution. Follow `references/autonomy.md` for policy approval.
+- The gate checks edited artifact sets; CI checks every artifact set.
 
 ```sh
 node <sdlc_runtime>/tools/install-hook.mjs <repo-root>
 node <sdlc_runtime>/tools/check-all.mjs <repo-root> --required
 ```
 
-`--required`는 프로필 누락·산출물 0개도 실패로 처리하는 CI 모드다. 기본 모드는 프로필 없는
-레포를 건너뛰고, 존재하는 빈 산출물 디렉터리는 허용한다. 프로필이 있으면 없는 `spec_dir`,
-명시했지만 없는 밴드·정책 파일, 읽기 오류는 실패다. 산출물 세트가 없어도 밴드·정책 검사는 실행한다.
-산출물 검사와 문체·진행 검사는 항상 strict로 실행한다. 정책 만료 경고는 표시하고 신규 실행은 디스패처가 거절한다.
+`--required` is the CI mode: a missing profile or zero artifacts fails. Default mode skips repositories without a profile and permits an existing empty artifact directory. With a profile, a missing `spec_dir`, missing configured band or policy file, or read error fails. Band and policy checks still run with no artifact sets. Artifact, prose, and progress checks always run in strict mode. Expired policies produce warnings, and the dispatcher rejects new runs against them.
 
-기존 CI가 없으면 미연결 사실을 보고한다. 워크플로 실행 여부와 필수 체크 설정은 호스팅 서비스에서 별도로 확인한다.
+If no CI exists, report that it is not connected. Verify workflow execution and required-check settings separately with the hosting service.
 
-## 런타임 고정
+## Pinning the runtime
 
 ```sh
 <sdlc_runtime>/tools/vendor-runtime.sh          <repo-root>
@@ -58,6 +51,12 @@ node <sdlc_runtime>/tools/check-all.mjs <repo-root> --required
 <sdlc_runtime>/tools/vendor-runtime.sh --check  <repo-root>
 ```
 
-고정한 뒤 프로필의 `sdlc_runtime`을 `.claude/sdlc`로 바꾸고 함께 커밋한다.
-`--check`는 실행한 원본과 벤더 사본의 버전·내용을 비교한다. 벤더 사본을 독립적으로 관리한다면
-글로벌 사본과의 일치를 CI 필수 조건으로 삼지 않는다.
+After pinning, set `sdlc_runtime` to `.claude/sdlc` in the profile and commit both. `--check` compares the invoked source with the vendored copy by version and content. If the vendored copy is maintained independently, do not require it to match the global copy in CI.
+
+## Language and machine output
+
+`adr-index.mjs` renders the index according to the profile's `lang`; `--check` compares against that same rendering. Regenerate the index after changing the language. For legacy ADRs without frontmatter, the header table accepts both `Status` and `상태` and maps known values to common status codes. Unknown statuses are errors and are never treated as effective decisions.
+
+The `--json` output of `check-artifacts.mjs` and `lint-prose.mjs` contains `version: 1`, `problems`, `counts.errors`, `counts.warnings`, `exitCode`, `title`, and `notes`. Use a problem's `level` for decisions; treat `msg` and `hint` as display text and never parse their wording. An environment failure can occur before JSON is emitted, so consumers must handle both nonzero exit codes and JSON parse failures. `--strict` makes warnings fail in JSON mode too. Hook warning aggregation and schema migration consume this machine output.
+
+CLI guidance may still contain Korean. It is not used as a checking criterion for English input.

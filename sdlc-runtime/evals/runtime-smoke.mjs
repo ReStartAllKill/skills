@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** 임시 저장소에서 작업 귀속·완료 증거·승인 가드·훅 설치·런타임 연동을 검증한다. */
+/** Verify task attribution, completion evidence, approval guards, hook installation, and runtime integration in temporary repositories. */
 import { appendFileSync, chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -28,13 +28,13 @@ function put(path, body, mode) {
   writeFileSync(path, body)
   if (mode) chmodSync(path, mode)
 }
-function test(name, fn) {
-  try { fn(); results.push({ name, ok: true }) }
+async function test(name, fn) {
+  try { await fn(); results.push({ name, ok: true }) }
   catch (e) { results.push({ name, ok: false, error: e.message }) }
 }
 function assert(value, message) { if (!value) throw new Error(message) }
 
-test('plan-progress는 trailer로 WP 커밋을 귀속한다', () => {
+await test('plan-progress attributes WP commits through trailers', () => {
   const d = temp('sdlc-progress')
   put(join(d, '.claude/spec-profile.yml'), 'sdlc_version: 4\nspec_dir: .\n')
   put(join(d, 'plan.md'), `---
@@ -75,7 +75,7 @@ status: in_progress
   assert(got.rows.find((x) => x.id === 'WP-002').commits.length === 0, 'WP-001 커밋을 WP-002에 잘못 귀속했다')
 })
 
-test('verify-run은 출력과 종료 코드를 남기고 plan-progress가 tests 문장과 verify 기록을 대조한다', () => {
+await test('verify-run records output and exit codes, and plan-progress compares tests with verification logs', () => {
   const d = temp('sdlc-verify')
   put(join(d, '.claude/spec-profile.yml'), 'sdlc_version: 4\nspec_dir: .sdlc/specs\nverify: echo ok\n')
   const spec = join(d, '.sdlc/specs/2026-09-05-v')
@@ -105,7 +105,6 @@ status: in_progress
   put(join(d, 'src/a.js'), 'export const a = 2\n')
   git(d, 'add', 'src/a.js'); git(d, 'commit', '-qm', 'change', '-m', 'SDLC-Task: WP-001\nSDLC-Plan: .sdlc/specs/2026-09-05-v/plan.md')
 
-  // 실행 기록과 테스트 문장 누락을 각각 확인한다.
   let r = run(process.execPath, [tool('plan-progress.mjs'), spec, '--json'])
   let got = JSON.parse(r.out)
   let row = got.rows.find((x) => x.id === 'WP-001')
@@ -113,7 +112,6 @@ status: in_progress
   assert(got.notes.some((n) => n.msg.includes('tests 문장')), 'tests 문장 누락을 경고하지 않는다')
   assert(got.notes.some((n) => n.msg.includes('verify 기록이 없다')), 'verify 기록 부재를 경고하지 않는다')
 
-  // 실패한 검증은 종료 코드와 로그에 반영돼야 한다.
   r = run(process.execPath, [tool('verify-run.mjs'), spec, '--level', '1', '--tasks', 'WP-001', '--', 'echo boom; exit 3'])
   assert(r.code === 3, `실패 종료 코드를 삼켰다 (${r.code})`)
   const logs = () => readdirSync(join(d, '.sdlc/verify/2026-09-05-v'))
@@ -122,7 +120,6 @@ status: in_progress
   assert(JSON.parse(r.out).rows[0].verified.length === 0, '실패한 verify 를 검증으로 셌다')
 
   put(join(d, 'src/a.test.js'), "test('보관 문서가 함께 걸리면 일반 문서만 반환된다', () => {})\ntest('질의가 비면 빈 목록을 반환한다', () => {})\n")
-  // 검증 성공과 테스트 문장 일치를 확인한다.
   r = run(process.execPath, [tool('verify-run.mjs'), spec, '--level', '1', '--tasks', 'WP-001', '--', 'echo ok'])
   assert(r.code === 0 && r.out.includes('통과'), r.out)
   assert(logs().length === 2, '통과 로그가 실패 로그 옆에 서지 않았다')
@@ -136,7 +133,7 @@ status: in_progress
 
 })
 
-test('plan-levels·task-worktree·task-brief가 레벨·배관·프롬프트를 결정론으로 낸다', () => {
+await test('plan-levels, task-worktree, and task-brief produce deterministic levels, plumbing, and prompts', () => {
   const d = temp('sdlc-tw')
   put(join(d, '.claude/spec-profile.yml'), 'sdlc_version: 4\nspec_dir: .sdlc/specs\nworktree_dir: .wt\ntask_branch: "task/{slug}-{task}"\nbootstrap: "echo bootstrapped > .bootstrapped"\nverify: true\n')
   put(join(d, '.claude/rules/api.md'), '---\npaths: ["src/api/**"]\n---\n# API 규칙\n')
@@ -204,14 +201,12 @@ pr_strategy: 단일 PR
   git(d, 'init', '-q', '-b', 'main'); git(d, 'config', 'user.email', 'eval@local'); git(d, 'config', 'user.name', 'eval')
   git(d, 'add', '-A'); git(d, 'commit', '-qm', 'plan born'); git(d, 'switch', '-qc', 'feat/tw')
 
-  // 두 작업에 의존하는 작업은 다음 레벨에 배치한다.
   let r = run(process.execPath, [tool('plan-levels.mjs'), spec, '--json'])
   assert(r.code === 0, r.out)
   const lv = JSON.parse(r.out)
   assert(lv.levels.length === 2 && lv.levels[0].mode === 'parallel' && lv.levels[1].mode === 'main', JSON.stringify(lv.levels.map((l) => [l.n, l.mode])))
   assert(lv.next === 1 && lv.target_branch === 'feat/tw', `next/target_branch 가 틀렸다: ${lv.next} ${lv.target_branch}`)
 
-  // AC 전문과 적용되는 규칙을 전달해야 한다.
   const tpl = join(temp('sdlc-tpl'), 'writer.md')
   put(tpl, '{task_id}|{worktree}|{bootstrap}\n{files}\n{requirements}\n{rules}\n{parallel_note}\n')
   r = run(process.execPath, [tool('task-brief.mjs'), spec, 'WP-001', '--template', tpl, '--worktree', '.wt/x'])
@@ -222,16 +217,13 @@ pr_strategy: 단일 PR
   assert(r.out.includes('WP-002') && r.out.includes('병렬'), '병렬 주의가 없다')
   r = run(process.execPath, [tool('task-brief.mjs'), spec, 'WP-002', '--template', tpl])
   assert(!r.out.includes('rules/api.md') && r.out.includes('rules/global.md'), 'paths 가 안 맞는 규칙이 실렸다')
-  // 기본 템플릿의 자리표시자가 모두 치환돼야 한다.
   r = run(process.execPath, [tool('task-brief.mjs'), spec, 'WP-001', '--worktree', '.wt/x'])
-  assert(r.code === 0 && !/\{[a-z_]+\}/.test(r.out) && !r.out.includes('채우지 못한 자리') && r.out.includes('커밋하지 마라'), `기본 템플릿이 안 채워졌다:\n${r.out.slice(0, 400)}`)
+  assert(r.code === 0 && !/\{[a-z_]+\}/.test(r.out) && !r.out.includes('채우지 못한 자리') && r.out.includes('Do not commit'), `기본 템플릿이 안 채워졌다:\n${r.out.slice(0, 400)}`)
 
-  // add는 대상 브랜치에서 분기하고 bootstrap을 실행한다.
   const twt = (...a) => run(process.execPath, [tool('task-worktree.mjs'), spec, ...a])
   r = twt('add', 'WP-001')
   assert(r.code === 0 && existsSync(join(d, '.wt/2026-09-05-tw-WP-001/.bootstrapped')), `add 실패:\n${r.out}`)
   assert(git(d, 'branch', '--list', 'task/2026-09-05-tw-WP-001').trim() !== '', '작업 브랜치가 없다')
-  // commit은 files만 포함하고 트레일러를 추가한다.
   const wt = join(d, '.wt/2026-09-05-tw-WP-001')
   put(join(wt, 'src/api/filter.js'), 'export const f = 1\n')
   put(join(wt, 'src/api/filter.test.js'), "test('보관 문서가 함께 걸리면 일반 문서만 반환된다', () => {})\n")
@@ -246,17 +238,14 @@ pr_strategy: 단일 PR
   const body = git(wt, 'log', '-1', '--format=%B')
   assert(/SDLC-Task: WP-001/.test(body), 'trailer 가 없다')
   assert(!git(wt, 'show', '--name-only', '--format=', 'HEAD').includes('stray.js'), '스코프 밖 파일이 실렸다')
-  // 병합 후 워크트리와 브랜치를 제거한다.
   r = twt('merge', 'WP-001')
   assert(r.code === 0 && git(d, 'log', '-1', '--format=%B').includes('SDLC-Task: WP-001'), `merge 실패:\n${r.out}`)
   r = twt('remove', 'WP-001')
   assert(r.code === 2 && r.out.includes('stray.js'), `남은 스코프 밖 변경을 조용히 버렸다:\n${r.out}`)
   r = twt('remove', 'WP-001', '--force')
   assert(r.code === 0 && !existsSync(wt) && git(d, 'branch', '--list', 'task/2026-09-05-tw-WP-001').trim() === '', `remove 실패:\n${r.out}`)
-  // 커밋의 작업 귀속을 확인한다.
   r = run(process.execPath, [tool('plan-progress.mjs'), spec, '--json'])
   assert(JSON.parse(r.out).rows.find((x) => x.id === 'WP-001').commits.length === 1, '합류된 커밋이 귀속되지 않았다')
-  // 충돌 시 병합을 취소하고 중단해야 한다.
   twt('add', 'WP-002'); put(join(d, '.wt/2026-09-05-tw-WP-002/src/api/filter.js'), 'export const f = 2\n'); put(join(d, '.wt/2026-09-05-tw-WP-002/src/core/empty.js'), 'x\n')
   git(join(d, '.wt/2026-09-05-tw-WP-002'), 'add', '-A'); git(join(d, '.wt/2026-09-05-tw-WP-002'), 'commit', '-qm', 'conflict')
   put(join(d, 'src/api/filter.js'), 'export const f = 3\n'); git(d, 'add', '-A'); git(d, 'commit', '-qm', 'main moved')
@@ -265,7 +254,7 @@ pr_strategy: 단일 PR
   assert(git(d, 'status', '--porcelain', '--untracked-files=no') === '', '충돌 뒤 메인 트리가 더럽다')
 })
 
-test('completed는 열린 작업을 거부한다', () => {
+await test('completed rejects open tasks', () => {
   const d = temp('sdlc-completed')
   put(join(d, 'plan.md'), `---
 artifact: plan
@@ -292,7 +281,7 @@ status: completed
   assert(structural.code !== 0 && structural.out.includes('completed') && structural.out.includes('미완료 작업'), structural.out)
 })
 
-test('승인 가드는 자기승인과 accepted 본문 변경을 막는다', () => {
+await test('the approval guard rejects self-approval and changes to accepted content', () => {
   const d = temp('sdlc-guard')
   put(join(d, '.claude/spec-profile.yml'), `sdlc_version: 4\nsdlc_runtime: "${ROOT}"\nspec_dir: ".claude/specs"\n`)
   const intent = join(d, '.claude/specs/change/intent.md')
@@ -301,7 +290,6 @@ test('승인 가드는 자기승인과 accepted 본문 변경을 막는다', () 
   const invoke = (payload) => run(tool('guard-approval.sh'), [], { env, input: JSON.stringify(payload) })
   let r = invoke({ tool_name: 'Write', tool_input: { file_path: intent, content: 'status: draft\napproved_by: null' } })
   assert(r.code === 0, '정상 draft Write를 과잉 차단했다')
-  /** 문서 승인 편집은 ask를 반환하고 Bash 승인 편집은 차단한다. */
   const asks = (r) => (r.out ?? '').includes('"permissionDecision":"ask"')
 
   r = invoke({ tool_name: 'Write', tool_input: { file_path: intent, content: 'status: accepted\napproved_by: "agent"' } })
@@ -312,7 +300,6 @@ test('승인 가드는 자기승인과 accepted 본문 변경을 막는다', () 
   r = invoke({ tool_name: 'Edit', tool_input: { file_path: intent, old_string: '승인된 의미', new_string: '바뀐 의미' } })
   assert(asks(r), 'accepted 본문 변경을 상태 하향 없이 조용히 허용했다')
 
-  // 자율 경로에서 사람 명의 승인은 차단한다.
   r = run(tool('guard-approval.sh'), [], {
     env: { ...env, SDLC_AUTONOMY_ROUTE: 'triage' },
     input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: intent, content: 'status: accepted\napproved_by: "agent"' } }),
@@ -320,7 +307,7 @@ test('승인 가드는 자기승인과 accepted 본문 변경을 막는다', () 
   assert(r.code === 2, '자율 실행이 자기 문서를 승인할 수 있다')
 })
 
-test('훅 설치는 멱등이고 Bash 승인 가드를 등록한다', () => {
+await test('hook installation is idempotent and registers the Bash approval guard', () => {
   const d = temp('sdlc-hook')
   for (let i = 0; i < 2; i++) {
     const r = run(process.execPath, [tool('install-hook.mjs'), d])
@@ -336,8 +323,7 @@ test('훅 설치는 멱등이고 Bash 승인 가드를 등록한다', () => {
   assert(count('PostToolUse', 'Edit|Write', 'sdlc-gate.sh') === 1, '산출물 게이트가 중복되거나 없다')
 })
 
-test('게이트는 경고가 하나도 없는 문서에서도 조용히 통과한다', () => {
-  /** 경고가 없어도 게이트가 정상 종료해야 한다. */
+await test('the gate passes cleanly when a document has no warnings', () => {
   const d = temp('sdlc-gate-clean')
   put(join(d, '.claude/spec-profile.yml'), 'sdlc_version: 5\nspec_dir: ".sdlc/specs"\n')
   const chain = join(d, '.sdlc/specs/change')
@@ -346,14 +332,13 @@ test('게이트는 경고가 하나도 없는 문서에서도 조용히 통과�
   const r = spawnSync(tool('gate-artifacts.sh'), [], {
     encoding: 'utf8',
     input: JSON.stringify({ tool_input: { file_path: join(chain, 'intent.md') } }),
-    env: { ...process.env, CLAUDE_PROJECT_DIR: d },
+    env: { ...process.env, CLAUDE_PROJECT_DIR: d, SDLC_RUNTIME: ROOT },
   })
   assert(r.status === 0, `깨끗한 산출물 세트에서 게이트가 실패했다 (code ${r.status})\n${r.stdout}\n${r.stderr}`)
   assert(!/unbound|command not found/.test(r.stderr ?? ''), `게이트가 셸 오류를 냈다:\n${r.stderr}`)
 })
 
-test('shim 은 플러그인이 두 모양 중 어디에 있어도 런타임을 찾는다', () => {
-  /** 개발용 링크와 플러그인 캐시 설치 모두에서 훅이 실행돼야 한다. */
+await test('the shim finds the runtime in either supported plugin layout', () => {
   const d = temp('sdlc-shim')
   run(process.execPath, [tool('install-hook.mjs'), d])
   const shim = join(d, '.claude/hooks/sdlc-gate.sh')
@@ -375,7 +360,7 @@ test('shim 은 플러그인이 두 모양 중 어디에 있어도 런타임을 �
   }
 })
 
-test('check-all은 plan-progress 실패를 CI 실패로 올린다', () => {
+await test('check-all promotes a plan-progress failure to a CI failure', () => {
   const d = temp('sdlc-check-all')
   const fake = join(d, '.runtime/tools')
   for (const name of ['check-artifacts.mjs', 'lint-prose.mjs']) put(join(fake, name), '#!/usr/bin/env node\nprocess.exit(0)\n')
@@ -386,7 +371,7 @@ test('check-all은 plan-progress 실패를 CI 실패로 올린다', () => {
   assert(r.code !== 0 && r.out.includes('progress sentinel'), r.out)
 })
 
-test('벤더 검사는 같은 버전의 내용 드리프트도 잡는다', () => {
+await test('the vendor check detects content drift at the same version', () => {
   const d = temp('sdlc-vendor')
   git(d, 'init', '-q')
   let r = run(tool('vendor-runtime.sh'), [d])
@@ -399,19 +384,18 @@ test('벤더 검사는 같은 버전의 내용 드리프트도 잡는다', () =>
   assert(r.code !== 0 && r.out.includes('내용이 글로벌과 다르다'), r.out)
 })
 
-test('마이그레이션은 프로필만 안전하게 런타임 버전으로 올린다', () => {
+await test('migration safely raises only the profile to the runtime version', () => {
   const d = temp('sdlc-migrate')
   const profile = join(d, '.claude/spec-profile.yml')
   put(profile, 'sdlc_version: 3\nspec_dir: ".claude/specs"\n')
   let r = run(process.execPath, [tool('migrate-schema.mjs'), d])
   assert(r.code === 0 && r.out.includes('v4 작업 귀속·완료 증거'), r.out)
   r = run(process.execPath, [tool('migrate-schema.mjs'), d, '--profile'])
-  // 목표 스키마 버전은 런타임에서 읽는다.
   const cur = readFileSync(join(ROOT, 'VERSION'), 'utf8').trim()
   assert(r.code === 0 && new RegExp(`^sdlc_version: ${cur}$`, 'm').test(readFileSync(profile, 'utf8')), r.out)
 })
 
-test('마이그레이션은 실행 이력이 있는 v3 plan을 자동 승격하지 않는다', () => {
+await test('migration does not automatically upgrade a v3 plan with execution history', () => {
   const d = temp('sdlc-migrate-plan')
   put(join(d, '.claude/spec-profile.yml'), 'sdlc_version: 3\nspec_dir: ".claude/specs"\n')
   const chain = join(d, '.claude/specs/change')
@@ -425,12 +409,11 @@ test('마이그레이션은 실행 이력이 있는 v3 plan을 자동 승격하�
   assert(/^schema_version: 3$/m.test(readFileSync(plan, 'utf8')), '실행 중인 v3 plan을 자동 승격했다')
 })
 
-test('migrate-schema는 프로필만 올리고 검사에 실패하는 산출물 세트는 건너뛴다', () => {
+await test('migrate-schema raises the profile and skips artifact sets that fail validation', () => {
   const d = temp('sdlc-migrate')
   const cur = readFileSync(join(ROOT, 'VERSION'), 'utf8').trim()
   put(join(d, '.claude/spec-profile.yml'), 'spec_dir: .claude/specs\n')
 
-  // 승인자가 없는 v1 문서는 v3 승인 규칙을 충족하지 못한다.
   const chain = join(d, '.claude/specs/2026-09-04-a')
   put(join(chain, 'intent.md'), `---
 artifact: intent
@@ -471,26 +454,22 @@ generated_by: "claude-opus-5"
 해당 없음 — 질문이 없다.
 `)
 
-  // 기본 실행은 변경 없이 결과만 보고한다.
   let r = run('node', [tool('migrate-schema.mjs'), d])
   assert(r.code === 0, r.out)
   assert(r.out.includes('프로필 없음'), r.out)
   assert(!readFileSync(join(d, '.claude/spec-profile.yml'), 'utf8').includes('sdlc_version'),
     '보고만 하는데 프로필을 바꿨다')
 
-  // --profile은 프로필만 갱신한다.
   r = run('node', [tool('migrate-schema.mjs'), d, '--profile'])
   assert(r.code === 0, r.out)
   assert(readFileSync(join(d, '.claude/spec-profile.yml'), 'utf8').includes(`sdlc_version: ${cur}`), r.out)
 
-  // --artifact-sets는 새 스키마 검사를 통과하지 못한 문서를 제외한다.
   r = run('node', [tool('migrate-schema.mjs'), d, '--artifact-sets'])
   assert(r.code === 0, r.out)
   assert(r.out.includes('건너뜀'), r.out)
   assert(!readFileSync(join(chain, 'intent.md'), 'utf8').includes('schema_version'),
     '검사에 실패하는 산출물 세트를 올려버렸다')
 
-  // 런타임보다 높은 프로필 버전은 낮추지 않는다.
   writeFileSync(join(d, '.claude/spec-profile.yml'), 'sdlc_version: 99\nspec_dir: .claude/specs\n')
   r = run('node', [tool('migrate-schema.mjs'), d, '--profile'])
   assert(r.code !== 0 && r.out.includes('런타임보다 높다'), r.out)
@@ -498,13 +477,12 @@ generated_by: "claude-opus-5"
     '프로필 버전을 내렸다')
 })
 
-test('승인 가드의 plan 상태 전이 표가 실행 흐름을 막지 않는다', () => {
+await test('the approval guard permits plan execution-state transitions', () => {
   const d = temp('sdlc-trans')
   put(join(d, '.claude/spec-profile.yml'), 'spec_dir: .claude/specs\n')
   const plan = join(d, '.claude/specs/2026-09-05-a/plan.md')
   const guard = tool('guard-approval.sh')
 
-  /** 승인 요청은 종료 코드뿐 아니라 permissionDecision으로 확인한다. */
   const attempt = (from, to, env = {}, permission_mode = undefined) => {
     put(plan, `---\nartifact: plan\nschema_version: 4\nstatus: ${from}\n---\n\n# Plan\n`)
     const r = spawnSync(guard, [], {
@@ -520,35 +498,28 @@ test('승인 가드의 plan 상태 전이 표가 실행 흐름을 막지 않는�
     return 'pass'
   }
 
-  // 실행 상태 전이는 허용해야 한다.
   assert(attempt('accepted', 'in_progress') === 'pass', 'accepted → in_progress 가 막혔다 — 구현이 시작조차 못 한다')
   assert(attempt('in_progress', 'completed') === 'pass', 'in_progress → completed 가 막혔다')
-  // 검토 상태로 되돌리는 전이는 허용해야 한다.
   assert(attempt('accepted', 'in_review') === 'pass', 'accepted → in_review 가 막혔다')
-  // 사람의 승인이 필요한 편집은 ask를 반환해야 한다.
   assert(attempt('in_review', 'accepted') === 'ask', 'in_review → accepted 가 사람에게 안 물어본다')
-  // 자율 실행에서 사람의 승인이 필요한 편집은 차단해야 한다.
   assert(attempt('in_review', 'accepted', { SDLC_AUTONOMY_ROUTE: 'triage' }) === 'deny',
     '자율 실행이 자기 문서를 승인할 수 있다 — 정책 승인 설계가 무너진다')
   assert(attempt('accepted', 'completed') === 'ask', '실행을 건너뛴 completed 가 조용히 통과한다')
 
-  /** dontAsk는 직접 차단하고, 다른 권한 모드에는 ask를 반환한다. */
   for (const m of ['default', 'plan', 'acceptEdits', 'auto', 'bypassPermissions']) {
     assert(attempt('in_review', 'accepted', {}, m) === 'ask', `permission_mode=${m} 에서 승인 전이가 다이얼로그로 가지 않는다`)
   }
   assert(attempt('in_review', 'accepted', {}, 'dontAsk') === 'deny', 'dontAsk 에서 이유 없이 거부된다')
-  // 실행 상태 전이는 권한 모드와 관계없이 허용한다.
   assert(attempt('accepted', 'in_progress', {}, 'bypassPermissions') === 'pass',
     'bypassPermissions 에서 구현 시작이 막혔다')
 })
 
-test('자율 루트는 자기 경로의 정책 승인만 쓸 수 있다', () => {
+await test('an autonomous route can use only its own policy approval', () => {
   const d = temp('sdlc-polguard')
   put(join(d, '.claude/spec-profile.yml'), 'spec_dir: .claude/specs\n')
   const doc = join(d, '.claude/specs/2026-09-05-a/intent.md')
   const guard = tool('guard-approval.sh')
 
-  /** 현재 자율 경로의 정책 승인은 허용해야 한다. */
   const attempt = (edit, { was = 'in_review', had = 'null', route } = {}) => {
     put(doc, `---\nartifact: intent\nschema_version: 4\nstatus: ${was}\ngenerated_by: claude\napproved_by: ${had}\n---\n\n# Intent\n`)
     const r = spawnSync(guard, [], {
@@ -567,20 +538,17 @@ test('자율 루트는 자기 경로의 정책 승인만 쓸 수 있다', () => 
   const R = { route: 'triage' }
   assert(attempt('status: accepted\napproved_by: policy:triage', R) === 'pass',
     '자율 루트가 자기 정책 승인을 못 쓴다 — 정책 승인 설계가 발화하지 않는다')
-  // 승인자와 상태를 별도 편집해도 같은 정책 승인이 적용돼야 한다.
   assert(attempt('approved_by: policy:triage', R) === 'pass', '승인자만 먼저 쓰는 편집이 막혔다')
   assert(attempt('status: accepted', { ...R, had: 'policy:triage' }) === 'pass',
     '이미 정책 승인된 문서의 상태 전이가 막혔다')
 
-  // 다른 경로의 정책 승인은 허용하지 않는다.
   assert(attempt('approved_by: policy:wider', R) === 'deny', '자율 루트가 남의 위임을 빌려 썼다')
   assert(attempt('approved_by: 한지우', R) === 'deny', '자율 루트가 사람 이름으로 승인했다')
   assert(attempt('status: accepted', R) === 'deny', '자율 루트가 승인자 없이 accepted 로 올렸다')
-  // 사람 세션에서 정책 명의 승인은 허용하지 않는다.
   assert(attempt('approved_by: policy:triage') === 'deny', '사람 세션에서 policy: 승인이 조용히 통과했다')
 })
 
-test('자율 루트는 위임의 네 경계를 실행 시점에 지킨다', () => {
+await test('an autonomous route enforces all four delegation boundaries at runtime', () => {
   const d = temp('sdlc-auto')
   put(join(d, '.claude/spec-profile.yml'), 'spec_dir: .sdlc/specs\nautonomy: .claude/autonomy.yml\n')
   const policy = (expires, extra = '') => `version: 1
@@ -598,12 +566,10 @@ ${extra}`
 
   const dispatch = (...a) => spawnSync('node', [tool('dispatch-auto.mjs'), d, ...a], { encoding: 'utf8' })
 
-  // 승인 가드가 없으면 자율 실행을 거부한다.
   let r = dispatch('--route', 'triage', '--signal', 'CI 실패율 12.4%', '--dry-run')
   assert(r.status !== 0 && (r.stderr + r.stdout).includes('승인 가드'), '가드 없는 레포에서 자율 실행이 돌았다')
   assert(spawnSync(process.execPath, [tool('install-hook.mjs'), d], { encoding: 'utf8' }).status === 0, '훅 설치 실패')
 
-  // 정책 도구에 산출물 처리용 최소 도구만 추가한다.
   r = dispatch('--route', 'triage', '--signal', 'CI 실패율 12.4%', '--dry-run')
   assert(r.status === 0, r.stdout + r.stderr)
   const allowed = /--allowedTools "([^"]+)"/.exec(r.stdout)?.[1] ?? ''
@@ -611,23 +577,19 @@ ${extra}`
     assert(allowed.split(',').includes(t), `허용 도구에 ${t} 가 없다: ${allowed}`)
   assert(!allowed.split(',').includes('Bash'), '정책이 주지 않은 Bash 전체가 실렸다')
 
-  // .claude 아래 산출물 경로는 비대화형 실행에서 거부한다.
   put(join(d, '.claude/spec-profile.yml'), 'spec_dir: .claude/specs\nautonomy: .claude/autonomy.yml\n')
   r = dispatch('--route', 'triage', '--signal', 'CI 실패율 12.4%', '--dry-run')
   assert(r.status !== 0 && (r.stderr + r.stdout).includes('.claude/'), '.claude/ 아래 spec_dir 로 자율 실행이 돌았다')
   put(join(d, '.claude/spec-profile.yml'), 'spec_dir: .sdlc/specs\nautonomy: .claude/autonomy.yml\n')
 
-  // 만료된 정책은 실행하지 않는다.
   put(join(d, '.claude/autonomy.yml'), policy('2020-01-01'))
   r = dispatch('--route', 'triage', '--signal', 'x', '--dry-run')
   assert(r.status === 3, `만료 위임이 실행됐다: ${r.stdout}${r.stderr}`)
 
-  // 관측 신호가 필요하다.
   put(join(d, '.claude/autonomy.yml'), policy('2099-12-31'))
   r = dispatch('--route', 'triage', '--dry-run')
   assert(r.status !== 0, '관측 없이 발화했다')
 
-  // full 등급과 대상 브랜치 없는 implement 정책은 거부한다.
   put(join(d, '.claude/autonomy.yml'), `version: 1
 owner: "팀"
 
@@ -645,7 +607,7 @@ routes:
   assert(r.stdout.includes('target_branch'), 'implement 인데 브랜치 없는 것을 안 잡았다')
 })
 
-test('정책 승인은 실재하고 살아 있는 위임만 통과한다', () => {
+await test('policy approval accepts only an existing unexpired delegation', () => {
   const d = temp('sdlc-polapp')
   put(join(d, '.claude/spec-profile.yml'), 'spec_dir: .claude/specs\nautonomy: .claude/autonomy.yml\n')
   put(join(d, '.claude/autonomy.yml'), `version: 1
@@ -708,18 +670,16 @@ generated_by: "claude-opus-5"
   put(join(chain, 'intent.md'), intent('policy:nope', 'light'))
   assert(check().stdout.includes('가리키는 자율 경로가 정책에 없다'), '없는 경로가 통과했다')
 
-  // 위임 범위를 초과하는 위험 등급은 거부한다.
   put(join(chain, 'intent.md'), intent('policy:triage', 'standard'))
   assert(check().stdout.includes('max_tier'), '위임을 넘는 티어가 통과했다')
 
-  /** advance_to 이후의 산출물은 해당 정책으로 승인할 수 없다. */
   put(join(d, '.claude/autonomy.yml'), readFileSync(join(d, '.claude/autonomy.yml'), 'utf8')
     .replace('advance_to: intent', 'advance_to: finding'))
   put(join(chain, 'intent.md'), intent('policy:triage', 'light'))
   assert(check().stdout.includes('까지 맡았는데'), '위임의 끝을 넘은 문서가 그 위임으로 승인됐다')
 })
 
-test('check-all은 빈 산출물 세트에서도 정책을 검사하고 필수 설정 누락을 거부한다', () => {
+await test('check-all validates policies with no artifact sets and rejects missing required settings', () => {
   const d = temp('sdlc-required')
   const check = (...args) => run(process.execPath, [tool('check-all.mjs'), d, ...args])
   assert(check().code === 0 && check('--required').code !== 0, '프로필 누락의 필수 모드를 구분하지 않았다')
@@ -731,7 +691,7 @@ test('check-all은 빈 산출물 세트에서도 정책을 검사하고 필수 �
   assert(check().code !== 0, '산출물 체계가 없다는 이유로 잘못된 정책 검사를 생략했다')
 })
 
-test('작업 귀속은 같은 ID라도 다른 계획의 커밋을 제외한다', () => {
+await test('task attribution excludes commits for another plan with the same ID', () => {
   const d = temp('sdlc-scope')
   put(join(d, '.claude/spec-profile.yml'), 'spec_dir: specs\n')
   const spec = join(d, 'specs/a')
@@ -748,7 +708,7 @@ test('작업 귀속은 같은 ID라도 다른 계획의 커밋을 제외한다',
   assert(got.rows[0].commits.length === 1, '해당 계획 커밋을 못 찾았다')
 })
 
-test('전체 검증은 의존 변경과 최신 실패를 반영하고 완료 시점 증거를 유지한다', () => {
+await test('full verification reflects dependency changes and the latest failure while preserving completion evidence', () => {
   const d = temp('sdlc-evidence-final')
   const spec = join(d, 'specs/a')
   const plan = join(spec, 'plan.md')
@@ -784,7 +744,7 @@ test('전체 검증은 의존 변경과 최신 실패를 반영하고 완료 시
   assert(progress().code === 0, '후속 파일·프로필 변경이 완료 증거를 깨뜨렸다')
 })
 
-test('자율 실행은 자기 로그만 제외하고 다른 변경은 차단한다', () => {
+await test('autonomous execution excludes its own log but blocks other changes', () => {
   const d = temp('sdlc-repeat')
   const bin = temp('sdlc-stub')
   put(join(bin, 'claude'), '#!/bin/sh\nprintf \'%s\\n\' \'{"type":"result","subtype":"error","is_error":true}\'\nexit 1\n', 0o755)
@@ -803,7 +763,6 @@ test('자율 실행은 자기 로그만 제외하고 다른 변경은 차단한�
 })
 
 
-// 두 레포를 실제로 갈라 세운다. 이 하네스에서 가장 오래 «코드로만 읽고 돌려보지 않은» 자리다.
 const CASES = resolve(ROOT, '../skills/sdlc/create-plan/evals/cases/clean-light/docs')
 
 function seedRepo(dir, profile) {
@@ -812,7 +771,6 @@ function seedRepo(dir, profile) {
 }
 const edit = (path, fn) => writeFileSync(path, fn(readFileSync(path, 'utf8')))
 
-/** 상류 문서 레포 하나와 소비 코드 레포 하나를 세우고, 사본을 끌어온 상태까지 만든다. */
 function twoRepos() {
   const slug = '2026-09-08-archive'
   const up = temp('sdlc-docs')
@@ -823,7 +781,6 @@ function twoRepos() {
     cpSync(join(CASES, f), join(upChain, f))
     edit(join(upChain, f), (s) => s.replace('schema_version: 3', 'schema_version: 6'))
   }
-  // 수용 기준을 레포별로 배정한다 — 상류 spec 한 벌이 여러 레포의 몫을 함께 진다.
   edit(join(upChain, 'spec.md'), (s) => s
     .replace('- [ ] AC-001 — 보관 문서와 일반 문서가 함께 걸리는 질의에서 일반 문서만 반환된다',
       '- [ ] AC-001 — 보관 문서와 일반 문서가 함께 걸리는 질의에서 일반 문서만 반환된다 `scope: acme/backend`')
@@ -846,7 +803,7 @@ function twoRepos() {
 const check = (dir, up) => run(process.execPath, [tool('check-artifacts.mjs'), dir],
   { env: { ...process.env, ...(up ? { SDLC_UPSTREAM: up } : {}) } })
 
-test('pull-spec 은 승인된 상류만 끌어오고 락에 상류 커밋을 찍는다', () => {
+await test('pull-spec imports only approved upstream artifacts and records the upstream commit', () => {
   const { up, upChain, chain } = twoRepos()
   edit(join(upChain, 'spec.md'), (s) => s.replace('status: accepted', 'status: in_review'))
   git(up, 'add', '-A'); git(up, 'commit', '-qm', 'unapprove')
@@ -864,13 +821,12 @@ test('pull-spec 은 승인된 상류만 끌어오고 락에 상류 커밋을 찍
   assert(existsSync(join(chain, 'spec.md')) && existsSync(join(chain, 'intent.md')), '사본이 놓이지 않았다')
 })
 
-test('소비 레포는 자기 scope 의 Must 만 덮으면 된다', () => {
+await test('a consumer repository need cover only Must criteria in its own scope', () => {
   const { up, chain } = twoRepos()
   run(process.execPath, [tool('pull-spec.mjs'), chain, '--from', up])
   const lock = JSON.parse(readFileSync(join(chain, 'upstream.lock.json'), 'utf8'))
   cpSync(join(CASES, 'plan.md'), join(chain, 'plan.md'))
   edit(join(chain, 'plan.md'), (s) => s.replace('schema_version: 3', 'schema_version: 6'))
-  // WP-001 은 AC-001 만 문다. AC-002 는 acme/web 몫이라 이 레포에서 비어 있어도 된다.
   edit(join(chain, 'plan.md'), (s) => s
     .replace('@SPEC_SHA@', lock.files['spec.md'].sha.slice(0, 7))
     .replace('covers: FR-001 (AC-001, AC-002)', 'covers: AC-001'))
@@ -880,13 +836,12 @@ test('소비 레포는 자기 scope 의 Must 만 덮으면 된다', () => {
   assert(!r.out.includes('AC-002'), `다른 레포 몫인 AC-002 를 이 레포에 물렸다:\n${r.out}`)
   assert(r.code === 0, `두 레포로 갈린 정상 산출물 세트가 실패했다:\n${r.out}`)
 
-  // 남의 몫을 덮으면 막는다 — 두 레포가 같은 기준을 만들면 합류에서 갈린다.
   edit(join(chain, 'plan.md'), (s) => s.replace('covers: AC-001', 'covers: AC-001, AC-002'))
   const foreign = check(chain, up)
   assert(foreign.code !== 0 && foreign.out.includes('다른 레포 몫'), `남의 몫을 덮는 작업을 통과시켰다:\n${foreign.out}`)
 })
 
-test('사본을 손으로 고치면 해시가 막고, 상류가 앞서가면 검사기가 잡는다', () => {
+await test('hashes reject manual copy edits and the checker detects newer upstream content', () => {
   const { up, upChain, chain } = twoRepos()
   run(process.execPath, [tool('pull-spec.mjs'), chain, '--from', up])
   const lock = JSON.parse(readFileSync(join(chain, 'upstream.lock.json'), 'utf8'))
@@ -903,7 +858,6 @@ test('사본을 손으로 고치면 해시가 막고, 상류가 앞서가면 검
   run(process.execPath, [tool('pull-spec.mjs'), chain, '--from', up])
   assert(check(chain, up).code === 0, '다시 끌어왔는데도 실패한다')
 
-  // 상류에서 spec 이 한 번 더 바뀌면 사본은 낡은다. 이것이 사본 규약이 못 잡던 붕괴다.
   edit(join(upChain, 'spec.md'), (s) => s.replace('## 오류와 경계', '## 오류와 경계'))
   edit(join(upChain, 'spec.md'), (s) => s.replace('빈 결과를 그대로 낸다', '빈 결과를 그대로 낸다. 경고 문구를 함께 낸다'))
   git(up, 'add', '-A'); git(up, 'commit', '-qm', 'spec 개정')
@@ -911,9 +865,7 @@ test('사본을 손으로 고치면 해시가 막고, 상류가 앞서가면 검
   assert(stale.code !== 0 && stale.out.includes('상류가 이 사본보다 앞서 있다'), `상류 드리프트를 놓쳤다:\n${stale.out}`)
 })
 
-test('상류 프로필을 켜도 이전 스키마의 산출물 세트는 배정 검사에 걸리지 않는다', () => {
-  // 새 오류 규칙은 도입된 스키마 이상에서만 적용한다(schema.md). 프로필 한 줄로 이전 산출물 세트가
-  // 전부 빨개지면 아무도 상류를 선언하지 않는다.
+await test('enabling an upstream profile does not apply assignment checks to older schemas', () => {
   const { upChain } = twoRepos()
   for (const f of ['intent.md', 'spec.md']) {
     edit(join(upChain, f), (s) => s.replace('schema_version: 6', 'schema_version: 5'))
@@ -923,7 +875,7 @@ test('상류 프로필을 켜도 이전 스키마의 산출물 세트는 배정 
   assert(!r.out.includes('`scope` 가 없다'), `v5 산출물 세트에 v6 배정 검사가 걸렸다:\n${r.out}`)
 })
 
-test('상류 문서 레포는 배정되지 않은 Must 수용 기준을 막는다', () => {
+await test('an upstream documentation repository rejects unassigned Must acceptance criteria', () => {
   const { up, upChain } = twoRepos()
   assert(check(upChain).code === 0, `배정이 끝난 상류 spec 이 실패했다:\n${check(upChain).out}`)
 
@@ -938,8 +890,7 @@ test('상류 문서 레포는 배정되지 않은 Must 수용 기준을 막는�
 })
 
 
-test('lang 은 문체 번들을 고르고, 번들이 없으면 조용히 통과하지 않는다', () => {
-  /** 번들이 없는 언어를 통과시키면 문체 검사가 0건인지 미실행인지 구분되지 않는다. */
+await test('lang selects the prose bundle and a missing bundle never passes silently', () => {
   const d = temp('sdlc-lang')
   const chain = join(d, '.sdlc/specs/change')
   cpSync(join(findSkill('create-plan', HERE), 'evals/cases/clean-light/docs'), chain, { recursive: true })
@@ -962,8 +913,7 @@ test('lang 은 문체 번들을 고르고, 번들이 없으면 조용히 통과�
 })
 
 
-test('번들은 같은 모양이어야 한다 — 키 하나가 빠지면 그 규칙이 조용히 꺼진다', async () => {
-  /** en 에 vague 가 없으면 모호어 검사가 «0건» 으로 보인다. 그것이 이 하네스가 가장 싫어하는 실패다. */
+await test('locale bundles have matching shapes so a missing key cannot silently disable a rule', async () => {
   const [ko, en] = await Promise.all([
     import(`file://${join(ROOT, 'locales/ko.mjs')}`),
     import(`file://${join(ROOT, 'locales/en.mjs')}`),
@@ -976,19 +926,15 @@ test('번들은 같은 모양이어야 한다 — 키 하나가 빠지면 그 �
       assert(m.budget[kind]?.doc > 0, `${name}: budget.${kind} 이 없다`)
     }
     assert(m.limits.sentences > 0 && m.limits.title > 0 && m.limits.ac > 0, `${name}: limits 가 비었다`)
-    // written 은 산출물에 그대로 들어간다 — 키가 빠지면 계획서에 `undefined` 가 적힌다.
     for (const k of ['divergence', 'none', 'noPr']) assert(typeof m.written[k] === 'string' && m.written[k], `${name}: written.${k} 이 없다`)
     for (const k of ['done', 'partial', 'failed']) assert(typeof m.written.result[k] === 'string' && m.written.result[k], `${name}: written.result.${k} 이 없다`)
-    // /g 가 붙은 정규식은 .test 가 상태를 가져 한 줄 걸러 한 번씩만 걸린다.
     for (const w of m.vague) assert(!(w instanceof RegExp) || !w.flags.includes('g'), `${name}: vague 에 /g 정규식이 있다 — ${w}`)
     for (const [w] of m.translationese) assert(!(w instanceof RegExp) || !w.flags.includes('g'), `${name}: translationese 에 /g 정규식이 있다 — ${w}`)
   }
 })
 
 
-test('승인 가드는 ADR 도 본다 — 산출물 세트 밖에 산다고 예외가 아니다', () => {
-  /** references/adr.md 가 «ADR 은 그 규칙의 예외가 아니다» 라고 적어 둔 자리다. 관문이 ADR 을
-   *  걸러내면 가드의 ADR 처리(deprecated 전이까지 아는)가 통째로 죽은 코드가 된다. */
+await test('the approval guard protects ADRs even though they live outside artifact sets', () => {
   const d = temp('sdlc-guard-adr')
   put(join(d, '.claude/spec-profile.yml'),
     `sdlc_version: 5\nsdlc_runtime: "${ROOT}"\nspec_dir: ".sdlc/specs"\nadr_dir: "docs/adr"\n`)
@@ -1008,20 +954,16 @@ test('승인 가드는 ADR 도 본다 — 산출물 세트 밖에 산다고 예�
   r = invoke({ tool_name: 'Edit', tool_input: { file_path: adr, old_string: '정해진 것', new_string: '뒤집은 것' } })
   assert(asks(r), 'accepted ADR 의 본문 변경을 조용히 허용했다 — 결정의 불변성이 무너진다')
 
-  // adr_dir 이 없는 레포는 ADR 을 안 쓴다. 무관한 파일까지 가드에 걸리면 안 된다.
   put(join(d, '.claude/spec-profile.yml'), `sdlc_version: 5\nsdlc_runtime: "${ROOT}"\nspec_dir: ".sdlc/specs"\n`)
   r = invoke({ tool_name: 'Write', tool_input: { file_path: adr, content: 'status: accepted\napproved_by: "agent"' } })
   assert(r.code === 0 && !asks(r), 'adr_dir 이 없는데도 ADR 경로를 붙잡았다')
 })
 
-test('shim 은 프로필이 지목한 런타임을 설치본보다 먼저 쓴다', () => {
-  /** 안 그러면 훅만 설치본을 돌고 스킬·CI 는 지목된 사본을 돈다 — 같은 문서의 검사 결과가 갈리고,
-   *  런타임을 개발하는 레포에서는 훅이 언제나 옛 하네스로 검사한다. */
+await test('the shim prefers the runtime selected by the profile over the installed copy', () => {
   const d = temp('sdlc-shim-profile')
   run(process.execPath, [tool('install-hook.mjs'), d])
   const shim = join(d, '.claude/hooks/sdlc-gate.sh')
 
-  // 프로필이 지목하는 사본과, 홈에 놓인 설치본을 각각 다른 표식으로 만든다.
   const marker = (dir, text) => {
     const t = join(dir, 'tools')
     mkdirSync(t, { recursive: true })
@@ -1043,8 +985,7 @@ test('shim 은 프로필이 지목한 런타임을 설치본보다 먼저 쓴다
   assert(call().includes('PROFILE'), `프로필이 지목했는데 설치본을 썼다 — 훅이 다른 사본으로 검사한다:\n${call()}`)
 })
 
-test('node 를 못 찾으면 가드는 조용히 통과하지 않고 말한다', () => {
-  /** 조용한 통과는 «가드가 꺼진 것» 과 «통과» 를 같은 것으로 만든다. */
+await test('the guard reports a missing Node executable instead of passing silently', () => {
   const d = temp('sdlc-node')
   put(join(d, '.claude/spec-profile.yml'), `sdlc_version: 5\nsdlc_runtime: "${ROOT}"\nspec_dir: ".sdlc/specs"\n`)
   const intent = join(d, '.sdlc/specs/change/intent.md')
@@ -1053,12 +994,9 @@ test('node 를 못 찾으면 가드는 조용히 통과하지 않고 말한다',
     tool_name: 'Write',
     tool_input: { file_path: intent, content: ['status:', 'accepted'].join(' ') + '\n' + ['approved_by:', '"agent"'].join(' ') },
   })
-  // PATH 를 통째로 비우면 `#!/usr/bin/env bash` 가 bash 를 못 찾아 스크립트 자체가 안 뜬다.
-  // 시스템 경로만 남기고 node 만 없는 상태를 만든다. HOME 은 비워 ~/.nvm 도 안 걸리게 한다.
   const sys = '/usr/bin:/bin'
   const empty = temp('sdlc-nopath')
 
-  // PATH 에 없어도 SDLC_NODE 로 지목하면 판정한다.
   const found = spawnSync(tool('guard-approval.sh'), [], {
     encoding: 'utf8', input: selfApproval,
     env: { ...process.env, PATH: sys, HOME: empty, SDLC_NODE: process.execPath, CLAUDE_PROJECT_DIR: d },
@@ -1066,7 +1004,6 @@ test('node 를 못 찾으면 가드는 조용히 통과하지 않고 말한다',
   assert((found.stdout ?? '').includes('"permissionDecision":"ask"'),
     `PATH 에 node 가 없다고 자기승인을 통과시켰다:\n${found.stdout}${found.stderr}`)
 
-  // 정말 못 찾으면 그 사실을 말한다. 시스템 경로에 node 가 있는 장비에서는 이 갈래가 안 선다.
   if (['/opt/homebrew/bin/node', '/usr/local/bin/node', '/usr/bin/node'].some((f) => existsSync(f))) return
   const missing = spawnSync(tool('guard-approval.sh'), [], {
     encoding: 'utf8', input: selfApproval,
@@ -1075,9 +1012,7 @@ test('node 를 못 찾으면 가드는 조용히 통과하지 않고 말한다',
   assert(/node 를 못 찾았다/.test(missing.stderr ?? ''), `node 가 없는데 아무 말도 없이 통과했다:\n${missing.stderr}`)
 })
 
-test('문장 수는 종결부호만 센다 — 소수점과 확장자는 문장을 끝내지 않는다', () => {
-  /** «2.2 배» 와 «prose.md» 가 각각 두 문장으로 세어지면, 세 문장짜리 항목이 아홉 문장이 된다.
-   *  한국어 산문에는 소수와 확장자가 드물어 영문 산출물을 쓰기 전까지 드러나지 않았다. */
+await test('sentence counting ignores periods in decimals and file extensions', () => {
   const d = temp('sdlc-sentences')
   put(join(d, '.claude/spec-profile.yml'), 'sdlc_version: 5\nspec_dir: "."\n')
   const body = 'The ratio is 2.16 on average, 2.21 at the median, and it ranges from 1.90 to 2.49. '
@@ -1110,9 +1045,7 @@ ${body}
   assert(!/long-item/.test(r.out), `세 문장짜리 항목을 길다고 했다 — 마침표를 종결부호로 세고 있다:\n${r.out}`)
 })
 
-test('템플릿의 언어판은 같은 구조여야 한다 — 한쪽만 고치면 그 절이 조용히 사라진다', () => {
-  /** 절 제목은 계약이 아니라 검사기가 안 본다. 그래서 en 템플릿에서 절 하나가 빠져도 아무도
-   *  실패하지 않고, 그 언어로 쓰는 사람만 그 절을 영영 안 쓰게 된다. */
+await test('localized templates have matching structures so sections cannot disappear silently', () => {
   const shape = (file) => readFileSync(file, 'utf8').split('\n')
     .filter((l) => /^#{2,3} /.test(l))
     .map((l) => `${l.match(/^#+/)[0]} ${(l.match(/\b(OUT|CON|Q|SCN|FR|NFR|EDGE|SQ|SD|TD|WP|RISK|PQ|EV|HYP|FQ|ALT|RV|ASM)-\d+/) ?? ['prose'])[0]}`)
@@ -1120,8 +1053,6 @@ test('템플릿의 언어판은 같은 구조여야 한다 — 한쪽만 고치�
   for (const [skill, file] of [['create-intent', 'intent-template.md'], ['create-spec', 'spec-template.md'],
                                ['create-plan', 'plan-template.md'], ['create-adr', 'adr-template.md'],
                                ['create-finding', 'finding-template.md'],
-                               // SDLC 산출물은 아니지만 같은 이유로 언어판이 갈린다 — 보고 형식은
-                               // 대화 언어가, PR 본문은 프로필의 lang 이 고른다.
                                ['implement-spec', 'report-templates.md'], ['create-pr', 'pr-body-template.md']]) {
     const dir = join(findSkill(skill, HERE), 'assets')
     const langs = readdirSync(dir).filter((l) => existsSync(join(dir, l, file)))
@@ -1135,10 +1066,7 @@ test('템플릿의 언어판은 같은 구조여야 한다 — 한쪽만 고치�
   }
 })
 
-test('mark 는 파생 필드를 안 적고 계획대로 끝난 작업을 한 줄에 묶는다', () => {
-  /** 커밋 SHA·검증 로그 이름은 plan-progress 가 trailer 와 로그 폴더에서 직접 찾는다. 그 사본을
-   *  줄에 적으면 아무도 안 읽는 글자가 작업 수만큼 쌓이고, 정작 이 줄에만 있는 값인
-   *  «계획과의 차이» 가 그 사이에 묻힌다. */
+await test('mark omits derived fields and groups tasks completed as planned', () => {
   const d = temp('sdlc-mark')
   put(join(d, '.claude/spec-profile.yml'), 'sdlc_version: 4\nspec_dir: .sdlc/specs\nverify: echo ok\n')
   const spec = join(d, '.sdlc/specs/2026-09-08-m')
@@ -1188,21 +1116,17 @@ ${wp('WP-003', 'src/c.js')}
   assert(logLines().length === 1, `계획대로 끝난 두 작업이 두 줄이 됐다:\n${logLines().join('\n')}`)
   assert(/WP-001 WP-002/.test(logLines()[0]), `앞줄에 ID 를 안 보탰다:\n${logLines()[0]}`)
 
-  // 차이가 있는 작업은 제 줄을 가진다 — 묶으면 그 문장이 남의 줄에 얹힌다.
   r = mark('WP-003', '--note', '캐시 무효화를 뒤로 미뤘다')
   assert(r.code === 0, r.out)
   assert(logLines().length === 2 && /캐시 무효화/.test(logLines()[1]), `차이 있는 줄을 따로 안 세웠다:\n${logLines().join('\n')}`)
 
-  // 묶인 줄도 검사기가 세 작업 모두의 기록으로 읽어야 한다.
   r = run(process.execPath, [tool('plan-progress.mjs'), spec, '--json'])
   const notes = JSON.parse(r.out).notes.filter((n) => n.msg.includes('§실행 기록'))
   assert(notes.length === 0, `묶인 줄을 기록 없음으로 읽었다: ${JSON.stringify(notes)}`)
 })
 
 
-test('통과 로그는 본문을 잘라 남기고 실패 로그는 그대로 둔다', () => {
-  /** --- 위의 헤더가 증거다. 아래는 실패를 읽을 때 쓰는 재료라, 통과한 실행의 1000 줄은 아무도
-   *  다시 열지 않으면서 레포에 영원히 남는다. 자른 자리는 전체 출력의 sha256 이 지킨다. */
+await test('passing logs truncate output while failing logs preserve it', () => {
   const d = temp('sdlc-trunc')
   put(join(d, '.claude/spec-profile.yml'), 'sdlc_version: 4\nspec_dir: .sdlc/specs\nverify: echo ok\n')
   const spec = join(d, '.sdlc/specs/2026-09-08-t')
@@ -1244,14 +1168,12 @@ status: in_progress
     `통과 로그 본문을 안 줄였다 (${kept.split('\n').length}줄)`)
   assert(/560 lines omitted/.test(kept), `자른 사실을 본문에 안 남겼다:\n${kept.slice(0, 200)}`)
 
-  // 실패한 실행에서는 그 출력이 곧 용건이다.
   r = run(process.execPath, [tool('verify-run.mjs'), spec, '--level', '1', '--tasks', 'WP-001', '--', `${noisy}; exit 3`])
   assert(r.code === 3, `실패 종료 코드를 삼켰다 (${r.code})`)
   const failed = read(logs().find((f) => read(f).includes('exit: 3')))
   assert(/^output: full 600 lines$/m.test(failed.split('\n---\n')[0]), `실패 로그를 잘랐다:\n${failed.split('\n---\n')[0]}`)
   assert(failed.includes('line 1\n') && failed.includes('line 300') && failed.includes('line 600'), '실패 로그에서 출력이 사라졌다')
 
-  // 헤더만 읽는 쪽은 잘린 로그도 그대로 증거로 쓴다.
   put(join(d, 'src/a.js'), "test('결과가 참이다', () => {})\nexport const a = 1\n")
   git(d, 'add', 'src/a.js'); git(d, 'commit', '-qm', 'feat: a', '-m', 'SDLC-Task: WP-001\nSDLC-Plan: .sdlc/specs/2026-09-08-t/plan.md')
   r = run(process.execPath, [tool('verify-run.mjs'), spec, '--level', '1', '--tasks', 'WP-001', '--', 'echo ok'])
@@ -1261,9 +1183,7 @@ status: in_progress
 })
 
 
-test('커밋되지 않은 프로필과 ADR 은 «나만 보는 검사» 라고 말한다', () => {
-  /** 프로필이 Git 밖에 있으면 내 산출물 체계는 이 규칙으로, 남의 산출물 체계는 저마다의 규칙으로 통과하고 CI 는
-   *  아무것도 안 본다. 셋 다 화면에서는 «통과» 로 보인다 — 이 하네스가 가장 싫어하는 모양이다. */
+await test('uncommitted profiles and ADRs are reported as local-only checks', () => {
   const d = temp('sdlc-tracked')
   const profile = join(d, '.claude/spec-profile.yml')
   put(profile, 'sdlc_version: 5\nspec_dir: ".sdlc/specs"\nadr_dir: "docs/adr"\n')
@@ -1280,15 +1200,80 @@ test('커밋되지 않은 프로필과 ADR 은 «나만 보는 검사» 라고 �
   assert(/owner/.test(r.out), `사람마다 다른 키를 어떻게 하라는 말이 없다:\n${r.out}`)
   assert(r.code !== 2, `기본 모드에서 프로필 부재로 오해했다 (${r.code})`)
 
-  // CI 모드에서는 실패다 — 경고로 두면 아무도 안 고친다.
   assert(check('--required').code === 1, 'CI 모드에서 통과시켰다')
 
-  // 커밋하면 조용해진다. gitignore 에 남아 있어도 추적되면 남과 CI 가 같은 것을 본다.
   git(d, 'add', '-f', '.claude/spec-profile.yml', 'docs/adr'); git(d, 'commit', '-qm', 'chore: profile')
   r = check()
   assert(!/Git 에 없다/.test(r.out), `추적되는 설정을 여전히 문제로 봤다:\n${r.out}`)
 })
 
+
+
+await test('English and Korean ADR indexes round-trip and normalize legacy statuses', async () => {
+  const { loadAdr } = await import('../tools/artifact-parse.mjs')
+  const { adrDigest } = await import('../tools/adr-check.mjs')
+  for (const lang of ['ko', 'en']) {
+    const d = temp('sdlc-index-language')
+    put(join(d, '.claude/spec-profile.yml'), `lang: ${lang}\nadr_dir: docs/adr\n`)
+    put(join(d, 'docs/adr/ADR-001-old.md'), '# ADR-001 — Old\n\n| Status | superseded |\n')
+    put(join(d, 'docs/adr/ADR-002-current.md'), '# ADR-002 — Current\n\n| 상태 | 승인됨 |\n')
+    const invoke = (...args) => run(process.execPath, [tool('adr-index.mjs'), d, ...args])
+    assert(invoke().code === 0, 'index generation failed')
+    assert(invoke('--check').code === 0, 'generated index failed its own check')
+    const indexPath = join(d, 'docs/adr/index.md')
+    const index = readFileSync(indexPath, 'utf8')
+    const [live, past] = index.split(lang === 'en' ? '## Past decisions' : '## 지나간 결정')
+    assert(!live.includes('[ADR-001]') && past.includes('[ADR-001]'), 'superseded legacy ADR classified as live')
+    assert(live.includes('[ADR-002]'), 'Korean legacy alias not accepted')
+    assert(index.startsWith(lang === 'en' ? '# Decision log' : '# 결정 로그'), 'wrong index language')
+    put(indexPath, index + '\nmanual change\n')
+    assert(invoke('--check').code === 1, 'stale index passed')
+    put(join(d, 'docs/adr/ADR-003-unknown.md'), '# ADR-003 — Unknown\n\n| Status | mystery |\n')
+    assert(invoke().code === 2 && invoke('--next').code === 2, 'unknown status silently accepted')
+    assert(readFileSync(indexPath, 'utf8') === index + '\nmanual change\n', 'failed generation overwrote index')
+    const path = join(d, 'docs/adr/ADR-004-choice.md')
+    put(path, '---\nartifact: adr\nid: ADR-004\n---\n# Choice\n\n## DECISION\n\nUse storage.\n\n## ALTERNATIVES\n\n### ALT-001 — Storage (chosen)\n\n### ALT-002 — Memory\n')
+    const digest = adrDigest(loadAdr(path))
+    assert(digest.decision === 'Use storage.' && digest.chosen[0] === 'Storage', JSON.stringify(digest))
+  }
+})
+
+await test('Execution log ignores change-history task IDs in either language', async () => {
+  const { SECTION, sectionBlock, RE_CHANGE_LOG } = await import('../tools/keywords.mjs')
+  for (const heading of ['Change log', 'Changelog', '변경 기록']) {
+    const body = `## EXECUTION LOG\nWP-001\n### ${heading}\nWP-002\n`
+    const log = sectionBlock(SECTION.executionLog).exec(body)?.[0].replace(RE_CHANGE_LOG, '')
+    assert(log?.includes('WP-001') && !log.includes('WP-002'), `history counted as execution: ${heading}`)
+  }
+})
+
+await test('Machine diagnostics and gate warning counts do not depend on prose', () => {
+  const d = temp('sdlc-json-diagnostics')
+  const chain = join(d, 'docs/change')
+  cpSync(join(findSkill('create-plan', HERE), 'evals/cases/clean-light/docs'), chain, { recursive: true })
+  for (const name of ['check-artifacts.mjs', 'lint-prose.mjs']) {
+    const r = run(process.execPath, [tool(name), chain, '--json'])
+    const result = JSON.parse(r.out)
+    assert(result.version === 1 && result.exitCode === r.code, r.out)
+    assert(result.counts.errors === result.problems.filter((p) => p.level === 'error').length, r.out)
+    const strict = run(process.execPath, [tool(name), chain, '--json', '--strict'])
+    const strictResult = JSON.parse(strict.out)
+    assert(strict.code === (strictResult.counts.errors || strictResult.counts.warnings ? 1 : 0), strict.out)
+  }
+  // Run the real gate against a fixture checker: only structured counts can identify this warning.
+  const runtime = join(d, 'runtime')
+  put(join(runtime, 'VERSION'), '5')
+  put(join(runtime, 'tools/check-artifacts.mjs'), 'process.exit(0)')
+  put(join(runtime, 'tools/lint-prose.mjs'), `console.log(JSON.stringify({version:1, counts:{errors:0,warnings:1}, problems:[{level:'warn',doc:'intent.md',msg:'English warning'}]}))`)
+  put(join(d, '.claude/spec-profile.yml'), `spec_dir: docs\nsdlc_runtime: "${runtime}"\nlang: en\n`)
+  const env = { ...process.env, CLAUDE_PROJECT_DIR: d, XDG_CACHE_HOME: join(d, 'cache') }
+  const gate = () => run(tool('gate-artifacts.sh'), [join(chain, 'intent.md')], { env })
+  const first = gate(), second = gate()
+  assert(first.code === 0 && first.out.includes('English warning'), first.out)
+  assert(second.code === 0 && second.out.includes('1건') && !second.out.includes('English warning'), second.out)
+  put(join(runtime, 'tools/lint-prose.mjs'), `console.log('not JSON')`)
+  assert(gate().code === 2, 'unreadable diagnostics silently passed')
+})
 
 console.log('\n런타임 스모크 평가\n')
 for (const r of results) {

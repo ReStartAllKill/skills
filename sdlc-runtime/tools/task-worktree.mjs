@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/** 작업 워크트리를 생성·커밋·병합·제거한다. commit은 files만 스테이징하고 SDLC-Task 트레일러를 추가한다. --main은 현재 작업 트리를 사용한다. */
 import { existsSync } from 'node:fs'
 import { resolve, join, relative } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -19,7 +18,6 @@ if (!dirArg || !['add', 'commit', 'merge', 'remove'].includes(CMD) || !TASK) {
 }
 const DIR = resolve(dirArg)
 
-/** plan-levels가 해석한 계획서와 프로필을 사용한다. */
 const lv = spawnSync(process.execPath, [join(HERE, 'plan-levels.mjs'), DIR, '--json'], { encoding: 'utf8' })
 let plan
 try { plan = JSON.parse(lv.stdout) } catch { die(`plan-levels 를 읽지 못했다:\n${lv.stdout}${lv.stderr}`) }
@@ -68,7 +66,6 @@ if (CMD === 'commit') {
   const known = new Set(tracked.stdout.split('\0'))
   const present = task.files.filter((f) => existsSync(resolve(cwd, f)) || known.has(f))
   if (!present.length) die(`${TASK} 의 files 중 존재하거나 추적 중인 파일이 없다: ${task.files.join(', ')}`)
-  /** files 밖의 변경은 커밋하지 않고 경고한다. */
   const st = stdout(git(cwd, 'status', '--porcelain')).split('\n').filter(Boolean)
     .map((l) => l.trim().replace(/^\S+\s+/, '')).filter((p) => !task.files.includes(p))
   if (st.length) console.error(`⚠ files 밖의 변경 ${st.length}개는 싣지 않는다: ${st.slice(0, 5).join(', ')}${st.length > 5 ? ' …' : ''}`)
@@ -82,7 +79,6 @@ if (CMD === 'commit') {
 
 if (CMD === 'merge') {
   if (current() !== plan.target_branch) die(`메인 트리가 ${current()} 에 있다 — target_branch ${plan.target_branch} 로 먼저 옮긴다.`)
-  /** 병합 전에는 추적 중인 파일의 변경만 검사한다. */
   if (stdout(git(ROOT, 'status', '--porcelain', '--untracked-files=no'))) die('메인 트리가 더럽다 — 합류 전에 정리한다. 무엇이 누구 변경인지 갈라낼 수 없다.')
   if (!ok(git(ROOT, 'rev-parse', '--verify', '--quiet', branch))) die(`작업 브랜치가 없다 — ${branch}`)
   const r = git(ROOT, 'merge', '--no-edit', branch)
@@ -97,7 +93,6 @@ if (CMD === 'merge') {
 
 if (CMD === 'remove') {
   if (existsSync(wt)) {
-    /** 미커밋 변경이 남으면 제거를 거부한다. 폐기 승인 후 --force를 사용한다. */
     const left = stdout(git(wt, 'status', '--porcelain')).split('\n').filter(Boolean)
     if (left.length && !FORCE) {
       die(`워크트리에 커밋되지 않은 변경 ${left.length}개가 남아 있다 — ${relative(ROOT, wt)}\n  ${left.slice(0, 8).join('\n  ')}\n` +

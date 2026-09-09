@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/** mark는 완료 증거를 확인해 계획서를 갱신하고, commit은 계획서와 해당 레벨의 검증 로그만 커밋한다. mark에는 --note가 필요하다. */
 import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs'
 import { resolve, join, relative, basename, dirname } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -24,7 +23,6 @@ if (!dirArg || !['mark', 'commit'].includes(CMD ?? '')) {
 const DIR = resolve(dirArg)
 const PLAN = join(DIR, 'plan.md')
 if (!existsSync(PLAN)) die(`plan.md 가 없다 — ${DIR}`)
-/** 이 줄은 사람이 읽는 산출물에 들어간다 — 프로필의 `lang` 이 어느 낱말로 쓸지 고른다. */
 const W = useLocale(DIR).written
 const esc = (x) => String(x).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
@@ -41,7 +39,6 @@ const git = (...a) => spawnSync('git', ['-C', ROOT, ...a], { encoding: 'utf8' })
 const ok = (r) => r.status === 0
 const sout = (r) => (r.stdout ?? '').trim()
 
-/** 완료 증거는 plan-progress의 판정을 사용한다. */
 const progress = (() => {
   const r = spawnSync(process.execPath, [join(HERE, 'plan-progress.mjs'), DIR, '--json'], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 })
   try { return JSON.parse(r.stdout) } catch { return die(`plan-progress 를 읽지 못했다:\n${r.stdout}${r.stderr}`) }
@@ -55,7 +52,6 @@ const planText = readFileSync(PLAN, 'utf8')
 const fm = /^---\n[\s\S]*?\n---\n/.exec(planText)?.[0] ?? ''
 const status = /^status:[ \t]*["']?([\w-]+)/m.exec(fm)?.[1] ?? ''
 
-// 승인된 계획서의 실행 상태 전이를 우회하지 않도록 in_progress에서만 갱신한다.
 if (status !== 'in_progress') {
   die(`plan 의 status 가 \`${status || '(없음)'}\` 다 — 실행 중인 계획서만 갱신한다.\n` +
       `  실행을 시작(또는 재개)한다면 먼저 status 를 \`in_progress\` 로 바꾸고 커밋한다.\n` +
@@ -76,20 +72,14 @@ if (CMD === 'mark') {
   if (!row) die(`${TASK} 가 plan.md 의 작업이 아니다. 있는 것: ${progress.rows.map((r) => r.id).join(' · ')}`)
   if (row.done) die(`${TASK} 는 이미 체크돼 있다 — 다시 적지 않는다. 기록을 고치려면 손으로 §실행 기록을 편집한다.`, 0)
 
-  // 완료 기록은 증거가 필요하다. 실패·부분 기록은 증거 없이 허용한다.
   if (RESULT_KEY === 'done') {
     if (!row.commits.length) die(`${TASK} 에 귀속 커밋이 없다 — \`SDLC-Task: ${TASK}\` trailer 가 붙은 커밋이 있어야 한다.\n  아직 합류 전이면 \`task-worktree.mjs <스펙> commit|merge ${TASK}\` 가 먼저다.`)
     if (!row.verified.length) die(`${TASK} 에 합류점 verify 기록이 없다 — 통과했다는 주장의 증거는 그 로그다.\n  \`verify-run.mjs <스펙> --level <N> --tasks ${TASK} -- "<프로필 verify>"\` 를 먼저 돌린다.`)
   }
 
   const today = new Date().toLocaleDateString('sv-SE')
-  /** 커밋 SHA 와 검증 로그 이름은 적지 않는다. plan-progress 는 trailer 와 로그 폴더에서 그 둘을
-   *  직접 찾고 그쪽을 증거로 삼으므로, 여기 적은 사본은 아무도 읽지 않으면서 줄만 길게 만든다.
-   *  이 줄에만 있는 값은 «계획과의 차이» 하나다. */
   const line = `- ${today} ${TASK} — ${RESULT} · ${PR} · ${W.divergence}: ${NOTE}`
 
-  /** 계획대로 끝난 작업은 같은 날의 앞줄에 ID 만 보탠다. 한 작업에 한 줄씩 쌓으면 레벨 하나가
-   *  줄 여러 개가 되는데, 그 줄들이 함께 말하는 것은 «차이 없음» 하나뿐이다. */
   const plain = RESULT_KEY === 'done' && isAlias(NOTE, NO_DIVERGENCE) && isAlias(PR, NO_PR)
   const mergeInto = (text) => {
     const re = new RegExp(`^(- ${today} WP-\\d{1,4}(?: WP-\\d{1,4})*) — ${esc(RESULT)} · ${esc(PR)} · ${esc(W.divergence)}: ${esc(NOTE)}[ \\t]*$`)
@@ -97,12 +87,10 @@ if (CMD === 'mark') {
     return m ? `${m[1]} ${TASK} — ${RESULT} · ${PR} · ${W.divergence}: ${NOTE}` : null
   }
 
-  // 해당 작업의 체크박스만 갱신한다.
   const box = new RegExp(`^(\\s*[-*]\\s*)\\[ \\](\\s*\\*\\*${TASK}\\b)`, 'm')
   if (!box.test(planText)) die(`${TASK} 의 미체크 항목을 못 찾았다 — plan.md 의 작업 줄 형식을 확인한다.`)
   let next = planText.replace(box, '$1[x]$2')
 
-  // 작업 실행 기록은 변경 기록 등 하위 섹션 앞에 추가한다.
   const secStart = sectionHeading(SECTION.executionLog).exec(next)
   if (!secStart) die('§실행 기록 절이 없다 — plan 템플릿의 필수 절이다.')
   const bodyFrom = secStart.index + secStart[0].length
@@ -127,7 +115,6 @@ if (CMD === 'mark') {
   }
   next = next.slice(0, bodyFrom) + body + next.slice(stop)
 
-  // 승인 필드가 있는 프런트매터는 수정하지 않는다.
   const nextFm = /^---\n[\s\S]*?\n---\n/.exec(next)?.[0] ?? ''
   if (nextFm !== fm) die('프런트매터가 바뀌었다 — 도구의 버그다. 아무것도 쓰지 않았다.')
 
@@ -148,7 +135,6 @@ if (CMD === 'commit') {
     die(`메인 트리가 ${branch || '(분리된 HEAD)'} 에 있다 — target_branch ${levels.target_branch} 가 아니다.`)
   }
 
-  // 해당 레벨의 검증 로그만 선택한다.
   const logDir = resolve(ROOT, yml('verify_log_dir') || '.sdlc/verify', basename(DIR))
   const logs = existsSync(logDir)
     ? readdirSync(logDir).filter((f) => f.startsWith(`L${LEVEL}-`) && f.endsWith('.log')).map((f) => relative(ROOT, join(logDir, f)))
@@ -156,7 +142,6 @@ if (CMD === 'commit') {
   const gates = flags('--gate').map((g) => relative(ROOT, resolve(g)))
   const paths = [relative(ROOT, PLAN), ...logs, ...gates]
 
-  // 기존 스테이징 변경이 있으면 중단한다.
   const staged = git('diff', '--cached', '--name-only', '-z', '--no-renames')
   if (!ok(staged)) die(`인덱스를 읽지 못했다:\n${(staged.stdout ?? '') + (staged.stderr ?? '')}`)
   const outside = (staged.stdout ?? '').split('\0').filter((f) => f && !paths.includes(f))
@@ -181,7 +166,6 @@ if (CMD === 'commit') {
   console.log(`커밋 ${sout(git('rev-parse', '--short', 'HEAD'))}  ${paths.length}개 파일`)
   console.log(`  ${msg}`)
 
-  // 커밋 후 진행 기록의 일치 여부를 확인한다.
   const after = spawnSync(process.execPath, [join(HERE, 'plan-progress.mjs'), DIR], { encoding: 'utf8' })
   console.log('\n' + (after.stdout ?? '').trim().split('\n').slice(-1)[0])
   const bad = (after.stdout ?? '').split('\n').filter((l) => /^\s*[✗⚠]/.test(l))

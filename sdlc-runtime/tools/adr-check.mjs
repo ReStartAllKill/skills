@@ -1,24 +1,17 @@
-/** ADR의 식별자·승인·제약·재검토 조건·검증 근거를 검사한다. 규약: references/adr.md. */
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { resolve, join, relative } from 'node:path'
 import { ADR_FILENAME, idsIn, stripComments, isNull, loadAdrDir } from './artifact-parse.mjs'
-import { SECTION, CHOSEN, hasAlias } from './keywords.mjs'
+import { SECTION, CHOSEN, hasAlias, canonical, ADR_STATUS_ALIASES, LEGACY_STATUS_ROW } from './keywords.mjs'
 import { locale } from './locale.mjs'
-/** 채택안 표시. 괄호까지 포함해 본다 — 본문에 «채택» 이 그냥 나오는 것과 구분한다. */
 const CHOSEN_RE = new RegExp(`\\((?:${CHOSEN.join('|')})\\)`, 'i')
 
 export const ADR_STATUS = ['draft', 'in_review', 'accepted', 'deprecated', 'superseded', 'rejected']
-/** 참조할 수 없는 ADR 상태. */
 export const ADR_DEAD = ['deprecated', 'superseded', 'rejected']
-/** ADR 은 산출물 문서와 달리 절 제목을 문자열로 본다 — 다섯 절이 곧 문서의 형식이다. */
 const SECTION_KEYS = ['decision', 'forces', 'alternatives', 'consequences', 'revisit']
 const SECTIONS = SECTION_KEYS.map((k) => SECTION[k][1])
-/** 별칭 중 실제로 문서에 있는 제목을 찾아 그 이름으로 절을 읽는다. */
 const titleIn = (doc, key) => SECTION[key].find((t) => sectionText(doc, t) != null) ?? SECTION[key][1]
-/** 섹션 제목의 ‘및’과 ‘과’를 동일하게 처리한다. */
-const sameTitle = (a, b) => a.replace(/\s*및\s*/g, '과').replace(/\s+/g, '') === b.replace(/\s*및\s*/g, '과').replace(/\s+/g, '')
+const sameTitle = (a, b) => a.replace(/\s*및\s*/g, '과').replace(/\s+/g, '').toLowerCase() === b.replace(/\s*및\s*/g, '과').replace(/\s+/g, '').toLowerCase()
 
-/** 대안은 제목 또는 비교표에서 읽는다. 제목이 있으면 표를 중복 집계하지 않는다. */
 export function alternativesOf(doc) {
   const heads = [...doc.ents.values()].filter((e) => e.id.startsWith('ALT-'))
     .map((e) => ({ id: e.id, title: e.title, chosen: CHOSEN_RE.test(e.title) }))
@@ -28,11 +21,9 @@ export function alternativesOf(doc) {
   const row = sec.text.split('\n').map((l) => l.trim()).find((l) => l.startsWith('|'))
   if (!row) return []
   const cells = row.split('|').slice(1, -1).map((c) => c.trim()).filter(Boolean)
-  // 첫 번째 열은 평가 항목이므로 대안 수에서 제외한다.
   return cells.slice(1).map((t, i) => ({ id: `표 ${i + 1}번째 열`, title: t, chosen: CHOSEN_RE.test(t) }))
 }
 
-/** adr_dir은 로컬 ADR, adr_repo·adr_manifest는 외부 ADR을 지정한다. 미설정과 빈 목록을 구분한다. */
 export function adrSeam(repoRoot) {
   const path = repoRoot && resolve(repoRoot, '.claude/spec-profile.yml')
   if (!path || !existsSync(path)) return { configured: false }
@@ -54,7 +45,6 @@ export function adrSeam(repoRoot) {
   }
 }
 
-/** scope의 저장소 접두는 마지막 경로 요소로 비교한다. 접두가 없으면 현재 저장소에 적용한다. */
 export function scopeEntry(raw, self) {
   const s = String(raw).trim()
   const m = /^([A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)?):(.+)$/.exec(s)
@@ -63,7 +53,6 @@ export function scopeEntry(raw, self) {
   return { repo: m[1], path: m[2].trim(), mine: !!self && tail(m[1]) === tail(self) }
 }
 
-/** 외부 ADR 매니페스트에서 상태와 구현 에이전트용 요약을 읽는다. */
 export function loadManifest(path) {
   if (!path || !existsSync(path)) return null
   try {
@@ -77,26 +66,18 @@ const sectionText = (doc, title) => {
   return h ? { h, text: stripComments(doc.lines.slice(h.line + 1, h.allEnd).join('\n')) } : null
 }
 
-/** 미완성 템플릿 표시를 찾는다. */
 const RESIDUE = [/\{NNN\}/, /<[^<>\n]{2,60}>/]
 
-/** 프런트매터가 없는 ADR은 H1과 헤더 표에서 읽고, 알려진 한국어 상태만 변환한다. */
-const LEGACY_STATUS = new Map([
-  ['제안됨', 'draft'], ['검토중', 'in_review'], ['승인됨', 'accepted'],
-  ['대체됨', 'superseded'], ['폐기됨', 'deprecated'], ['기각됨', 'rejected'],
-])
 export function legacyMeta(doc) {
   if (/^---\r?\n/.test(doc.text)) return null
   const h1 = /^#\s+(.+?)\s*$/m.exec(doc.text)?.[1] ?? ''
-  // ADR 번호를 제외한 나머지를 제목으로 사용한다.
   const title = h1.replace(/^ADR-\d{3,4}\s*[—–:-]?\s*/, '').trim()
-  const row = /^\|\s*상태[^|]*\|\s*([^|]+?)\s*\|/m.exec(doc.text)?.[1] ?? ''
+  const row = LEGACY_STATUS_ROW.exec(doc.text)?.[1] ?? ''
   const raw = row.replace(/\(.*$/, '').trim()
-  const known = [...LEGACY_STATUS].find(([k]) => raw.startsWith(k))
-  return { title, status: known ? known[1] : '', rawStatus: raw, legacy: true }
+  const known = canonical(raw, ADR_STATUS_ALIASES)
+  return { title, status: known ?? '', rawStatus: raw, legacy: true }
 }
 
-/** 검사 결과를 push(level, msg, hint)로 전달한다. */
 export function checkAdr(doc, { seam, siblings = [] }, push) {
   const fm = doc.fm ?? {}
   const err = (m, h) => push('error', m, h)
@@ -106,9 +87,9 @@ export function checkAdr(doc, { seam, siblings = [] }, push) {
   if (!nm) {
     err(`파일 이름이 규칙과 다르다 — ${doc.name}`, 'ADR-{세 자리}-{kebab-slug}.md 다. 이름이 번호를 물어야 «ADR-007» 이 한 문서를 가리킨다.')
   }
-  // 프런트매터가 없는 기존 ADR은 이름과 번호만 검사한다.
   if (!/^---\r?\n/.test(doc.text)) {
-    push('info', '프런트매터가 없는 옛 문서다 — 이름과 번호만 검사했다',
+    if (!legacyMeta(doc).status) err('Unknown legacy ADR status', 'Use a Status/상태 table row with a supported status value.')
+    push('info', '프런트매터가 없는 옛 문서다 — 이름과 번호·상태 해석만 검사했다',
       '새 계약으로 옮기려면 프런트매터(artifact · id · status · scope · confirms)를 더한다. ' +
       '그 전까지 이 결정은 승인 가드가 지키지 않고, 산출물 세트가 핀해도 상태를 못 본다.')
     return
@@ -131,7 +112,6 @@ export function checkAdr(doc, { seam, siblings = [] }, push) {
     err(`status 가 \`${status}\` 다`, `허용값: ${ADR_STATUS.join(' · ')}. 산출물 상태값을 그대로 쓴다 — 모르는 값이면 승인 가드가 상태 전이를 못 본다.`)
   }
 
-  // 작성자와 승인자는 달라야 한다.
   if (status === 'accepted') {
     if (isNull(fm.approved_by)) err('accepted 인데 `approved_by` 가 비었다', '승인은 사람이 한다. 가드가 그 편집을 다이얼로그로 보낸다.')
     else if (String(fm.approved_by) === String(fm.generated_by)) err('`approved_by` 와 `generated_by` 가 같다', '쓴 쪽이 승인하면 관문이 아니라 자기선언이다.')
@@ -151,7 +131,6 @@ export function checkAdr(doc, { seam, siblings = [] }, push) {
   const found = Object.fromEntries(SECTION_KEYS.map((k, i) => [SECTIONS[i], sectionText(doc, titleIn(doc, k))]))
   for (const t of SECTIONS) {
     if (found[t]) continue
-    // 확인·재검토 섹션은 효력이 있는 ADR에만 필수다.
     if (t === '확인과 재검토' && ['draft', 'in_review', 'rejected'].includes(status)) continue
     err(`«${t}» 절이 없다`, `ADR 의 절은 다섯이고 지울 수 없다: ${SECTIONS.join(' · ')}`)
   }
@@ -170,7 +149,6 @@ export function checkAdr(doc, { seam, siblings = [] }, push) {
     }
   }
 
-  // 채택안의 효과와 감수할 제약을 모두 확인한다.
   if (found['결과'] && !['draft', 'rejected'].includes(status)) {
     if (!locale().tradeoff.test(found['결과'].text)) {
       err('«결과» 에 감수하는 제약이 없다', '얻는 것만 있는 결정은 없다. 무엇을 대가로 지불하기로 했는지 적는다 — 그 줄이 이 문서의 핵심 기록이다.')
@@ -186,7 +164,6 @@ export function checkAdr(doc, { seam, siblings = [] }, push) {
   for (const id of declared) if (!rvs.includes(id)) warn(`\`revisit: ${id}\` 가 본문에 없다`, '«확인과 재검토» 에 `### RV-NNN — 조건` 으로 정의한다.')
   for (const id of rvs) if (declared.length && !declared.includes(id)) warn(`${id} 가 \`revisit:\` 에 없다`, '프런트매터가 기계가 읽는 목록이다 — 빠지면 finding 이 그 조건을 못 깨운다.')
   for (const rv of [...doc.ents.values()].filter((e) => e.id.startsWith('RV-'))) {
-    // JavaScript의 단어 경계(\b)는 한글을 단어 문자로 취급하지 않는다.
     if (locale().deadlineOnly.test(rv.title)) {
       warn(`${rv.title} 이 시한으로 쓰였다`, 'RV-* 는 참·거짓이 판정되는 조건이다. «6개월 뒤 재검토» 는 아무도 판정하지 않는다.')
     }
@@ -202,7 +179,6 @@ export function checkAdr(doc, { seam, siblings = [] }, push) {
     warn('`confirms` 가 비었다', '지켜졌는지 무엇으로 판정하나. 식이나 fixture 를 옮겨 적지 말고 어느 테스트가 정본인지를 가리킨다.')
   }
 
-  // 검증 근거가 적용 범위에 존재하는지 확인한다. 외부 코드 경로는 해당 저장소의 매니페스트 검사에 맡긴다.
   const entries = scope.map((s) => scopeEntry(s, seam?.self))
   const mine = entries.filter((e) => e.mine)
   const foreign = entries.filter((e) => !e.mine)
@@ -238,7 +214,6 @@ export function checkAdr(doc, { seam, siblings = [] }, push) {
   }
 }
 
-/** 적용 범위의 텍스트를 수집하되 파일 수와 크기를 제한한다. */
 function collect(path, out, budget = { files: 400 }) {
   if (budget.files <= 0) return
   let st
@@ -251,12 +226,10 @@ function collect(path, out, budget = { files: 400 }) {
   }
 }
 
-/** decisions 참조와 본문의 ADR 언급을 대조한다. */
 const PIN = /^(?:(?<owner>[\w.-]+)\/(?<repo>[\w.-]+)#)?(?<id>ADR-\d{3,4})(?:@(?<sha>[0-9a-f]{7,40}))?$/
 
 export function checkPins(docs, { seam }, push) {
   if (!seam?.configured) return
-  // 로컬 ADR은 본문에서, 외부 ADR은 복사된 매니페스트에서 읽는다.
   const local = seam.dir ? loadAdrDir(seam.dir).docs : []
   const manifest = seam.dir ? null : loadManifest(seam.manifest)
   const byId = new Map(local.length
@@ -272,7 +245,6 @@ export function checkPins(docs, { seam }, push) {
     for (const raw of pins) {
       const m = PIN.exec(raw.trim())
       if (!m) { err(`\`decisions: ${raw}\` 를 읽을 수 없다`, '같은 레포면 `ADR-005`, 다른 레포면 `<owner>/<repo>#ADR-005@<sha>` 다.'); continue }
-      // 외부 참조는 형식·SHA를 검사하고, 매니페스트가 있으면 상태도 검사한다.
       if (m.groups.repo && !byId.has(m.groups.id)) {
         if (!m.groups.sha) warn(`\`${raw}\` 에 SHA 가 없다`, '다른 레포의 결정은 움직인다. `@<sha>` 로 고정해야 나중에 무엇을 읽고 정했는지 되짚을 수 있다.')
         continue
@@ -290,7 +262,6 @@ export function checkPins(docs, { seam }, push) {
       }
     }
 
-    // 본문에서 언급한 ADR은 decisions에도 등록해야 한다.
     const pinned = new Set(pins.map((p) => PIN.exec(p.trim())?.groups?.id).filter(Boolean))
     const mentioned = new Set([...stripComments(d.text).matchAll(/\bADR-\d{3,4}\b/g)].map((x) => x[0]))
     for (const id of mentioned) {
@@ -300,11 +271,9 @@ export function checkPins(docs, { seam }, push) {
   }
 }
 
-/** 구현 프롬프트에는 결정·제외 범위·기각한 대안의 요약만 전달한다. */
 export function adrDigest(doc) {
   const dec = sectionText(doc, titleIn(doc, 'decision'))
   const alts = alternativesOf(doc)
-  // 결정 본문은 Non-goals 하위 섹션 앞까지다.
   const decBody = dec ? dec.text.split(/^###\s/m)[0].trim() : ''
   const ng = doc.hs.find((h) => h.depth === 3 && /^Non-goals$/i.test(h.title))
   const nonGoals = ng
@@ -319,12 +288,11 @@ export function adrDigest(doc) {
     scope: [].concat(doc.fm?.scope ?? []).map(String).filter((v) => !isNull(v)),
     decision: decBody,
     nonGoals,
-    chosen: alts.filter((a) => a.chosen).map((a) => a.title.replace(/\s*\(채택\)\s*/, '')),
+    chosen: alts.filter((a) => a.chosen).map((a) => a.title.replace(CHOSEN_RE, '').trim()),
     rejected: alts.filter((a) => !a.chosen).map((a) => a.title),
   }
 }
 
-/** scope와 작업 경로가 같거나 포함 관계면 해당 ADR을 적용한다. */
 export function adrsForFiles(adrDocs, files) {
   const norm = (p) => String(p).replace(/^\.\//, '').replace(/\/+$/, '')
   const touches = (scope, file) => {
@@ -336,7 +304,6 @@ export function adrsForFiles(adrDocs, files) {
       .some((s) => files.some((f) => touches(s, f))))
 }
 
-/** 외부 ADR의 검증 근거는 코드를 소유한 저장소에서 검사한다. */
 export function checkManifestDrift(manifest, { root, self }, push) {
   if (!manifest) return
   for (const d of manifest.decisions ?? []) {
@@ -366,7 +333,6 @@ export function checkManifestDrift(manifest, { root, self }, push) {
   }
 }
 
-/** 매니페스트에서 현재 저장소와 작업 파일에 적용되는 ADR을 선택한다. */
 export function manifestForFiles(manifest, files, self) {
   if (!manifest) return []
   const norm = (p) => String(p).replace(/^\.\//, '').replace(/\/+$/, '')

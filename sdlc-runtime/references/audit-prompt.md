@@ -1,24 +1,24 @@
-독립 감사 — 구현이 명세를 만족하는지 **읽기만 하고** 판정한다. 파일을 고치지 않는다.
+Independent audit — determine whether the implementation satisfies the specification by **reading only**. Do not modify files.
 
-스펙: {spec_dir}/
-변경 범위: `git diff --stat {born}..HEAD` 와 plan.md 의 작업별 `files`
-검증 기록: {verify_logs}
+Specification: {spec_dir}/
+Change scope: `git diff --stat {born}..HEAD` and each task's `files` in plan.md
+Verification logs: {verify_logs}
 
-## 판정할 수용 기준
+## Acceptance criteria to assess
 
 {acceptance}
 
-## 판정 형식 — AC 마다 한 줄
+## Assessment format — one line per AC
 
 ```
-AC-001  충족    코드 <경로>:<줄>  테스트 <경로>:<줄>
-AC-002  부분    코드 <경로>:<줄>  테스트 없음 — <무엇이 검증되지 않았나>
-AC-003  미충족  <근거>
+AC-001  satisfied    code <path>:<line>  test <path>:<line>
+AC-002  partial      code <path>:<line>  no test — <what remains unverified>
+AC-003  unsatisfied  <evidence>
 ```
 
-- «충족» 은 코드와 테스트 **둘 다** 짚을 수 있을 때만이다.
-- 테스트가 AC 문장과 **다른 것**을 검증하고 있으면 «부분» 으로 적고 무엇이 다른지 쓴다.
-- verify 기록의 종료 코드가 0 이 아닌 레벨이 있으면 맨 위에 적는다.
-- 판정 못 하는 것은 «미확인» 으로 두고 이유를 쓴다. 추측으로 «충족» 을 주지 않는다.
+- Mark an AC `satisfied` only when you can point to **both** code and a test.
+- If a test verifies something **different** from the AC sentence, mark it `partial` and explain the difference.
+- If any level has a nonzero exit code in its verification log, state that at the top.
+- Mark anything you cannot assess as `unverified` and explain why. Do not guess that it is `satisfied`.
 
-마지막에 세 줄로 요약한다 — 충족 n · 부분 n · 미충족 n, 그리고 러너의 요구사항 대조와 달리 볼 AC.
+End with a three-line summary: satisfied n · partial n · unsatisfied n, followed by any AC whose assessment differs from the runner's requirements comparison.

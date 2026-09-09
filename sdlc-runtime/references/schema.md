@@ -1,45 +1,33 @@
-# 스키마와 버전 고정
+# Schema and version pinning
 
-`/sdlc-init` 과 `/iterate-spec` 이 읽는다. 새 문서를 쓰는 스킬은 «스킬 공통 절차» 3 만 따르면 된다.
+`/sdlc-init` and `/iterate-spec` read this document. Skills that write new documents only need to follow step 3 of the shared skill procedure.
 
-글로벌 스킬과 레포의 계약 버전은 분리한다.
+Global skills and the repository contract version are separate:
 
-- 현재 런타임과 새 템플릿은 v6다.
-- 프로필의 `sdlc_version`이 새 산출물 세트의 버전을 고른다.
-- 각 문서의 `schema_version`이 실제 적용 버전을 기록한다.
-- 무버전 프로필·산출물은 v1로 읽는다.
-- spec은 intent, plan은 spec의 스키마 버전을 상속한다.
-- 한 산출물 세트의 intent·spec·plan은 같은 버전을 쓴다.
-- 기존 산출물 세트는 작성 중에 자동으로 올리지 않는다.
-- 새 오류 규칙은 도입된 스키마 이상에서만 적용한다.
+- The current runtime and new templates use v6.
+- The profile's `sdlc_version` selects the version for a new artifact set.
+- Each document's `schema_version` records the version actually applied.
+- Profiles and artifacts without a version are read as v1.
+- A spec inherits the intent's schema version; a plan inherits the spec's.
+- The intent, spec, and plan in one artifact set use the same version.
+- Existing artifact sets are not upgraded automatically while being edited.
+- A new error rule applies only at or above the schema version that introduced it.
 
-## v6 — 레포 경계
+## v6 — Repository boundaries
 
-v6이 **수용 기준의 레포 배정**과 **상류 락**을 들인다. 단일 레포의 산출물 세트는 v5와 똑같이 동작한다 —
-두 장치 모두 프로필과 파일 존재로 켜지지, 버전만 올린다고 켜지지 않는다.
+v6 introduces **repository assignment for acceptance criteria** and the **upstream lock**. A single-repository artifact set behaves exactly as it did in v5: both mechanisms are enabled by profile settings and file presence, not by the version alone.
 
-- 요구사항의 `scope:` 줄과 수용 기준 줄 끝의 `` `scope: <repo>` ``. 수용 기준에 없으면 상위에서
-  물려받는다. **v6 미만 문서에서 쓰면 오류다** — 옛 런타임이 제목의 일부로 읽어 배정이 조용히
-  사라진다.
-- 산출물 디렉터리의 `upstream.lock.json`. `pull-spec.mjs`가 만들고, 검사기가 사본의 해시와 상류 커밋을
-  본다. 락이 있으면 `intent_version`·`spec_version`의 대조 상대가 로컬 커밋에서 **락의 상류
-  커밋**으로 바뀐다.
-- 프로필 키 `repo`·`upstream_repo`·`spec_consumers`. 자세한 것은 `profile.md`와 `conventions.md`의
-  «Changes spanning multiple repositories».
-- 배정 검사(`spec_consumers`를 둔 상류에서 미배정 Must를 막는 규칙)도 **v6 이상 spec에만** 건다.
-  프로필만 올려도 이전 산출물 세트는 빨개지지 않는다 — 상류 레포에 v5 산출물 세트를 그대로 두어도 통과한다.
+- A requirement may have a `scope:` line, and an acceptance-criterion line may end in `` `scope: <repo>` ``. An AC without one inherits its parent requirement's scope. Using either form in a document below v6 is an error: an older runtime reads it as part of the title and silently loses the assignment.
+- `upstream.lock.json` lives in the artifact directory. `pull-spec.mjs` creates it, and the checker verifies the copied files' hashes and upstream commit. When the lock exists, `intent_version` and `spec_version` are compared with the **locked upstream commit**, rather than a local commit.
+- Profile keys `repo`, `upstream_repo`, and `spec_consumers` are described in `profile.md` and “Changes spanning multiple repositories” in `conventions.md`.
+- Assignment checking, which rejects an unassigned Must requirement in an upstream repository with `spec_consumers`, applies only to v6 or later specs. Raising the profile version does not make old artifact sets fail; a v5 set may remain unchanged in an upstream repository.
 
-## v5 — 결정 기록
+## v5 — Decision records
 
-v5가 다섯째 산출물 `adr`을 들인다. ADR 자체는 언제나 `schema_version: 5`로 쓴다 — v4 산출물 세트를 가진
-레포도 ADR은 쓸 수 있다. 프로필의 `sdlc_version`은 산출물 세트(intent·spec·plan)의 버전이지 ADR의 것이 아니다.
+v5 introduces the fifth artifact, `adr`. An ADR always uses `schema_version: 5`; a repository whose artifact sets use v4 may still have ADRs. The profile's `sdlc_version` governs the intent/spec/plan set, not ADRs.
 
-`decisions:` 핀은 v4에서 선택이고 v5에서 검사한다. 그래서 v4 산출물 세트는 손대지 않아도 계속 통과한다.
-v5 산출물 세트에서는 핀한 ADR의 실재와 상태를 검사기가 본다.
+`decisions:` pins are optional in v4 and checked in v5, so untouched v4 sets continue to pass. In a v5 set, the checker verifies that every pinned ADR exists and has an acceptable status.
 
-`adr_dir`이 프로필에 없으면 이 레포엔 ADR이 없는 것으로 보고 관련 검사를 모두 건너뛴다.
+When the profile has no `adr_dir`, the repository is treated as having no ADRs and all related checks are skipped.
 
-`spec.intent_version`과 `plan.spec_version`은 상위 문서를 마지막으로 바꾼 커밋 SHA다.
-상위를 고쳤으면 하위를 갱신하고 SHA를 다시 찍는다. 상류가 다른 레포면 그 SHA는 **상류 레포의
-커밋**이고, 락이 그것을 들고 있다 — 사본이 코드 레포에 들어온 커밋을 적으면 상류가 바뀐 것을
-영원히 못 잡는다.
+`spec.intent_version` and `plan.spec_version` are the commit SHAs that last changed their upstream documents. After changing an upstream document, update its downstream documents and pin the new SHA. When upstream is another repository, the SHA is an **upstream repository commit** held by the lock. Recording the commit that imported the copy into the code repository would prevent future upstream changes from ever being detected.

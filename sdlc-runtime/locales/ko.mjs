@@ -10,7 +10,6 @@ export const script = {
   name: '한국어',
 }
 
-/** Use the Korean declarative ending `다` as a complete-statement heuristic. */
 export const acSentence = /(?:다|다\.)$/
 
 export const vague = ['빠르게', '빠른', '신속', '적절히', '적절한', '적당히', '쉽게', '편하게',
@@ -62,6 +61,13 @@ export const deadlineOnly = /\d\s*(?:개월|달|주|분기|년|months?|weeks?|qu
 
 /** Text written to artifacts when profile.lang is ko. */
 export const written = {
+  adrIndex: {
+    title: '제목', status: '상태', legacy: '옛 형식', heading: '결정 로그',
+    comment: '<!-- adr-index.mjs 가 만든다. 손으로 고치지 않는다 — 고치면 파일과 표가 갈리고,\n     믿을 것은 파일 쪽인데 사람이 보는 것은 표 쪽이 된다. -->',
+    summary: (total, live, legacy) => `결정 ${total}장 · 효력 있는 것 ${live}장.${legacy ? ` 옛 형식 ${legacy}장은 H1 과 헤더 표에서 읽었다 — 프런트매터를 더하면 scope 도 선다.` : ''}`,
+    live: '효력 있는 결정', past: '지나간 결정', empty: '아직 없다.',
+    history: '대체·폐기·기각된 것. **번호는 재사용하지 않으므로 자리를 물고 남는다** — 같은 논의가 다시\n열리면 이 표가 «전에 왜 그렇게 정했나» 와 «왜 뒤집었나» 의 답이다.',
+  },
   result: { done: '완료', partial: '부분', failed: '실패' },
   divergence: '계획과의 차이',
   none: '없음',

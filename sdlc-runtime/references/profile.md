@@ -1,131 +1,104 @@
-# 레포 프로필
+# Repository profile
 
-글로벌 스킬은 방법론만 가진다. 레포의 사실과 적용할 SDLC 버전은
-`.claude/spec-profile.yml`에 둔다. 프로필 생성과 변경은 `/sdlc-init`이 맡는다.
+Global skills define the method. Repository facts and the applicable SDLC version belong in `.claude/spec-profile.yml`; `/sdlc-init` creates and updates it.
 
-## 키
+## Keys
 
-| 키 | 쓰임 | 없을 때 |
+| Key | Purpose | Default |
 |---|---|---|
-| `sdlc_version` | 새 산출물 세트가 쓸 스키마 | `1` — 기존 프로필 호환 |
-| `sdlc_runtime` | 규약·검사기가 있는 경로 | `runtime.md`의 발견 순서 |
-| `lang` | **산출물 언어** — `ko` · `en`. 문체 번들(낱말 목록·글자 한도)을 고른다. 계약 낱말은 이 키와 무관하게 양쪽을 다 받는다 | `ko` |
-| `spec_dir` | 문서 위치. **`.claude/` 아래에 두지 않는다** — 그 폴더의 편집은 Claude Code가 언제나 묻는다 | `.sdlc/specs` |
-| `owner` | 승인 다이얼로그에서 승인하는 사람의 이름 — `approved_by` 기본값. **여럿이 쓰는 레포에서는 비운다** | `git config user.name` |
-| `verify` · `verify_scoped` · `scope_hint` | 전체·작업별 검증 | CI와 빌드 설정에서 조사 |
-| `bootstrap` | 새 워크트리 의존성 준비 | 없으면 병렬 대신 순차 |
-| `source_roots` · `worktree_dir` | 소스·워크트리 경로 | 레포 루트 · `.claude/worktrees` |
-| `writer_agent` · `pattern_agent` · `prior_work_agent` · `audit_agent` | 역할별 에이전트 | `general-purpose` · `Explore` |
-| `commit` | 커밋 메시지 관례 | `git log`에서 조사 |
-| `bands` | 탐지 밴드 등록부 | `.claude/bands.yml` |
-| `extra_gates` | 레포 전용 게이트 | 없음 |
-| `verify_log_dir` | 합류점 verify 로그 위치. 커밋한다 | `.sdlc/verify` |
-| `repo` | 이 레포의 `<owner>/<name>`. 범위 배정과 ADR scope의 «내 자리/남의 자리»를 가른다 | 없음 — 경계 검사를 건너뛴다 |
-| `upstream_repo` | intent·spec을 끌어올 문서 레포. 이 레포는 소비 레포가 된다 | 없음 — 단일 레포 |
-| `spec_consumers` | 이 레포의 spec을 소비하는 코드 레포 목록. 적으면 이 레포가 **상류**다 | 없음 — 상류가 아니다 |
-| `adr_dir` | 결정 기록 위치. **없으면 이 레포엔 ADR이 없고 관련 검사를 전부 건너뛴다** | 없음 |
-| `adr_repo` | 결정이 다른 레포에 살 때 `<owner>/<repo>`. 핀은 `<repo>#ADR-NNN@<sha>` | 없음 — 같은 레포 |
-| `adr_index` | 결정 로그. `adr-index.mjs`가 만든다 | `<adr_dir>/index.md` |
-| `pr_base` | `/create-pr` 의 기본 베이스 브랜치 | `main` |
-| `pr_workspace_dirs` | 영역을 두 단계로 묶을 최상위 디렉터리(`apps packages`) | 최상위 디렉터리 이름만 |
-| `pr_split_dir` · `pr_split_hint` | 이 접두 아래가 둘 이상이면 분할 여부를 먼저 묻는다 | 없음 — 묻지 않는다 |
-| `pr_review_focus` | `<정규식> => <이름>` 목록. 걸리면 diff 를 직접 읽히고 Risks 섹션을 강제한다 | 없음 — 경로 기반 검사를 건너뛴다 |
+| `sdlc_version` | Schema for new artifact sets | `1`, for compatibility with legacy profiles |
+| `sdlc_runtime` | Path to conventions and checkers | Discovery order in `runtime.md` |
+| `lang` | **Artifact language**: `ko` or `en`; selects prose lists and budgets | `ko` |
+| `spec_dir` | Artifact location; keep it outside `.claude/` | `.sdlc/specs` |
+| `owner` | Default `approved_by` identity | `git config user.name` |
+| `verify`, `verify_scoped`, `scope_hint` | Full and task-scoped verification | Discover from CI and build configuration |
+| `bootstrap` | Dependency setup for a new worktree | Run tasks sequentially when absent |
+| `source_roots`, `worktree_dir` | Source and worktree paths | Repository root and `.claude/worktrees` |
+| `writer_agent`, `pattern_agent`, `prior_work_agent`, `audit_agent` | Agent for each role | `general-purpose` or `Explore` |
+| `commit` | Commit-message convention | Infer from `git log` |
+| `bands` | Detection-band registry | `.claude/bands.yml` |
+| `extra_gates` | Repository-specific gates | None |
+| `verify_log_dir` | Committed integration verification logs | `.sdlc/verify` |
+| `repo` | This repository's `<owner>/<name>`; defines assignment and ADR scope boundaries | None; boundary checks are skipped |
+| `upstream_repo` | Documentation repository supplying intent and spec | None; single-repository mode |
+| `spec_consumers` | Code repositories consuming this repository's specs | None; this is not an upstream repository |
+| `adr_dir` | Decision-record directory | None; ADR checks are skipped |
+| `adr_repo` | `<owner>/<repo>` when decisions live elsewhere | None; same repository |
+| `adr_index` | Generated decision index | `<adr_dir>/index.md` |
+| `pr_base` | Default base branch for `/create-pr` | `main` |
+| `pr_workspace_dirs` | Top-level directories used to group changes | Top-level directory names only |
+| `pr_split_dir`, `pr_split_hint` | Ask about splitting when changes span multiple children | None |
+| `pr_review_focus` | `<regex> => <name>` rules that require direct diff review and a Risks section | None |
 
-## 커밋과 사람
+Contract keywords are bilingual regardless of `lang`.
 
-**프로필은 커밋한다.** 여기 적힌 값이 곧 이 레포의 산출물 세트가 어떤 규칙으로 검사받는가이고,
-CI 는 프로필 말고는 읽을 것이 없다. Git 밖에 두면 내 산출물 세트는 이 규칙으로, 남의 산출물 세트는 저마다의
-규칙으로 통과하고 CI 는 아무것도 안 본다 — 셋 다 화면에서는 «통과» 로 보인다.
-`check-all.mjs` 가 추적 여부를 보고 말한다. gitignore 뿐 아니라 «아직 add 안 함» 도 같은 결과다.
+## Committed and local settings
 
-키는 두 종류다.
+**Commit the profile.** It defines how CI checks every artifact set. If it exists only outside Git, local runs and CI can apply different rules while both appear to pass. `check-all.mjs` reports both ignored and untracked profiles.
 
-- **레포의 계약** — `sdlc_version`·`sdlc_runtime`·`lang`·`spec_dir`·`verify`·`source_roots`·
-  `extra_gates`·`bands`·`adr_dir`·`repo`·`upstream_repo`·`spec_consumers`·`pr_*`.
-  올린다. 사람마다 다르면 그것이 곧 사람마다 다른 규칙이다.
-- **사람과 기계** — `owner`·`writer_agent`·`pattern_agent`·`prior_work_agent`·`audit_agent`·
-  `worktree_dir`·`bootstrap`. 값이 갈리면 그 키만 빼고 올린다. 없으면 각자의 기본값으로 돈다.
+Repository-contract keys must be committed: `sdlc_version`, `sdlc_runtime`, `lang`, `spec_dir`, `verify`, `source_roots`, `extra_gates`, `bands`, `adr_dir`, `repo`, `upstream_repo`, `spec_consumers`, and `pr_*`.
 
-`owner` 는 «기본값» 이지 «권한» 이 아니다. `approved_by` 의 기본값이고 승인은 사람이 하는 일이라,
-`owner: alice` 를 커밋해 두면 bob 이 승인한 문서에도 alice 가 적히거나 bob 이 매번 덮어써야 한다.
-**여럿이 쓰는 레포에서는 이 키를 적지 않는다** — 비우면 `git config user.name` 이라 각자 제 이름이
-들어간다. 혼자 쓰는 레포에서만 편의로 적는다.
+Machine- or person-specific keys are `owner`, role-specific agent names, `worktree_dir`, and `bootstrap`. Omit only the keys whose values differ between contributors.
 
-아무나 승인하면 안 되는 레포라면 그것은 다른 물건이다. `owner` 를 그 용도로 겹쳐 쓰지 말고 승인자
-목록을 따로 두고 가드가 소속을 보게 한다 — 기본값을 채우는 일과 자격을 가르는 일을 한 키에 얹으면
-둘 다 애매해진다.
+`owner` is a default, not an authorization rule. In a shared repository, omit it so each contributor's `git config user.name` becomes `approved_by`. If approval eligibility must be restricted, define a separate allowlist and guard; do not overload `owner`.
 
-## 생성 원칙
+## Creation rules
 
-새 프로필은 현재 런타임의 `VERSION`을 `sdlc_version`으로 쓴다. 기존 프로필에 버전이 없으면
-자동으로 올리지 않고 v1로 읽는다.
+A new profile uses the runtime's current `VERSION` as `sdlc_version`. Read an existing unversioned profile as v1 and never upgrade it automatically.
 
-낮은 채로 두면 새 산출물 세트가 낮은 버전으로 만들어져 그 위 버전의 규칙이 **조용히 안 걸린다.**
-`migrate-schema.mjs`가 무엇이 안 걸리고 있는지, 올리면 무엇이 깨지는지를 갈라서 보고한다.
-프로필을 올리는 것은 새 산출물 세트에만 영향해 안전하지만, 문서의 `schema_version`을 올리는 것은
-새 규칙을 소급 적용하므로 다르다 — 검사에 실패하는 산출물 세트는 대개 이미 끝난 계약이라 그대로 둔다.
+An old profile causes new artifact sets to omit newer rules silently. `migrate-schema.mjs` separates rules currently missing from changes that would fail after migration. Raising the profile affects only new sets; raising a document's `schema_version` applies new rules retroactively, so completed sets usually remain at their original version.
 
 ```yaml
 sdlc_version: 5
-# sdlc_runtime 은 벤더했을 때만 적는다 — 안 적으면 플러그인 사본을 찾아 쓴다
+# Set sdlc_runtime only for a vendored runtime.
 # sdlc_runtime: ".claude/sdlc"
 spec_dir: ".sdlc/specs"
-repo: "acme/backend"       # 여러 레포로 갈렸을 때만 필요하다
-upstream_repo: "acme/docs" # intent·spec 을 끌어올 곳. 단일 레포면 지운다
-adr_dir: "docs/adr"        # 결정을 남길 곳. 이 레포에서 안 쓰면 지운다
+repo: "acme/backend"       # Only when work spans repositories
+upstream_repo: "acme/docs" # Remove for a single repository
+adr_dir: "docs/adr"        # Remove if this repository has no ADRs
 ```
 
-`lang` 은 **레포 설정이지 사람 설정이 아니다.** 산출물 세트는 커밋되는 계약이라 한 레포에 한 언어여야 하고,
-CI 에는 대화가 없어 프로필 말고는 읽을 것이 없다. 대화 언어가 달라도 산출물은 이 값으로 쓴다.
-번들이 없는 언어를 적으면 린터가 멈춘다 — 문체 검사가 안 걸리는 것과 못 도는 것을 구분하려는 것이다.
+`lang` is a repository setting, not a user preference. A committed artifact set uses one language, and CI has no conversation from which to infer it. Write artifacts in this language even when the conversation uses another. The linter stops when no bundle exists for the configured language so an unavailable check cannot look like a pass.
 
-PR 키는 `/create-pr` 만 읽는다. `pr_review_focus` 는 **블록 시퀀스로** 적는다 — 규칙 하나가 한 줄로
-서야 어느 규칙이 걸렸는지 출력에서 갈린다.
+Only `/create-pr` reads the PR keys. Write `pr_review_focus` as a block sequence so every matching rule is independently visible in output.
 
 ```yaml
 pr_base: "main"
 pr_workspace_dirs: "apps packages"
 pr_split_dir: "apps"
-pr_split_hint: "앱 2개 이상 변경 — 배포 라벨이 정확히 1개여야 CI 를 통과한다"
+pr_split_hint: "Changes span two or more apps; CI requires exactly one deployment label"
 pr_review_focus:
-  - "^packages/db/ => DB 스키마"
-  - "(authz|permission|role|session|jwt) => 권한·세션"
-  - "(secret|credential|password) => 자격증명·secret 처리"
+  - "^packages/db/ => database schema"
+  - "(authz|permission|role|session|jwt) => authorization and sessions"
+  - "(secret|credential|password) => credentials and secret handling"
 ```
 
-문서 레포(상류) 쪽은 반대로 적는다.
+An upstream documentation repository instead uses:
 
 ```yaml
 sdlc_version: 6
 spec_dir: "docs/specs"
 repo: "acme/docs"
-spec_consumers:            # 이 목록이 있으면 상류다 — 배정되지 않은 Must 를 막는다
+spec_consumers:
   - acme/backend
   - acme/web
-adr_dir: "docs/adr"        # 결정은 여기 모은다. 코드 레포는 adr_repo 로 핀만 건다
+adr_dir: "docs/adr"
 ```
 
-- 검증 명령은 `package.json`·`Makefile`·`justfile`·CI 워크플로에서 찾는다. CI가 정본이다.
-- 스코프는 workspace 설정에서 찾는다. 단일 패키지면 비운다.
-- 에이전트는 `.claude/agents/*.md`의 description을 읽고 고른다.
-- 근거를 못 찾은 항목은 지어내지 않고 비운 뒤 사용자에게 묻는다.
-- `spec_dir`가 gitignore되면 SHA 기반 버전 고정이 약해진다는 점을 알린다. 프로필 자체는 «커밋과 사람»의 이유로 언제나 올린다.
-- `adr_dir`는 **gitignore하지 않는다.** 산출물 세트는 이번 변경의 계약이라 지워도 되지만 ADR은 시스템이
-  지고 있는 제약이고, 사라지면 기각한 대안이 사라진다. 결정을 다른 레포에 모으기로 했으면
-  `adr_dir` 대신 `adr_repo`를 적는다.
-- `upstream_repo`를 적은 레포에서는 `spec_dir`를 **gitignore하지 않는다.** 벤더한 사본과
-  `upstream.lock.json`이 커밋돼야 상류 핀이 성립한다. 사본은 손으로 고치지 않는다 —
-  `pull-spec.mjs`가 만들고 해시가 지킨다.
-- `spec_consumers`에 적은 이름은 소비 레포의 `repo`와 마지막 경로 요소로 비교한다. 오타는
-  «등록되지 않은 레포» 오류로 선다.
-- `spec_dir`를 `.claude/` 아래에 두면 Claude Code가 «자기 설정 편집»으로 보고 Write·Edit마다
-  묻는다. 허용 규칙도 훅의 allow도 이를 끄지 못한다. 대화형에서는 편집마다
-  다이얼로그, 자율 경로에서는 거부다. 기존 프로필이 `.claude/specs`면 `.sdlc/specs`로 옮길 것을 권한다.
+- Discover verification commands from `package.json`, `Makefile`, `justfile`, and CI workflows; CI is authoritative.
+- Discover scope from workspace configuration. Leave it empty for a single package.
+- Select agents from descriptions in `.claude/agents/*.md`.
+- Never invent missing values. Leave them empty and ask the user.
+- Warn when `spec_dir` is ignored by Git because SHA pinning becomes weaker. Always commit the profile.
+- Never ignore `adr_dir`. ADRs preserve constraints and rejected alternatives after an artifact set is obsolete. Use `adr_repo` when decisions live elsewhere.
+- In a repository with `upstream_repo`, never ignore `spec_dir`. Commit both the imported copies and `upstream.lock.json`; only `pull-spec.mjs` should update them, and their hashes protect them.
+- Each `spec_consumers` entry is compared with a consumer profile's `repo` and final path component. Typos produce an “unregistered repository” error.
+- Do not put `spec_dir` under `.claude/`. Claude Code treats each Write or Edit as a settings change that requires confirmation; autonomous routes are denied. Migrate legacy `.claude/specs` directories to `.sdlc/specs`.
 
-런타임이 선택한 스키마를 지원하는지 확인한다.
+Check whether the selected runtime supports the configured schema:
 
 ```sh
 node <sdlc_runtime>/tools/check-artifacts.mjs --supports-schema <sdlc_version>
 ```
 
-지원하지 않으면 런타임을 맞추거나 별도 마이그레이션을 한다.
+If it does not, align the runtime version or perform an explicit migration.

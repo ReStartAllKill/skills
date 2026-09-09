@@ -1,11 +1,10 @@
 #!/usr/bin/env node
-/** 체크박스·작업 커밋·테스트·검증 로그를 대조한다. 읽기 전용이며 완료 표시는 변경하지 않는다. */
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { resolve, join, relative, basename } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { taskFingerprint, repositoryFingerprint } from './task-evidence.mjs'
 import { loadDir, stripComments, idsIn, schemaVersion } from './artifact-parse.mjs'
-import { SECTION, sectionBlock, RE_NA } from './keywords.mjs'
+import { SECTION, sectionBlock, RE_NA, RE_CHANGE_LOG } from './keywords.mjs'
 
 const argv = process.argv.slice(2)
 const STRICT = argv.includes('--strict')
@@ -20,7 +19,6 @@ if (!docs.plan) {
 const PLAN_SCHEMA = schemaVersion(docs.plan.fm)
 const TASK_EVIDENCE_SCHEMA = 4
 
-/** 프로필이 있는 가장 가까운 상위 디렉터리를 저장소 루트로 사용한다. */
 let ROOT = null
 for (let d = DIR, prev = null; d !== prev; prev = d, d = resolve(d, '..')) {
   if (existsSync(resolve(d, '.claude/spec-profile.yml'))) { ROOT = d; break }
@@ -32,16 +30,13 @@ const git = (...a) => {
 const inGit = git('rev-parse', '--git-dir') != null
 const rel = (p) => (ROOT ? relative(ROOT, p) : p)
 
-/** 계획서 생성 이전의 커밋은 작업 완료 증거에서 제외한다. */
 const planPath = rel(join(DIR, 'plan.md'))
 const born = inGit
   ? (git('log', '--diff-filter=A', '--format=%H', '--', planPath) ?? '').split('\n').filter(Boolean).pop() ?? null
   : null
 
-// 완료된 계획서는 마지막 문서 커밋 시점의 코드로 검증한다.
 const evidenceRef = docs.plan.fm.status === 'completed' && git('status', '--porcelain', '--', planPath) === ''
   ? git('log', '-1', '--format=%H', '--', planPath) : null
-/** files에 디렉터리가 있으면 내부 파일 내용을 합쳐 테스트 문장 검사에 사용한다. */
 const readEvidence = (path) => {
   const name = rel(path)
   if (evidenceRef) {
@@ -67,7 +62,6 @@ const filesOf = (e) => {
   return (ticked.length ? ticked : v.split(',')).map((s) => s.trim().replace(/^`|`$/g, '')).filter(Boolean)
 }
 
-/** 공백을 정규화해 tests 문장이 실제 파일에 있는지 확인한다. */
 const testsOf = (e) => field(e, 'tests').split(/\s·\s|\s\|\s/).map((t) => t.trim().replace(/^[`"'«]|[`"'»]$/g, '').trim())
   .filter((t) => t && !/^<.*>$/.test(t) && !RE_NA.test(t))
 const squash = (s) => s.replace(/\s+/g, '')
@@ -77,7 +71,6 @@ const testsPresent = (files, sentences) => {
   return { checked: true, missing: sentences.filter((t) => !bodies.some((b) => b.includes(squash(t)))) }
 }
 
-/** 검증 로그 헤더에서 종료 코드와 tasks의 작업 ID를 확인한다. */
 const yml = (k, file) => {
   if (!file) return ''
   const m = new RegExp(`^${k}:[ \\t]*(.*)$`, 'm').exec(readEvidence(file) ?? '')
@@ -112,7 +105,6 @@ const verifiedBy = (task, commits) => verifyLogs.filter((l) => !l.label && l.spe
   commits.length > 0 && commits.every((c) => git('merge-base', '--is-ancestor', c, l.head) !== null)
 ).map((l) => l.file)
 
-/** 파일 이력만으로 귀속하지 않고 SDLC-Task 트레일러를 사용한다. */
 const commitRecords = (() => {
   if (!inGit || !born) return []
   const out = git('log', '--format=%H%x1f%B%x1e', `${born}..${evidenceRef ?? 'HEAD'}`) ?? ''
@@ -126,11 +118,9 @@ const taskCommits = (id) => commitRecords
   .filter((c) => c.body.split('\n').some((line) => line === `SDLC-Plan: ${planPath}`))
   .map((c) => c.hash)
 
-/** 작업별 실행 기록이 있는지 확인한다. */
 const planBody = stripComments(docs.plan.lines.join('\n'))
-/** 변경 기록 하위 섹션의 작업 ID를 실행 증거로 집계하지 않는다. */
 const logSection = (sectionBlock(SECTION.executionLog).exec(planBody)?.[0] ?? '')
-  .replace(/\n#{3,}\s*변경 기록[\s\S]*$/, '')
+  .replace(RE_CHANGE_LOG, '')
 const loggedIds = new Set(idsIn(logSection).filter((x) => x.startsWith('WP-')))
 
 const rows = []
@@ -149,7 +139,6 @@ for (const w of wps) {
       fileCommits = (out ?? '').split('\n').filter(Boolean)
     }
     const st = evidenceRef ? '' : git('status', '--porcelain', '--', ...files)
-    // git()이 선행 공백을 제거하므로 상태 코드는 고정 위치 대신 첫 토큰으로 분리한다.
     dirty = (st ?? '').split('\n').filter(Boolean).map((l) => l.trim().replace(/^\S+\s+/, ''))
   }
   const sentences = testsOf(w)
@@ -194,7 +183,6 @@ for (const r of rows) {
   }
 }
 
-/** 완료 표시가 있으면 계획서가 실행 중이거나 완료 상태여야 한다. */
 if (PLAN_SCHEMA >= TASK_EVIDENCE_SCHEMA) {
   const status = docs.plan.fm.status ?? ''
   const checked = rows.filter((r) => r.done).map((r) => r.id)

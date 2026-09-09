@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/** 작업 의존 관계로 실행 레벨과 다음 작업을 계산한다. mode는 main·parallel·sequential이며 bootstrap이 없으면 순차 실행한다. */
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve, join, basename } from 'node:path'
 import { loadDir, levelsOf, wpFiles, wpDeps, wpField, stripComments } from './artifact-parse.mjs'
@@ -20,7 +19,6 @@ const profile = ROOT ? readFileSync(join(ROOT, '.claude/spec-profile.yml'), 'utf
 const yml = (k) => (new RegExp(`^${k}:[ \\t]*(.*)$`, 'm').exec(profile)?.[1] ?? '')
   .replace(/\s+#.*$/, '').replace(/^["']|["']$/g, '').trim()
 
-/** 릴리스 영향 섹션에서 실행 설정을 읽는다. */
 const planBody = stripComments(docs.plan.lines.join('\n'))
 const release = sectionBlock(SECTION.releaseImpact).exec(planBody)?.[0] ?? ''
 const rel = (k) => (new RegExp(`^${k}:[ \\t]*(.*)$`, 'm').exec(release)?.[1] ?? '').trim()

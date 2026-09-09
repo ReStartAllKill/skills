@@ -14,8 +14,22 @@
   branch changes an artifact set, the body cites the approved intent and spec instead of deriving
   their rationale from the diff. Repository-specific PR settings live in the profile.
 
+### Fixed
+
+- ADR indexes now render in the profile language and check against that same rendering.
+  Legacy status tables accept English and Korean values and reject unknown states.
+- English change-history headings no longer count task IDs as execution evidence; ADR
+  summaries remove both chosen markers and accept section-title case variations.
+- Hook warning counts and schema migration consume structured checker diagnostics instead
+  of parsing localized terminal output. Both checkers expose `--json`.
+- Runtime smoke tests now await asynchronous checks before recording their results, including
+  locale bundle and template parity checks.
+
 ### Changed
 
+- **Runtime sources and tests use English prose.** Reference documents, prompt templates,
+  JavaScript comments, and test names now use English consistently. Redundant comments were
+  removed while preserving compatibility fixtures for bilingual artifact contracts.
 - **Artifact language is repository-owned.** The profile's `lang` selects artifact templates,
   prose rules, and pull request body rules. Progress reports follow the conversation language
   because they are not committed to the repository.

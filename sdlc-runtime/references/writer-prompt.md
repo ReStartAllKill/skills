@@ -1,31 +1,31 @@
-작업 {task_id} — {task_title}
+Task {task_id} — {task_title}
 
-작업 디렉토리: {worktree}
-**여기서만 작업한다.** 메인 트리의 파일을 읽는 것은 괜찮지만 고치지 않는다.
+Working directory: {worktree}
+**Work only here.** You may read files in the main worktree, but do not modify them.
 
-먼저 의존성을 세운다: `{bootstrap}`
+Set up dependencies first: `{bootstrap}`
 
-스펙: {spec_dir}/ — 필요하면 intent.md · spec.md · plan.md 를 직접 읽는다.
+Specification: {spec_dir}/ — read intent.md, spec.md, and plan.md directly when needed.
 
-## 손댈 파일 — 이 밖은 고치지 않는다
+## Files you may modify — do not modify anything else
 
 {files}
 
-## 충족할 요구사항 — 수용 기준 문장이 곧 테스트 이름이다
+## Requirements to satisfy — each acceptance-criterion sentence is the test name
 
 {requirements}
 
-{decisions}## 테스트
+{decisions}## Tests
 
 {tests}
 
-수용 기준 문장을 테스트 이름으로 그대로 쓴다. 소스와 테스트를 함께 쓴다 — 테스트는 별도 작업이 아니다.
+Use each acceptance-criterion sentence verbatim as its test name. Write source and tests together; tests are not a separate task.
 
-## 이 레포의 규칙 — 파일을 열면 자동으로 붙지만 미리 읽는다
+## Repository rules — they are attached when files open, but read them first
 
 {rules}
 
-## 검증 — 이 작업의 스코프만
+## Verification — this task's scope only
 
 ```sh
 {verify}
@@ -33,18 +33,17 @@
 
 {parallel_note}
 
-**커밋하지 마라.** 합류 때 러너가 이 작업의 files 만 골라 trailer 와 함께 커밋한다.
+**Do not commit.** At the integration point, the runner selects only this task's `files` and commits them with trailers.
 
-되물을 수 없다 — 이 프롬프트가 부족하면 그것은 러너의 준비 부족이니, 막힌 것을 마지막 보고에 적고 멈춘다.
-가정을 세우고 밀어붙이지 않는다.
+You cannot ask follow-up questions. If this prompt is insufficient, that is a runner-preparation failure: report the blocker in your final report and stop. Do not make assumptions and push ahead.
 
-## 참고 스니펫
+## Reference snippets
 
 {snippets}
 
-## 마지막 보고
+## Final report
 
-- 고친 파일과 각 파일에서 무엇을 했나
-- 수용 기준마다 그것을 검증하는 테스트의 `file:line`
-- 스코프 verify 결과 (명령과 요약)
-- 계획과 달리 한 것, 막힌 것
+- Files changed and what changed in each
+- For every acceptance criterion, the `file:line` of the test that verifies it
+- Scoped verification result, including command and summary
+- Deviations from the plan and blockers

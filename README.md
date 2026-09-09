@@ -132,9 +132,12 @@ of traceability breaks down, and it is exactly what the CI checker exists to cat
 ## Install
 
 ```bash
-claude plugin marketplace add ReStartAllKill/restart-harness
+claude plugin marketplace add ReStartAllKill/skills
 claude plugin install restart-harness
 ```
+
+The two names differ because they name different things: `skills` is the repository that
+hosts the marketplace, `restart-harness` is the plugin inside it.
 
 Then, **in each repository** where you want the artifact workflow:
 

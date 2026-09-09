@@ -1,66 +1,55 @@
-# 산출물 문체
+# Artifact prose
 
-`lint-prose.mjs`가 읽는 속도와 검증 가능성을 검사한다. 대부분은 경고이며, 템플릿 원본에는
-적용하지 않는다.
+`lint-prose.mjs` checks readability and verifiability. Most findings are warnings, and source templates are excluded.
 
-## 원칙
+## Principles
 
-- intent의 주 독자는 발안자와 제품 책임자다. 구현 세부는 spec·plan으로 내린다.
-- 결과·요구사항·수용 기준의 모호한 말은 수치나 조건으로 바꾼다.
-- 문제를 서술할 때의 주관적 표현까지 기계적으로 없애지는 않는다.
-- 항목은 표의 행으로 접지 않는다. 진짜 2차원 비교만 표로 쓴다.
-- 제목은 40자, 한 항목은 4문장 안을 기준으로 한다.
-- 수용 기준은 100자 안의 서술문 하나로 쓴다.
+- The primary readers of an intent are its proposer and product owner. Put implementation detail in the spec and plan.
+- Replace vague language in outcomes, requirements, and acceptance criteria with measurable values or conditions.
+- Do not mechanically remove subjective language from the problem description.
+- Do not compress lists into table rows. Use tables only for genuinely two-dimensional comparisons.
+- Keep titles within 40 characters and list items within four sentences.
+- Write each acceptance criterion as one declarative sentence within 100 characters.
 
-## 린터 규칙
+## Linter rules
 
-| 규칙 | 잡는 것 |
+| Rule | Detects |
 |---|---|
-| `entity-table` | 첫 칸에 ID가 선 표 |
-| `wide-table` | intent·spec의 5열 이상 표 |
-| `comment` | 템플릿 주석 잔존 |
-| `vague` | 측정 자리의 «빠르게·적절히·충분히» |
-| `translationese` | 이중 피동·«에 의해»·불필요한 «제공한다» |
-| `meta` | «이 문서는 설명한다» 같은 메타 문장 |
-| `too-long` | 문서·섹션·항목·수용 기준 한도 초과 |
-| `long-item` · `long-title` | 긴 항목·제목 |
-| `untestable-ac` | 서술문으로 끝나지 않는 수용 기준 |
-| `test-drift` | 작업의 `tests:`와 수용 기준 불일치 |
-| `lang-unsupported` | 한국어가 아닌 산출물 |
+| `entity-table` | A table whose first column contains IDs |
+| `wide-table` | An intent or spec table with five or more columns |
+| `comment` | Template comments left in a document |
+| `vague` | Vague terms such as “quickly”, “appropriately”, or “sufficiently” where measurement is required |
+| `translationese` | Awkward translated constructions |
+| `meta` | Metatext such as “this document explains” |
+| `too-long` | Document, section, item, or AC over its budget |
+| `long-item` · `long-title` | Long items or titles |
+| `untestable-ac` | An acceptance criterion that is not a declarative sentence |
+| `test-drift` | A mismatch between a task's `tests:` and its acceptance criteria |
+| `lang-unsupported` | An artifact written in a language other than the profile language |
 
-## 글자 한도
+## Character budgets
 
-공백을 제외한 light 기준이다.
+Budgets are measured without whitespace for the `light` tier.
 
-| 문서 | ko 전체 | 섹션 | 항목 | | en 전체 | 섹션 | 항목 |
+| Document | ko total | section | item | | en total | section | item |
 |---|---:|---:|---:|---|---:|---:|---:|
 | intent | 1200 | 500 | 250 | | 2600 | 1100 | 550 |
 | spec | 2000 | 800 | 400 | | 4400 | 1800 | 880 |
 | plan | 3000 | 1200 | 350 | | 6600 | 2600 | 770 |
 | finding | 2000 | 600 | 250 | | 4400 | 1300 | 550 |
 
-ko 는 이 레포의 한국어 산출물 42개 실측이고, **en 은 그 값의 2.2배로 유도한 것이다** — 병렬 README
-아홉 절의 비율(평균 2.16 · 중앙 2.21 · 범위 1.90–2.49)에서 나왔다. 영문 산출물 세트가 쌓이면 다시 잰다.
-유도 과정과 그 약점은 `locales/en.mjs` 에 적혀 있다.
+The Korean budgets were measured from 42 Korean artifacts in this repository. The English budgets were derived by multiplying them by 2.2, based on nine matching sections in the parallel READMEs (mean 2.16, median 2.21, range 1.90–2.49). Revisit them when enough English artifact sets exist. `locales/en.mjs` records the derivation and its limitations.
 
-standard는 ×1.6, full은 ×2.4다. 한도를 넘으면 경고, 두 배를 넘으면 오류다.
+The `standard` tier uses ×1.6 and `full` uses ×2.4. Exceeding a budget is a warning; exceeding twice the budget is an error.
 
-## 언어
+## Language
 
-**산출물 언어는 프로필의 `lang` 이 정한다** (기본 `ko`). 위 한도는 그 언어의 밀도로 잰 수이고,
-`translationese`·`meta`·`vague` 목록도 그 언어의 표현이다. 둘 다 `sdlc-runtime/locales/<lang>.mjs`
-한 곳에 있다.
+The profile's `lang` selects the **artifact language** (default: `ko`). Both the prose lists (`translationese`, `meta`, and `vague`) and character budgets are defined in one place: `sdlc-runtime/locales/<lang>.mjs`.
 
-계약 낱말(`근거:`·`basis:` 등)은 이 키를 안 탄다 — 두 언어를 늘 다 받는다
-(`conventions.md` §Contract keywords accept both languages).
+Contract keywords such as `basis:` and `근거:` do not depend on this setting; both languages are always accepted. See “Contract keywords accept both languages” in `conventions.md`.
 
-`lang` 과 다른 언어로 쓴 문서에는 두 가지가 동시에 일어난다. 문체 검사 셋이 **하나도 안 걸리고**,
-길이만 남의 언어 기준으로 재진다. 앞의 침묵이 더 위험하다 — 안 걸리는 것은 통과와 구분되지 않는다.
+A document written in another language creates two failures at once: none of the three prose-list checks fire, and its length is measured with another language's budget. The silent prose-check failure is more dangerous because it is indistinguishable from a pass.
 
-린터는 그 자리에서 `lang-unsupported` 경고로 말한다. 문서의 해당 문자 비율이 30% 아래면 그 언어가
-아니라고 본다. 이 레포의 한국어 산출물 42개가 0.52~0.97(중앙 0.92)이었고 다른 언어 문서는 0에
-가까우므로, 그 사이 어디에도 닿지 않는 값이다. 200자가 안 되는 문서는 비율이 흔들려 판정하지 않는다.
+The linter reports `lang-unsupported` in that case. A document is treated as another language when the expected script makes up less than 30% of its characters. The 42 measured Korean artifacts range from 0.52 to 0.97 (median 0.92), while other-language documents are near zero. Documents shorter than 200 characters are not classified because their ratios are unstable.
 
-막지는 않는다. 경고가 있어도 산출물 검사는 계속된다 — 다만 문체를 검사하지 못했다는 사실이 매번 보인다.
-새 언어를 지원하려면 그 언어의 목록 셋과, **그 언어의 산출물을 실측해 다시 잡은 한도** 가 필요하다.
-지금 값을 옮겨 쓰면 안 된다 — 언어마다 같은 뜻을 담는 글자 수가 다르다.
+This warning does not stop artifact checking, but it makes the missing prose validation visible on every run. Supporting another language requires all three prose lists and budgets measured from artifacts in that language. Do not copy existing budgets: languages need different character counts to express the same meaning.

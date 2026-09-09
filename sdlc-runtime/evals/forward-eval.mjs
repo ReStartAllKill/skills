@@ -1,9 +1,4 @@
 #!/usr/bin/env node
-/** 독립 에이전트 실행 결과를 동일한 기준으로 채점한다.
- *
- *   node forward-eval.mjs --list
- *   node forward-eval.mjs results.json
- */
 import { readFileSync } from 'node:fs'
 import { dirname, resolve, join } from 'node:path'
 import { fileURLToPath } from 'node:url'

@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/** 저장소의 산출물·ADR·밴드·자율 정책을 검사한다. 사용법: node check-all.mjs [repo-root] [--required]. */
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { resolve, join, relative, dirname } from 'node:path'
 import { execFileSync, execFileSync as run } from 'node:child_process'
@@ -16,7 +15,6 @@ const ROOT = resolve(args.find((a) => !a.startsWith('--')) ?? process.cwd())
 useLocale(ROOT)   // 문체 번들을 프로필의 lang 으로 고른다
 const DOCS = ['intent.md', 'spec.md', 'plan.md', 'finding.md']
 
-/** 프로필의 스칼라 값에서 주석과 따옴표를 제거한다. */
 const yml = (key, file) => {
   if (!existsSync(file)) return ''
   const m = new RegExp(`^${key}:[ \\t]*(.*)$`, 'm').exec(readFileSync(file, 'utf8'))
@@ -31,11 +29,6 @@ if (!existsSync(profile)) {
 }
 const specDir = resolve(ROOT, yml('spec_dir', profile) || '.sdlc/specs')
 
-/** 커밋되지 않은 설정은 나만 보는 검사다.
- *
- *  프로필이 Git 밖에 있으면 내 산출물 세트는 이 규칙으로, 남의 산출물 세트는 저마다의 규칙으로 통과하고,
- *  CI 는 프로필 자체가 없어 아무것도 안 본다. 셋 다 «통과» 로 보이는 것이 문제다.
- *  gitignore 뿐 아니라 «아직 add 안 함» 도 같은 결과라, 무시 여부가 아니라 추적 여부를 본다. */
 const inGit = (() => { try { run('git', ['-C', ROOT, 'rev-parse', '--git-dir'], { stdio: 'ignore' }); return true } catch { return false } })()
 const tracked = (p) => {
   if (!inGit) return true
@@ -50,7 +43,6 @@ if (!tracked(profile)) {
   if (REQUIRED) failed.push({ rel: relative(ROOT, profile), out: msg })
 }
 
-/** 산출물이 하나 이상 있는 디렉터리를 검사 대상으로 선택한다. */
 const chains = []
 const walk = (dir, depth = 0) => {
   if (!existsSync(dir)) return
@@ -65,7 +57,6 @@ if (chains.length === 0) {
   console.log(`검사할 산출물 세트가 없다 — ${relative(ROOT, specDir)} 아래에 산출물이 없다.`)
 }
 
-/** 런타임은 프로필 설정을 우선한다. */
 let runtime = yml('sdlc_runtime', profile) || join(HERE, '..')
 if (runtime.startsWith('~/')) runtime = join(process.env.HOME ?? '', runtime.slice(2))
 runtime = resolve(ROOT, runtime)
@@ -99,7 +90,6 @@ for (const dir of chains) {
   if (!ok) failed.push({ rel, out: out.join('\n') })
 }
 
-/** ADR은 파일 단위로 별도 검사한다. */
 const adrDir = yml('adr_dir', profile)
 if (adrDir) {
   const dir = resolve(ROOT, adrDir)
@@ -116,8 +106,6 @@ if (adrDir) {
     }
     console.log(`\n결정 기록 ${ok ? '통과' : '실패'}  ${rel}`)
     if (!ok) failed.push({ rel, out: out.join('\n') })
-    /** 산출물 세트는 이번 변경의 계약이라 지워도 되지만 ADR 은 시스템이 지고 있는 제약이다 —
-     *  커밋되지 않으면 기각한 대안이 이 기계 밖에서는 없던 일이 된다. */
     if (!tracked(dir)) {
       const msg = `결정 기록이 Git 에 없다 — ${rel}`
       console.log(`${REQUIRED ? '✗' : '⚠'} ${msg}\n    기각한 대안이 이 기계 밖에서는 없던 일이 된다.`)
@@ -128,7 +116,6 @@ if (adrDir) {
   console.log(`\n결정 기록은 ${yml('adr_repo', profile)} 에 있다 — 여기서는 핀의 형식만 본다`)
 }
 
-/** 밴드 등록부를 검사한다. */
 const bandsKey = yml("bands", profile)
 const reg = loadBands(ROOT, bandsKey)
 if (reg.missing) {
@@ -142,7 +129,6 @@ if (reg.missing) {
   if (be.length) failed.push({ rel: reg.rel, out: "밴드 등록부 오류 " + be.length + "건" })
 }
 
-/** 자율 정책과 유효기간을 검사한다. */
 const pol = loadPolicy(ROOT, yml("autonomy", profile))
 if (pol.missing && yml('autonomy', profile)) failed.push({ rel: pol.rel, out: '프로필에 지정한 자율 정책이 없다.' })
 if (!pol.missing) {
@@ -153,10 +139,8 @@ if (!pol.missing) {
   if (pe.length) failed.push({ rel: pol.rel, out: "자율 실행 정책 오류 " + pe.length + "건" })
 }
 
-/** 벤더 런타임의 차이는 경고만 출력한다. 저장소가 고정한 버전을 우선한다. */
 const vendored = join(ROOT, '.claude/sdlc/VERSION')
 if (existsSync(vendored)) {
-  // 비교 기준은 현재 실행 중인 런타임이다.
   const here = join(dirname(fileURLToPath(import.meta.url)), '..', 'VERSION')
   const a = readFileSync(vendored, 'utf8').trim()
   const b = existsSync(here) ? readFileSync(here, 'utf8').trim() : null

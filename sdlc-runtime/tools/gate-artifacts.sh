@@ -33,28 +33,29 @@ if ! out="$("$NODE" "$RUNTIME/tools/check-artifacts.mjs" "$dir" 2>&1)"; then
 fi
 
 # 린터는 오류만 차단하고 경고(번역체·길이·문체)는 출력만 한다.
-if ! lint="$("$NODE" "$RUNTIME/tools/lint-prose.mjs" "$dir" 2>&1)"; then
+if ! lint="$("$NODE" "$RUNTIME/tools/lint-prose.mjs" "$dir" --json 2>&1)"; then
   printf '산문 린트 실패\n\n%s\n' "$lint" >&2
   exit 2
 fi
 
-# "경고 0건"도 "경고"를 포함하므로 낱말이 아니라 머리표(⚠)로 판정한다.
-# 폴더별로 직전 출력의 해시를 캐시에 두고, 같은 경고가 반복되면 한 줄로 줄인다.
-# 캐시 경로는 case 밖에서 정한다. 안에서 정하면 경고가 없는 갈래가 빈 변수를 읽어 set -u로 죽는다.
+# Read counts from the machine report; translated messages are presentation only.
+if ! n="$(printf '%s' "$lint" | "$NODE" -e 'let s=""; process.stdin.on("data", d => s+=d); process.stdin.on("end", () => { try { const r=JSON.parse(s); if (r.version !== 1 || !Number.isInteger(r.counts?.warnings) || r.counts.warnings < 0 || !Array.isArray(r.problems)) throw Error(); console.log(r.counts.warnings) } catch { process.exitCode=1 } })')"; then
+  printf 'Could not read lint diagnostics\n%s\n' "$lint" >&2
+  exit 2
+fi
 cache="${XDG_CACHE_HOME:-$HOME/.cache}/sdlc-gate"
 key="$cache/$(printf '%s' "$dir" | cksum | cut -d' ' -f1)"
 
-case "$lint" in
-  *"⚠"*)
+if [ "$n" -gt 0 ]; then
     mkdir -p "$cache" 2>/dev/null
     sig="$(printf '%s' "$lint" | cksum | cut -d' ' -f1)"
-    n="$(printf '%s' "$lint" | sed -nE 's/.*⚠ 경고 ([0-9]+)건.*/\1/p' | head -1)"; n="${n:-?}"
     if [ -f "$key" ] && [ "$(cat "$key" 2>/dev/null)" = "$sig" ]; then
       sdlc_say "린트 경고 ${n}건 — 직전 편집과 같아 다시 보이지 않는다. 전체는: node $RUNTIME/tools/lint-prose.mjs $dir"
     else
-      printf '%s\n' "$lint" >&2
+      printf '%s' "$lint" | "$NODE" -e 'let s=""; process.stdin.on("data", d=>s+=d); process.stdin.on("end",()=>{for(const p of JSON.parse(s).problems) console.error(`${p.doc}:${p.line ?? 0} [${p.rule ?? p.level}] ${p.msg}\n${p.hint ?? ""}`)})'
       printf '%s' "$sig" > "$key" 2>/dev/null
-    fi ;;
-  *) rm -f "$key" 2>/dev/null ;;
-esac
+    fi
+else
+  rm -f "$key" 2>/dev/null
+fi
 exit 0

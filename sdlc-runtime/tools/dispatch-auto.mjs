@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/** 정책에 따라 비대화형 실행을 시작하고 결과를 검사·커밋·기록한다. 사용법: node dispatch-auto.mjs <repo> --route <id> --signal <관측> [--dry-run]. */
 import { readFileSync, existsSync, appendFileSync, mkdirSync } from 'node:fs'
 import { resolve, join, relative, dirname } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -26,7 +25,6 @@ const yml = (k) => (new RegExp(`^${k}:[ \\t]*(.*)$`, 'm').exec(profile)?.[1] ?? 
   .replace(/\s+#.*$/, '').replace(/^["']|["']$/g, '').trim()
 
 const SPEC_DIR = yml('spec_dir') || '.sdlc/specs'
-/** .claude 아래 쓰기는 사용자 확인이 필요하므로 비대화형 산출물 경로로 허용하지 않는다. */
 if (SPEC_DIR === '.claude' || SPEC_DIR.startsWith('.claude/')) {
   die(`\`spec_dir: ${SPEC_DIR}\` 는 자율 경로가 쓸 수 없다 — \`.claude/\` 아래 쓰기는 Claude Code 가 언제나 사람에게 묻는다.\n` +
       '프로필의 `spec_dir` 를 `.claude/` 밖(기본 `.sdlc/specs`)으로 옮기고 산출물 디렉터리를 그리로 이동한다.')
@@ -41,13 +39,11 @@ if (pol.missing) die(`자율 실행 정책이 없다 — ${pol.rel}. 이 레포�
 const route = pol.routes[ROUTE_ID]
 if (!route) die(`경로 \`${ROUTE_ID}\` 가 정책에 없다. 있는 것: ${Object.keys(pol.routes).join(' · ') || '(없음)'}`)
 
-/** 만료된 정책으로는 실행하지 않는다. */
 if (!routeActive(route)) {
   die(`경로 \`${ROUTE_ID}\` 의 위임이 만료됐다 (${route.expires ?? '만료일 없음'}).\n` +
       '정책을 다시 검토해 갱신하거나, 이번 신호는 사람이 직접 처리한다.', 3)
 }
 
-/** 정책 승인 경계를 검사할 PreToolUse 가드가 등록돼 있어야 한다. */
 const settingsPath = join(ROOT, '.claude/settings.json')
 const settingsText = existsSync(settingsPath) ? readFileSync(settingsPath, 'utf8') : ''
 if (!settingsText.includes('sdlc-approval.sh')) {
@@ -58,7 +54,6 @@ if (!settingsText.includes('sdlc-approval.sh')) {
 const policyErrors = validate(pol).filter((p) => p.level === 'error')
 if (policyErrors.length) die(policyErrors.map((p) => p.msg).join('\n'))
 
-/** 자율 경로는 계획 작성까지만 수행하고 구현 실행은 사용자에게 안내한다. */
 const CHAIN = {
   finding: '`/create-finding` 으로 finding.md 만 쓴다.',
   intent: '`/create-finding` 으로 finding.md 를 쓰고, 경로가 `intent` 면 이어서 `/create-intent` 로 intent.md 까지 쓴다.',
@@ -67,7 +62,6 @@ const CHAIN = {
   implement: '`/create-finding` → `/create-intent` → `/create-spec` → `/create-plan` 까지 쓴다. **구현은 하지 않는다** — `/implement-spec` 은 사람이 부르는 명령이다. 마지막에 그 명령을 다음 단계로 안내한다.',
 }
 
-/** 정책 도구에 산출물 작성·버전 조회·검사에 필요한 최소 도구를 추가한다. */
 const toolsDir = join(RUNTIME, 'tools')
 const tildeTools = toolsDir.startsWith(process.env.HOME ?? '\0') ? '~' + toolsDir.slice(process.env.HOME.length) : null
 const PLUMBING = [
@@ -124,7 +118,6 @@ const args = ['-p', prompt, '--permission-mode', 'acceptEdits',
 const MAX_TURNS = Number(route.max_turns ?? 80)
 if (MAX_TURNS > 0) args.push('--max-turns', String(MAX_TURNS))
 
-// 자체 실행 로그는 다음 실행의 작업 트리 변경 검사에서 제외한다.
 const initialStatus = spawnSync('git', ['-C', ROOT, 'status', '--porcelain', '--', '.', ':(exclude).claude/autonomy-runs.jsonl'], { encoding: 'utf8' })
 if (!DRY && (initialStatus.status !== 0 || initialStatus.stdout.trim())) die('자율 실행은 변경이 없는 Git 작업 트리에서 시작한다.')
 const started = new Date().toISOString()
@@ -141,14 +134,12 @@ if (DRY) {
   process.exit(0)
 }
 
-/** 가드가 현재 경로의 정책 승인만 허용하도록 경로 ID를 전달한다. */
 const r = spawnSync('claude', args, {
   cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024,
   env: { ...process.env, SDLC_AUTONOMY_ROUTE: ROUTE_ID },
 })
 const ended = new Date().toISOString()
 
-/** 이벤트 스트림에서 도구 호출·거부·최종 결과·비용을 집계한다. */
 const used = {}
 const denied = []
 let final = null
@@ -172,14 +163,12 @@ console.log(final?.result ?? (r.stderr || '(결과 없음)').slice(0, 2000))
 console.log(`\n도구 사용: ${Object.entries(used).map(([k, v]) => `${k}×${v}`).join(' · ') || '(없음)'}`)
 if (denied.length) console.log(`거부된 호출 ${denied.length}건:\n  ${denied.slice(0, 8).join('\n  ')}`)
 
-/** 에이전트의 보고와 별도로 전체 검사를 실행한다. */
 const checkAll = spawnSync(process.execPath, [join(toolsDir, 'check-all.mjs'), ROOT, '--required'], { encoding: 'utf8' })
 const checkOut = (checkAll.stdout ?? '') + (checkAll.stderr ?? '')
 console.log('\n── 검사 (디스패처) ──')
 console.log(checkOut.trim())
 const checkOk = checkAll.status === 0
 
-/** 에이전트 실행과 검사가 모두 성공한 경우에만 산출물 디렉터리를 커밋한다. */
 let commit = null
 const status = spawnSync('git', ['-C', ROOT, 'status', '--porcelain', '--', SPEC_DIR], { encoding: 'utf8' })
 const changed = status.stdout?.trim()

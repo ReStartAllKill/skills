@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/** plan·spec에서 작업 프롬프트를 생성한다. 사용법: node task-brief.mjs <명세 디렉터리> <WP-id> [--worktree <경로>] [--snippets <파일>] [--template <경로>]. */
 import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { resolve, join, relative, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -15,7 +14,6 @@ const flag = (n) => { const i = argv.indexOf(`--${n}`); return i >= 0 ? argv[i +
 const positional = argv.filter((a, i) => !a.startsWith('--') && !(i > 0 && argv[i - 1].startsWith('--')))
 const DIR = resolve(positional[0] ?? '.')
 const TASK = positional[1]
-/** 기본 템플릿은 런타임의 references/writer-prompt.md이며 --template으로 재정의할 수 있다. */
 const TEMPLATE = flag('template') ?? join(HERE, '../references/writer-prompt.md')
 if (!TASK) {
   console.error('사용법: task-brief.mjs <스펙 폴더> <WP-id> [--worktree <경로>] [--snippets <파일>] [--template <경로>]')
@@ -36,7 +34,6 @@ const profile = ROOT ? readFileSync(join(ROOT, '.claude/spec-profile.yml'), 'utf
 const yml = (k) => (new RegExp(`^${k}:[ \\t]*(.*)$`, 'm').exec(profile)?.[1] ?? '')
   .replace(/\s+#.*$/, '').replace(/^["']|["']$/g, '').trim()
 
-// covers에 AC를 지정하면 해당 기준만, 없으면 요구사항의 모든 AC를 전달한다. spec이 없으면 covers만 전달한다.
 const covers = wpField(w, 'covers')
 const reqIds = [...covers.matchAll(/\b(FR|NFR)-\d{1,4}\b/g)].map((m) => m[0])
 const acIds = new Set([...covers.matchAll(/\bAC-\d{1,4}\b/g)].map((m) => m[0]))
@@ -60,9 +57,7 @@ if (docs.spec) {
 if (!reqLines.length) reqLines.push('- (covers 가 비었다 — plan.md 를 고친다)')
 if (missing.length) reqLines.push(`- ⚠ spec.md 에 없는 ID: ${[...new Set(missing)].join(', ')}`)
 
-// 작업 파일에 적용되는 .claude/rules의 규칙을 선택한다.
 const files = wpFiles(w)
-// **/는 0개 이상의 디렉터리, 끝의 **는 모든 하위 경로, *는 한 경로 요소에 대응한다.
 const globToRe = (g) => {
   const s = g.trim()
   let re = ''
@@ -93,13 +88,11 @@ if (rulesDir && existsSync(rulesDir)) {
   }
 }
 
-// 적용되는 ADR의 결정·제외 범위·기각한 대안 요약과 원문 링크를 전달한다.
 const seam = { ...adrSeam(ROOT), root: ROOT }
 const adrLines = []
 if (seam.configured && seam.dir) {
   const all = loadAdrDir(seam.dir).docs
   const hit = adrsForFiles(all, files)
-  // 참조된 ADR 중 작업 범위에 해당하지 않는 것은 별도 안내한다.
   const pinned = new Set(Object.values(docs).flatMap((d) => [].concat(d.fm?.decisions ?? []).map(String))
     .filter((p) => !p.includes('#'))
     .map((p) => /(ADR-\d{3,4})/.exec(p)?.[1]).filter(Boolean))
@@ -131,7 +124,6 @@ const vars = {
   rules: rules.join('\n') || '- (걸리는 규칙 없음)',
   verify: wpField(w, 'verify') || yml('verify') || '(verify 없음)',
   snippets: snippetsPath && existsSync(snippetsPath) ? readFileSync(snippetsPath, 'utf8').trim() : '(없음)',
-  // 적용할 ADR이 없으면 해당 섹션을 제거한다.
   decisions: adrLines.length
     ? ['## 이미 정해진 것 — 다시 논의하지 않는다', '',
        '아래는 사람이 승인한 결정이다. 다른 안이 더 낫다고 느껴져도 그 자리에서 바꾸지 마라 —',

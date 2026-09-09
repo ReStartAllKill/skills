@@ -8,7 +8,7 @@ import { test } from 'node:test'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 
-// 실제 CLI를 격리된 레포에 복사하고 검사기만 교체해 실패 처리와 실행 분기를 검증한다.
+// Copy the real CLI into an isolated repository and replace only the checker to verify failure handling and execution branches.
 function fixture(t, { expected = {}, check = '', lint = '', runtimeCode = 0, documents = true } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'sdlc-runner-test-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))
@@ -28,7 +28,7 @@ function fixture(t, { expected = {}, check = '', lint = '', runtimeCode = 0, doc
     put(join(skill, 'evals/cases/sample/docs/intent.md'), 'fixture\n')
     put(join(skill, 'evals/cases/sample/expected.json'), JSON.stringify(expected))
   }
-  // run.mjs가 생성하는 임시 Git 저장소도 테스트 종료 시 함께 정리한다.
+  // Also remove temporary Git repositories created by run.mjs after the test.
   const temp = join(root, 'tmp')
   mkdirSync(temp)
   return (...args) => {
@@ -40,14 +40,14 @@ function fixture(t, { expected = {}, check = '', lint = '', runtimeCode = 0, doc
   }
 }
 
-test('runtime 인자는 문서 케이스가 없어도 런타임만 실행한다', (t) => {
+test('the runtime argument runs runtime checks without document cases', (t) => {
   const r = fixture(t, { documents: false })('runtime')
   assert.equal(r.code, 0, r.out)
   assert.match(r.out, /runtime sentinel/)
   assert.doesNotMatch(r.out, /0\/0|산출물 도구 평가/)
 })
 
-test('runtime 실패는 단독 실행과 전체 실행 모두 실패로 반환한다', (t) => {
+test('runtime failures fail both standalone and full runs', (t) => {
   const run = fixture(t, { runtimeCode: 7 })
   for (const args of [['runtime'], []]) {
     const r = run(...args)
@@ -56,20 +56,20 @@ test('runtime 실패는 단독 실행과 전체 실행 모두 실패로 반환�
   }
 })
 
-test('알 수 없는 케이스는 런타임 실행으로 대체하지 않는다', (t) => {
+test('an unknown case does not fall back to a runtime run', (t) => {
   const r = fixture(t)('unknown')
   assert.equal(r.code, 1, r.out)
   assert.doesNotMatch(r.out, /runtime sentinel/)
 })
 
-test('오류 0건 케이스에서 검사기 예외를 정상 결과로 집계하지 않는다', (t) => {
+test('a checker exception is not counted as success when zero errors are expected', (t) => {
   const r = fixture(t, { check: "throw new Error('checker crashed')" })('sample')
   assert.equal(r.code, 1, r.out)
   assert.match(r.out, /종료 코드 1 \(기대 0\)/)
   assert.match(r.out, /checker crashed/)
 })
 
-test('경고만 있는 케이스는 종료 코드 0일 때 통과한다', (t) => {
+test('a warning-only case passes with exit code zero', (t) => {
   const r = fixture(t, {
     expected: { lint: { errors: 0, warns: 1, matches: ['warning sentinel'] } },
     lint: "console.log('⚠ 경고 1건\\n  intent.md  warning sentinel')",
@@ -79,7 +79,7 @@ test('경고만 있는 케이스는 종료 코드 0일 때 통과한다', (t) =>
   assert.doesNotMatch(r.out, /runtime sentinel/)
 })
 
-test('지적 수가 같아도 오류 케이스의 종료 코드가 다르면 실패한다', (t) => {
+test('an error case fails when its exit code differs even if problem counts match', (t) => {
   for (const code of [0, 1, 2]) {
     const r = fixture(t, {
       expected: { check: { errors: 1, warns: 0, matches: ['error sentinel'] } },
@@ -89,7 +89,7 @@ test('지적 수가 같아도 오류 케이스의 종료 코드가 다르면 실
   }
 })
 
-test('검사기 시그널 종료를 기대한 오류 종료로 인정하지 않는다', (t) => {
+test('a checker terminated by signal is not accepted as the expected error exit', (t) => {
   const r = fixture(t, {
     expected: { check: { errors: 1, warns: 0 } },
     check: "process.stdout.write('✗ 오류 1건\\n  intent.md  error sentinel\\n', () => process.kill(process.pid, 'SIGTERM'))",
@@ -98,7 +98,7 @@ test('검사기 시그널 종료를 기대한 오류 종료로 인정하지 않�
   assert.match(r.out, /시그널 종료/)
 })
 
-test('인자 없는 실행은 문서와 런타임을 모두 검증한다', (t) => {
+test('a run without arguments checks both documents and runtime', (t) => {
   const r = fixture(t)()
   assert.equal(r.code, 0, r.out)
   assert.match(r.out, /1\/1 통과/)

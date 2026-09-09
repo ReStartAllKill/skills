@@ -1,7 +1,7 @@
-/** create-pr 스크립트 회귀 검사. 사용법: node --test skills/sdlc/create-pr/evals/tools.test.mjs
+/** Regression tests for create-pr scripts. Usage: node --test skills/sdlc/create-pr/evals/tools.test.mjs
  *
- * 산출물 케이스(evals/cases)와 모양이 다르다 — 저 러너는 check-artifacts·lint-prose 를 문서 폴더에
- * 돌려 expected.json 과 대조하는 장치라, 셸 도구의 종료 코드와 출력을 볼 자리가 없다. */
+ * These differ from artifact cases under evals/cases: that runner compares check-artifacts and
+ * lint-prose output with expected.json and cannot inspect shell-tool exit codes or output. */
 import assert from 'node:assert/strict'
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -33,7 +33,7 @@ function put(path, body, mode) {
   if (mode) chmodSync(path, mode)
 }
 
-/** 프로필의 pr_* 키와 산출물 세트 하나를 브랜치에 올려 둔 저장소. */
+/** A repository whose branch contains profile pr_* keys and one artifact set. */
 function prRepo(t) {
   const d = temp(t, 'pr-tools')
   git(d, 'init', '-q', '-b', 'main'); git(d, 'config', 'user.email', 'eval@local'); git(d, 'config', 'user.name', 'eval')
@@ -80,7 +80,7 @@ pr_strategy: 단일 PR
   return d
 }
 
-test('pr-context 는 프로필의 pr_* 키로 분할 신호·위험 축·산출물 세트를 낸다', (t) => {
+test('pr-context derives split signals, risk areas, and artifact sets from profile pr_* keys', (t) => {
   const d = prRepo(t)
   const r = run('bash', [script('pr-context.sh')], { cwd: d })
   assert.equal(r.code, 0, r.out)
@@ -95,7 +95,7 @@ test('pr-context 는 프로필의 pr_* 키로 분할 신호·위험 축·산출�
   assert.ok(r.out.includes('apps/api') && r.out.includes('apps/worker'), `영역을 두 단계로 안 묶었다:\n${r.out}`)
 })
 
-test('pr-context 는 프로필이 없어도 돌고, 무엇이 꺼졌는지 말한다', (t) => {
+test('pr-context runs without a profile and reports disabled features', (t) => {
   const d = temp(t, 'pr-tools-bare')
   git(d, 'init', '-q', '-b', 'main'); git(d, 'config', 'user.email', 'eval@local'); git(d, 'config', 'user.name', 'eval')
   put(join(d, 'src/a.ts'), 'export const a = 1\n')
@@ -110,7 +110,7 @@ test('pr-context 는 프로필이 없어도 돌고, 무엇이 꺼졌는지 말�
   assert.ok(r.out.includes('artifact-set: none'), `산출물 세트 없음을 알리지 않았다:\n${r.out}`)
 })
 
-test('pr-body-lint 는 위험 축과 산출물 세트 인용 누락을 막는다', (t) => {
+test('pr-body-lint rejects missing risk areas and artifact-set citations', (t) => {
   const d = prRepo(t)
   const env = { ...process.env, PR_BODY_LINT_BASE: 'main' }
 
@@ -144,7 +144,7 @@ Risk 는 확률이 아니라 틀렸을 때 치르는 대가다.
   assert.equal(r2.code, 0, `제대로 쓴 본문을 막았다:\n${r2.out}`)
 })
 
-test('pr-body-lint 는 Git 저장소 밖에서도 형식 검사만으로 돈다', (t) => {
+test('pr-body-lint performs format checks outside a Git repository', (t) => {
   const d = temp(t, 'pr-tools-nogit')
   const f = join(d, 'body.md')
   put(f, '## Intent\n\n검사를 통과합니다.\n')
@@ -153,8 +153,8 @@ test('pr-body-lint 는 Git 저장소 밖에서도 형식 검사만으로 돈다'
   assert.ok(r.out.includes('[문체]'), `형식 검사가 안 돌았다:\n${r.out}`)
 })
 
-test('pr-body-lint 는 프로필의 lang 으로 문체 규칙을 고른다', (t) => {
-  /** 영문 본문에 한국어 목록을 대면 하나도 안 걸리는데, 안 걸리는 것은 통과와 구분되지 않는다. */
+test('pr-body-lint selects prose rules from the profile language', (t) => {
+  /** Applying Korean lists to English prose produces no findings, which is indistinguishable from a pass. */
   const d = temp(t, 'pr-tools-lang')
   git(d, 'init', '-q', '-b', 'main'); git(d, 'config', 'user.email', 'eval@local'); git(d, 'config', 'user.name', 'eval')
   put(join(d, 'a.txt'), 'x\n')
@@ -175,7 +175,7 @@ test('pr-body-lint 는 프로필의 lang 으로 문체 규칙을 고른다', (t)
   assert.ok(!asEn.out.includes('우리말로'), `영문 본문에 «우리말로 바꾼다» 라고 지적했다:\n${asEn.out}`)
 })
 
-test('assets 의 본문 템플릿은 안내 주석을 지워야 통과한다', (t) => {
+test('PR body templates pass only after instructional comments are removed', (t) => {
   const d = temp(t, 'pr-tools-template')
   const raw = join(d, 'raw.md')
   const template = join(SKILL, 'assets/ko/pr-body-template.md')

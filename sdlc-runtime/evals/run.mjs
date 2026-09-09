@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** 임시 Git 저장소에서 산출물 검사 결과를 expected.json과 대조한다. 사용법: node run.mjs [케이스 ID|스킬 이름|runtime]. */
+/** Compare artifact-check results with expected.json in a temporary Git repository. Usage: node run.mjs [case-id|skill-name|runtime]. */
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdtempSync, cpSync } from 'node:fs'
 import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -22,10 +22,10 @@ function runRuntime() {
   }
 }
 
-// 런타임 단독 실행은 문서 케이스 탐색과 독립적이다.
+// A runtime-only run is independent of document-case discovery.
 if (only === 'runtime') process.exit(runRuntime() ? 0 : 1)
 
-/** SHA 자리표시자를 임시 커밋으로 치환한다. target은 검사할 하위 디렉터리를 지정한다. */
+/** Replace SHA placeholders with temporary commits. `target` selects the subdirectory to check. */
 function stage(caseDir, target = ".") {
   const tmp = mkdtempSync(join(tmpdir(), 'spec-eval-'))
   cpSync(join(caseDir, 'docs'), tmp, { recursive: true })
@@ -55,13 +55,13 @@ function findings(out, level) {
     if (/^(✗|⚠)/.test(lines[i])) break
     const m = /^ {2}(\S+?)(?::(\d+))?\s{2}(.*)$/.exec(lines[i])
     if (m) { res.push(`${m[1]} ${m[3]}`); continue }
-    // 들여쓴 힌트도 같은 진단에 포함해 기대 문구와 대조한다.
+    // Include indented hints in the same diagnostic when comparing expected text.
     if (res.length && /^\s{4,}\S/.test(lines[i])) res[res.length - 1] += ' ' + lines[i].trim()
   }
   return res
 }
 
-/** 작성 스킬별 evals/cases에서 평가 케이스를 수집한다. */
+/** Collect evaluation cases from each authoring skill's evals/cases directory. */
 const cases = findSkillDirs(HERE)
   .flatMap(({ name: skill, dir: skillDir }) => {
     const dir = join(skillDir, 'evals', 'cases')
@@ -103,7 +103,7 @@ for (const { skill, id, dir } of cases) {
   rows.push({ skill, id, kind: exp.kind ?? '', ok, problems, n: `검사 ${counts.check} · 린트 ${counts.lint}` })
 }
 
-// 케이스가 없으면 성공으로 처리하지 않는다.
+// Do not report success when no cases were found.
 if (rows.length === 0) {
   console.error('\n케이스를 하나도 못 찾았다 — 스킬 배치가 바뀌었거나 evals/cases 가 비었다.')
   console.error('0개는 통과가 아니다. skills.mjs 의 탐색과 실제 배치를 대조한다.\n')

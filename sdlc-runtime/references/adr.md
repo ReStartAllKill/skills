@@ -1,183 +1,150 @@
-# 결정 기록 (ADR)
+# Architecture decision records (ADRs)
 
-SDLC 산출물 체계의 다섯째 산출물이고, **변경보다 오래 사는 유일한 문서**다. intent·spec·plan 은 이번 변경의
-계약이라 머지 뒤에는 코드가 정본이 되지만, 코드는 «무엇» 의 정본이지 «왜» 의 정본이 아니다.
-기각한 대안과 그 판단이 서 있던 전제는 코드 diff 가 전달하지 못한다.
+An ADR is the fifth SDLC artifact and the only one intended to outlive a change. After merge, code replaces intent, spec, and plan as the source of truth for what the system does. Code does not preserve why a choice was made, which alternatives were rejected, or which assumptions supported it.
 
-| 질문 | 정본 |
+| Question | Source of truth |
 |---|---|
-| 왜 그렇게 정했나 · 무엇을 기각했나 | **ADR** |
-| 지금 어떻게 도나 — 필드·식·시그니처 | 코드·스키마·테스트 |
-| 어떤 관찰 가능한 동작이면 충족되나 | spec |
-| 누가 언제 만드나 | plan 의 작업 · 이슈 |
+| Why was this chosen, and what was rejected? | **ADR** |
+| How does it work now: fields, formulas, signatures? | Code, schema, and tests |
+| Which observable behavior constitutes success? | Spec |
+| Who implements it, and when? | Plan tasks and issues |
 
-ADR 본문에는 결정을 이해하는 데 필요한 최소한만 인용한다. 정확한 필드 목록이나 회귀 fixture 를
-옮겨 적고 싶어지면 코드가 정본이라는 신호다.
+Quote only what is necessary to understand the decision. Exact field lists and regression fixtures belong in code.
 
-## 판정 — 무엇이 ADR 인가
+## What qualifies as an ADR
 
-**전제:** 합리적인 대안이 실제로 있었다. 선택지가 없었으면 결정이 아니라 사실이고 spec 으로 간다.
+**Prerequisite:** there was a real, reasonable alternative. With no choice, the statement is a fact and belongs in the spec.
 
-그 위에서 다음 중 하나 이상이면 ADR 이다.
+Given that prerequisite, create an ADR when at least one condition applies:
 
-- 되돌리기 비용이 크다 — 배포된 컨트랙트 · 마이그레이션한 스키마 · 외부 공표
-- 시스템 경계나 데이터의 의미를 바꾼다
-- 외부 계약 · 보안 · 규제 · 회계 · 감사 경계에 영향을 준다
-- 여러 팀 또는 여러 저장소를 제약한다
-- 앞으로의 구현 선택을 지속적으로 제한한다
+- Reversal is expensive, as with a deployed contract, migrated schema, or public commitment.
+- The choice changes a system boundary or the meaning of data.
+- It affects an external contract or a security, regulatory, accounting, or audit boundary.
+- It constrains multiple teams or repositories.
+- It will continue to restrict future implementation choices.
 
-전제만 만족하고 나머지가 없으면 ADR 이 아니다 — 대안은 어느 코드 선택에도 있다. plan 의 `TD-*` 로
-남기거나 PR 본문으로 보낸다. 결정 요인이나 대안의 **개수**는 기준이 아니다.
+If only the prerequisite applies, record the choice as a plan `TD-*` or in the PR. Neither the number of alternatives nor the number of decision factors determines whether an ADR is needed.
 
-사소한 결정까지 ADR 로 만들면 신호가 잡음에 묻혀 아무도 안 읽는다. 그 상태의 ADR 모음은 없는 것과 같다.
+Too many trivial ADRs bury the useful signal. Conversely, a decision recorded only in a diagram, wiki, or meeting note lives outside the checker and can be reversed without the artifact system noticing.
 
-반대로 ADR 로 갈 결정을 다이어그램·위키·회의록에 적으면 그 결정은 검사기 밖에 살고, 나중에
-뒤집혀도 산출물 체계는 모른다.
+## Files and numbering
 
-## 파일과 번호
+Use `<adr_dir>/ADR-{NNN}-{kebab-slug}.md`. `NNN` has three digits, increases monotonically within the repository, and is **never reused**, including after rejection or deprecation. This keeps `ADR-007` permanently unambiguous.
 
-`<adr_dir>/ADR-{NNN}-{kebab-slug}.md`. `NNN` 은 세 자리, 레포 안에서 단조 증가하며 **재사용하지
-않는다** — 기각·폐기된 번호도 자리를 물고 남는다. 그래야 «ADR-007» 이 언제나 한 문서를 가리킨다.
+Generate the index with `adr-index.mjs`; never edit it manually.
 
-인덱스는 `adr-index.mjs` 가 만든다. 손으로 고치지 않는다.
-
-## 프런트매터
+## Frontmatter
 
 ```yaml
 ---
 artifact: adr
 schema_version: 5
 id: "ADR-005"
-title: "RwaVault 최초 발행가 — 정산자산과 좌수 1:1"
+title: "RwaVault initial issue price — settlement asset and shares at 1:1"
 status: draft
 scope: ["src/vault", "packages/db/schema"]
 supersedes: null
 superseded_by: null
 approved_by: null
-generated_by: "<모델 또는 사람>"
+generated_by: "<model or person>"
 confirms: ["test_FirstEpochUsesGenesisPricing"]
 revisit: ["RV-001"]
 ---
 ```
 
-- `scope` — 이 결정이 제약하는 코드 자리. 레포 루트 기준 경로다. **에이전트 주입과 드리프트 검사가
-  둘 다 여기 걸리므로 비워 두면 그 ADR 은 구현에 닿지 않는다.**
-- `confirms` — 결정이 지켜졌는지 판정하는 정본. 테스트 이름 또는 게이트 명령이다. 검사기가 `scope`
-  안에서 그 이름을 찾는다.
-- `revisit` — §확인과 재검토 의 `RV-*` 목록.
+- `scope` lists repository-relative code paths constrained by the decision. Agent injection and drift checks both depend on it; an empty scope disconnects the ADR from implementation.
+- `confirms` is the source of truth for verifying that the decision still holds. Use test names or gate commands; the checker looks for each name within `scope`.
+- `revisit` lists the `RV-*` entries in Review and revisit.
 
-## 절 다섯
+## Five required sections
 
-| 절 | 언제 | 담는 것 |
+| Section | When | Contents |
 |---|---|---|
-| 결정 | 항상 | 두괄식 평서문 + `### Non-goals` |
-| 문맥과 결정 요인 | 항상 | 무엇이 불편·위험·불명확한가 + 대안의 **공통 축** |
-| 대안 | 항상 | 서로 배타적인 선택지 `ALT-*`. 하나에 `(채택)` |
-| 결과 | 항상 | 얻는 것과 **감수하기로 한 제약** |
-| 확인과 재검토 | `accepted` 필수 | `confirms` 가 가리키는 것 + `RV-*` + 링크 |
+| Decision | Always | A direct declarative decision and `### Non-goals` |
+| Context and forces | Always | The problem or risk and the **shared axes** used to compare alternatives |
+| Alternatives | Always | Mutually exclusive `ALT-*` choices, exactly one marked `(chosen)` |
+| Consequences | Always | Benefits and **constraints consciously accepted** |
+| Review and revisit | Required when `accepted` | What `confirms` points to, `RV-*` conditions, and links |
 
-해당 없는 절은 «없음» 이라고 쓰지 말고 절째 지운다. 다만 위 다섯은 지울 수 없다 — 검사기가 본다.
-절 제목의 「및」과 「과」는 같은 것으로 본다(`문맥 및 결정 요인` = `문맥과 결정 요인`).
+Delete an optional section instead of writing “none,” but never remove these five. The checker treats “and” variants in localized section titles as equivalent.
 
-**하나의 ADR 에는 하나의 결정만 담는다.** 독립적으로 뒤집힐 수 있는 선택이 딸려 오면 별도 ADR 로
-나눈다. 채택안을 설명하는 데 필요한 명칭 변경 정도는 결정 절에 한 줄로 포함한다.
+Keep one decision per ADR. Split choices that can be reversed independently. A small naming change needed to explain the chosen option may remain in the Decision section.
 
-**결과 절에 감수하는 제약이 하나도 없으면 검사기가 반려한다.** 대가 없는 결정은 결정이 아니라
-사후 정당화다. 같은 이유로 기각한 대안의 장점도 정직하게 적는다.
+The checker rejects a Consequences section with no accepted constraint. A decision without a cost is post-hoc justification. Describe the strengths of rejected alternatives honestly for the same reason.
 
-### 대안은 두 모양으로 쓴다
+### Two valid alternative formats
 
 ```markdown
-### ALT-001 — 관리자가 모집가를 설정한다
-### ALT-002 — 정산자산과 좌수를 1:1 로 고정한다 (채택)
+### ALT-001 — Let an administrator configure the issue price
+### ALT-002 — Fix settlement assets and shares at 1:1 (chosen)
 ```
 
 ```markdown
-| 평가 축 | 관리자 설정 | 1:1 고정 (채택) | 정산 함수에 비율 전달 |
+| Evaluation axis | Administrator setting | Fixed 1:1 (chosen) | Pass a ratio to settlement |
 |---|---|---|---|
-| 오류의 영구성 | 입력 오류가 영구 반영 | 설정값이 없어 오류 없음 | 호출값 오류 가능 |
+| Persistence of errors | Input errors persist | No configuration error | Call-site errors remain possible |
 ```
 
-**대안이 셋 이상이거나 축이 셋 이상이면 표가 낫다** — 빈 칸이 곧 «평가하지 않은 축» 이라 축
-누락이 눈에 보이고, 그것이 대안마다 다른 잣대를 쓰는 것을 막는 가장 싼 장치다. 표를 쓰면
-대안별 상세 절은 두지 않고 **채택 근거**만 두세 줄 덧붙인다.
+Prefer a table when there are at least three alternatives or three axes. Empty cells reveal unexamined axes and discourage judging alternatives by different standards. With a table, omit per-alternative detail sections and add only two or three lines explaining why the chosen option won.
 
-기계가 필요한 것은 «대안이 몇이고 어느 것이 채택인가» 뿐이고 그건 표에서도 읽힌다 — 검사기는
-헤딩이 있으면 헤딩을, 없으면 표의 머리 행을 읽는다(첫 칸은 축 이름이라 세지 않는다). **헤딩이
-하나라도 있으면 헤딩이 정본이다** — 둘을 섞으면 개수가 두 번 세어진다.
+The checker only needs the alternative count and chosen option. It reads headings when any exist; otherwise it reads the table header and ignores the first, axis-name cell. Do not mix formats, because headings become authoritative and the alternatives appear twice.
 
-### 프런트매터가 없는 옛 문서
+### Legacy documents without frontmatter
 
-이 계약 이전에 쓰인 ADR 은 프런트매터가 없다. 검사기는 그것을 **이름과 번호만 보고 통과시키고**
-노트로 알린다 — 낡았다는 이유로 거절하면 이관이 끝날 때까지 그 레포는 검사기를 못 쓰고, 그러면
-아무도 이관하지 않는다. 이 하네스가 무버전 산출물을 v1 으로 읽는 것과 같은 이유다.
+The checker allows pre-contract ADRs based on filename and number and emits a note. Rejecting all legacy files would prevent adoption until migration was complete. This follows the same compatibility rule that reads unversioned artifact sets as v1.
 
-다만 옛 문서인 동안 그 결정은 **승인 가드가 지키지 않고**(상태를 못 읽는다) **산출물 세트가 핀해도
-상태를 못 본다**. 그래서 옮기는 순서는 프런트매터가 먼저다.
+Until frontmatter is added, however, the approval guard cannot protect the decision and pinned artifact sets cannot verify its status. Add frontmatter first when migrating.
 
-## ID 접두
+## ID prefixes
 
-| 접두 | 뜻 | 정의되는 곳 |
+| Prefix | Meaning | Defined in |
 |---|---|---|
-| `ALT-*` | 대안 | adr §대안 |
-| `ASM-*` | 전제 | adr §문맥과 결정 요인 (intent 의 가정과 같은 뜻) |
-| `RV-*` | 재검토 조건 | adr §확인과 재검토 |
+| `ALT-*` | Alternative | Alternatives |
+| `ASM-*` | Assumption | Context and forces; same meaning as an intent assumption |
+| `RV-*` | Revisit condition | Review and revisit |
 
-`ASM-*` 을 적었으면 그 전제가 무너지는 것을 `RV-*` 로 짝지어 적는다. 전제만 있고 재검토 조건이 없는
-ADR 은 전제가 틀렸을 때 아무도 깨우지 않는다.
+Pair every `ASM-*` with an `RV-*` that detects when the assumption becomes false. Write `RV-*` as a condition with a truth value, not a calendar reminder; “review in six months” is not a condition.
 
-`RV-*` 는 시한이 아니라 **참·거짓이 판정되는 조건**으로 쓴다. «6개월 뒤 재검토» 는 조건이 아니다.
+## Status and immutability
 
-## 상태와 불변
-
-**산출물 상태값을 그대로 쓴다.** ADR 업계 관행의 `proposed` 를 쓰지 않는 이유는 하나다 —
-`guard-approval.sh` 와 검사기가 아는 값이어야 승인 가드가 이 문서에도 걸린다. 모르는 값을 쓰면
-가드가 «본문 변경» 으로만 읽어 상태 전이를 못 본다.
+Use the standard artifact statuses rather than ADR conventions such as `proposed`, because `guard-approval.sh` and the checker must recognize a status to enforce transitions.
 
 ```text
 draft → in_review ──┬─→ accepted ──┬─→ deprecated
-                    │              └─→ superseded (superseded_by 필수)
+                    │              └─→ superseded (`superseded_by` required)
                     └─→ rejected
 ```
 
-- `draft` · `in_review` — 검토 중. 본문을 자유롭게 고친다. 코드가 이 결정을 전제해서는 안 된다.
-- `accepted` — 효력 발생. **본문을 고쳐 결론을 바꾸지 않는다.** 오탈자와 링크 정정만 허용한다.
-  결론이 바뀌면 새 ADR 을 쓰고 이 문서를 `superseded` 로 옮긴다.
-- `deprecated` — 더 이상 적용되지 않으나 대체 결정은 없다. 결정이 딸린 기능이 사라진 자리다.
-  역사로 남긴다. `accepted → deprecated` 는 승인 다이얼로그를 탄다 — 효력을 끄는 것도 결정이다.
-- `superseded` — 후속 ADR 이 대체했다. `superseded_by` 가 그 ID 다.
-- `rejected` — 검토 끝에 채택하지 않았다. 번호는 물고 남는다. 같은 논의가 다시 열리면 이 문서가
-  «전에 왜 안 했나» 의 답이다.
+- `draft`, `in_review`: editable and not yet safe for code to depend on.
+- `accepted`: effective. Do not change its conclusion in place; only fix typos and links. A changed conclusion requires a new ADR and moves this one to `superseded`.
+- `deprecated`: no longer applicable and has no replacement, usually because its feature was removed. Keep it as history. The `accepted → deprecated` transition requires approval because it removes an effective constraint.
+- `superseded`: replaced by the ADR named in `superseded_by`.
+- `rejected`: reviewed but not adopted. Keep its number and reasoning so a reopened discussion can see why it was declined.
 
-승인된 문서의 본문 편집은 `guard-approval.sh` 가 막는다. ADR 은 그 규칙의 예외가 아니다 —
-**불변성이 이 모음을 믿을 수 있게 만드는 유일한 근거다.**
+`guard-approval.sh` blocks substantive edits to accepted ADRs. Their immutability is what makes the collection trustworthy.
 
-## 핀 — 산출물 세트가 결정을 가리키는 법
+## Pinning decisions from an artifact set
 
-intent·spec·plan 의 프런트매터에 적는다. `spec_version` 이 상위 문서를 커밋 SHA 로 고정하는 것과 같다.
+List decisions in the intent, spec, and plan frontmatter, just as `spec_version` pins an upstream document to a commit SHA.
 
 ```yaml
 decisions: ["ADR-005", "acme/docs#ADR-007@a1b2c3d"]
 ```
 
-- 같은 레포면 ID 만. 다른 레포면 `<owner>/<repo>#ADR-NNN@<sha>`.
-- 되돌리기 어려운 결정을 만나면 **산출물 세트에서 새로 정하지 않는다.** ADR 을 찾아 핀하고, 없으면 ADR 이
-  먼저다. 다이어그램·위키·회의록을 정본으로 세우면 검사기가 그 결정을 못 본다.
-- 검사기는 핀한 ADR 의 실재와 상태를 본다. `superseded`·`deprecated`·`rejected` 인 ADR 을 인용한
-  채로 검사되는 산출물 세트는 오류다.
+- Use only the ID for a same-repository ADR; use `<owner>/<repo>#ADR-NNN@<sha>` across repositories.
+- When a change encounters a hard-to-reverse choice, do not decide it inside the artifact set. Pin an existing ADR or create the ADR first. A diagram, wiki, or meeting note cannot serve as the checked source of truth.
+- The checker verifies each pinned ADR's existence and status. Referencing a `superseded`, `deprecated`, or `rejected` ADR is an error.
 
-## 프로필 이음매
+## Profile seam
 
 ```yaml
-adr_dir: "docs/adr"              # 없으면 이 레포엔 ADR 이 없다
-adr_repo: "acme/docs"    # 선택 — 결정이 다른 레포에 살 때
-adr_index: "docs/adr/index.md"   # 기본 <adr_dir>/index.md
+adr_dir: "docs/adr"              # Omit when this repository has no ADRs
+adr_repo: "acme/docs"            # Optional; decisions live in another repository
+adr_index: "docs/adr/index.md"   # Default: <adr_dir>/index.md
 ```
 
-## 에이전트 주입
+## Agent injection
 
-`task-brief.mjs` 는 작업의 `files` 와 ADR 의 `scope` 가 겹치면 그 ADR 의 **결정 · Non-goals ·
-기각한 대안 제목**을 writer 프롬프트에 싣는다. 전문은 링크로만 준다.
+When a task's `files` overlap an ADR's `scope`, `task-brief.mjs` injects the ADR's **decision, Non-goals, and rejected-alternative titles** into the writer prompt and supplies only a link to the full text.
 
-이 주입이 ADR 이 구현에 닿는 유일한 경로다. 결정을 못 받은 에이전트는 그 자리에서 기본값을
-구현하고, 이미 닫힌 논쟁을 다시 연다. `scope` 를 비워 둔 ADR 은 그래서 장식이다.
+This injection is how an ADR reaches implementation. Without it, an agent can apply a default that contradicts the decision or reopen a settled debate. An ADR with an empty `scope` is therefore only decoration.
