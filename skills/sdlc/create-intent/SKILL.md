@@ -12,7 +12,7 @@ description: '변경의 목적·목표·범위를 intent.md로 작성한다. 구
 
 ## 절차
 
-시작·검사·승인은 `<sdlc_runtime>/conventions.md`의 「스킬 공통 절차」를 따른다.
+시작·검사·승인은 `<sdlc_runtime>/conventions.md`의 「Shared skill procedure」를 따른다.
 
 1. 입력이 finding 경로면 해당 문서를 읽고 `from_finding`에 상대 경로를 적는다.
    intent를 만든 뒤 finding의 `routed_to`를 `intent:<상대 경로>`, 상태를 `accepted`로 바꾼다.

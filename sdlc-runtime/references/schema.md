@@ -25,7 +25,7 @@ v6이 **수용 기준의 레포 배정**과 **상류 락**을 들인다. 단일 
   본다. 락이 있으면 `intent_version`·`spec_version`의 대조 상대가 로컬 커밋에서 **락의 상류
   커밋**으로 바뀐다.
 - 프로필 키 `repo`·`upstream_repo`·`spec_consumers`. 자세한 것은 `profile.md`와 `conventions.md`의
-  «변경이 여러 레포에 걸치면».
+  «Changes spanning multiple repositories».
 - 배정 검사(`spec_consumers`를 둔 상류에서 미배정 Must를 막는 규칙)도 **v6 이상 spec에만** 건다.
   프로필만 올려도 이전 산출물 세트는 빨개지지 않는다 — 상류 레포에 v5 산출물 세트를 그대로 두어도 통과한다.
 

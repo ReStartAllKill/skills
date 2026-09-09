@@ -4,65 +4,44 @@
 
 ### Added
 
-- **The PR body and the progress reports follow a language too, and not the same one.** A PR body
-  is read by reviewers and stays with the repository, so it follows the profile's `lang`: the
-  template moves to `assets/<lang>/` and `pr-body-lint.sh` selects its word lists from that key.
-  A progress report is printed into the conversation and committed nowhere, so it follows the
-  conversation's language instead — the same axis ADR-001 draws between what a repository owns and
-  what a reader does. English gets its own rules rather than a translation: no register check,
-  because Korean speech levels have no English counterpart, and the script's header says which
-  checks are per-language so an empty one reads as «does not exist» rather than «was skipped».
+- **English artifact support.** `lang: en` selects English templates and the English prose bundle
+  for intents, specs, plans, findings, ADRs, and pull request bodies. English progress-report
+  templates are also available.
+- **Bilingual contract keywords.** Checkers accept the English and Korean forms of all contract
+  keywords regardless of `lang`, including fields, tier markers, task results, band adjustments,
+  and the plan and ADR section titles that are parsed as text.
+- **`/create-pr`.** The new skill creates a pull request from the current branch with `gh`. When a
+  branch changes an artifact set, the body cites the approved intent and spec instead of deriving
+  their rationale from the diff. Repository-specific PR settings live in the profile.
 
-- **English templates, and the rule that says which one to use.** Every artifact template moves to
-  `assets/<lang>/`, `en` versions sit beside the Korean ones, and the shared skill procedure now
-  states that artifacts are written in the profile's `lang` and never in the conversation's
-  language. Section titles are not part of the contract, so a missing section in one language
-  would fail nothing and simply never be written by anyone using it — a smoke test holds the two
-  sets to the same shape. The last contract literal, the band adjustment a dismissed finding
-  declares, gained its English form; that is fourteen, not thirteen.
+### Changed
 
-- **English artifacts are supported.** `lang: en` selects `sdlc-runtime/locales/en.mjs`, with its
-  own vagueness, wordiness and self-reference lists and its own budgets. The word lists now take
-  regular expressions as well as substrings, because English needs word boundaries — without them
-  `most` fires inside `almost`. The English budgets are the Korean ones × 2.2, derived from nine
-  matching sections of this repository's parallel READMEs (mean 2.16, median 2.21, range
-  1.90–2.49); the bundle records the derivation, what is weak about it and what would replace it.
-  A first artifact pair checks out at 2.25 and 1.97. Skills and reference documents stay Korean —
-  the model reads those, not the user.
+- **Artifact language is repository-owned.** The profile's `lang` selects artifact templates,
+  prose rules, and pull request body rules. Progress reports follow the conversation language
+  because they are not committed to the repository.
+- **Prose rules are locale bundles.** Word lists, character budgets, and sentence-ending rules now
+  live in `sdlc-runtime/locales/ko.mjs` and `en.mjs`. English word lists support regular expressions
+  so checks can use word boundaries. An unsupported `lang` stops the linter with
+  `lang-unsupported` instead of producing a false pass.
+- **Artifact templates are organized by language.** Korean and English variants live under each
+  skill's `assets/ko/` and `assets/en/` directories, and smoke tests require both sets to have the
+  same structure.
+- **Execution evidence is concise and durable.** Implementation stores evidence in a verification
+  log and records only facts established by that log instead of preserving the full transcript.
+- **Terminology uses “artifact set.”** User-facing documentation and skill instructions replace
+  the former “artifact chain” name.
+- **Documentation is bilingual.** The root README and artifact conventions now have matching
+  English and Korean versions. `sdlc-runtime/conventions.md` is the English canonical path, with
+  its Korean counterpart at `sdlc-runtime/conventions.ko.md`.
 
-- **The style rules are a bundle, chosen by `lang`.** The word lists, the character budgets and
-  the sentence-ending rule move out of `lint-prose.mjs` into `sdlc-runtime/locales/ko.mjs`, and a
-  new `lang` profile key selects which bundle measures a repository's artifacts. `lang` is a
-  repository setting, not a person's: the chain is a committed contract, and CI has no
-  conversation to read a language from. A `lang` with no bundle stops the linter rather than
-  passing — a check that cannot run must not look like a check that found nothing. Only `ko`
-  ships; its numbers are measurements of this repository's 42 Korean artifacts and must not be
-  copied into another language's bundle.
+### Fixed
 
-- **The contract accepts English keywords.** Every word a checker actually reads now lives in
-  `sdlc-runtime/tools/keywords.mjs` — thirteen of them — and each takes an English form beside the
-  Korean one: `basis:` for `근거:`, `[required · all tiers]` for `[필수 · 모든 티어]`, `N/A —` for
-  `해당 없음 —`, and so on down to the task results and the ADR section titles. Both forms always
-  pass, independently of any language setting: gating the contract on a language would make a
-  Korean repository's documents unreadable in an English one and would break a chain that is
-  halfway between the two. Section titles were never part of the contract and still are not —
-  structure is decided by ID prefix and tier marker, so `## Outcomes` checks the same as
-  `## 목표 결과`.
-
-- **`/create-pr`** — writes the pull request title and body for the current branch and opens it
-  with `gh`. Where a branch touched a chain, the body's Intent and Problem are taken from the
-  approved `intent.md` and `spec.md` and cite their IDs, rather than being re-derived from the
-  diff; the linter refuses a body that touched a chain and cites nothing. Repository-specific
-  facts — workspace layout, the split rule, the paths worth a second look — live in the profile
-  as `pr_base` · `pr_workspace_dirs` · `pr_split_dir` · `pr_split_hint` · `pr_review_focus`, so
-  the skill itself carries no repository's facts.
-- **The skill owns its tools.** `scripts/` (context, body lint, body sync), `references/`
-  (body rules, stacked PRs), `assets/pr-body-template.md` and `evals/tools.test.mjs` all sit
-  under `skills/sdlc/create-pr/`, not in the runtime — nothing but this skill calls them, and
-  the runtime is where hooks and CI look. The body linter enforces what a
-  script can see — noise, style, hard wraps, a missing Risks section on a path the profile marked
-  risky — and says `lang-unsupported` on a non-Korean body so an unchecked body is never mistaken
-  for a clean one.
+- **The approval guard is installed and executed correctly.** Repository initialization also
+  commits the generated profile, or reports when it cannot do so.
+- **English prose checks count sentence endings correctly.** Periods inside identifiers and other
+  non-terminal positions no longer inflate the sentence count.
+- **Migration documentation names the accepted flag.** The schema migration instructions now use
+  the option recognized by `migrate-schema.mjs`.
 
 ## 0.1.1 — 2026-09-08
 

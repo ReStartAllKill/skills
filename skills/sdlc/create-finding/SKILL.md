@@ -13,7 +13,7 @@ description: '장애·이상 지표·스캔 결과를 finding.md에 기록하고
 
 ## 절차
 
-시작과 검사는 `<sdlc_runtime>/conventions.md`의 「스킬 공통 절차」를 따른다.
+시작과 검사는 `<sdlc_runtime>/conventions.md`의 「Shared skill procedure」를 따른다.
 finding의 `accepted`는 사람의 승인이 아니라 경로 확정을 뜻한다.
 
 1. 신호 출처와 `trigger`, 허용 범위를 확인한다. `band_breach`면 `<sdlc_runtime>/references/bands.md`와

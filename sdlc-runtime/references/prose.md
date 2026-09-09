@@ -51,7 +51,8 @@ standard는 ×1.6, full은 ×2.4다. 한도를 넘으면 경고, 두 배를 넘�
 `translationese`·`meta`·`vague` 목록도 그 언어의 표현이다. 둘 다 `sdlc-runtime/locales/<lang>.mjs`
 한 곳에 있다.
 
-계약 낱말(`근거:`·`basis:` 등)은 이 키를 안 탄다 — `conventions.md` §계약 낱말은 두 언어를 다 받는다.
+계약 낱말(`근거:`·`basis:` 등)은 이 키를 안 탄다 — 두 언어를 늘 다 받는다
+(`conventions.md` §Contract keywords accept both languages).
 
 `lang` 과 다른 언어로 쓴 문서에는 두 가지가 동시에 일어난다. 문체 검사 셋이 **하나도 안 걸리고**,
 길이만 남의 언어 기준으로 재진다. 앞의 침묵이 더 위험하다 — 안 걸리는 것은 통과와 구분되지 않는다.

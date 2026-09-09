@@ -11,7 +11,7 @@ description: '되돌리기 어려운 아키텍처 결정을 ADR로 기록한다.
 
 ## 준비
 
-시작·검사·승인은 `<sdlc_runtime>/conventions.md`의 「스킬 공통 절차」를 따른다.
+시작·검사·승인은 `<sdlc_runtime>/conventions.md`의 「Shared skill procedure」를 따른다.
 섹션·ID·상태·버전 참조 형식은 `<sdlc_runtime>/references/adr.md`를 읽는다.
 
 프로필의 `adr_dir`에 작성한다. `adr_repo`가 있으면 해당 저장소에서 관리한다.

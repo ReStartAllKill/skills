@@ -12,7 +12,7 @@ description: '승인된 intent.md를 바탕으로 동작 명세와 수용 기준
 
 ## 절차
 
-시작·검사·승인은 `<sdlc_runtime>/conventions.md`의 「스킬 공통 절차」를 따른다.
+시작·검사·승인은 `<sdlc_runtime>/conventions.md`의 「Shared skill procedure」를 따른다.
 
 1. intent 전체를 읽고 위험 등급(`tier`)을 상속한다. 위험이 커졌다면 intent부터 수정한다.
 2. 기존 명세와 구현 관례를 조사한다. 필요한 독립 조사는 프로필의 `prior_work_agent`와

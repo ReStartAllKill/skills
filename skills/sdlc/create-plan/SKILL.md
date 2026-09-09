@@ -11,7 +11,7 @@ description: '승인된 spec.md를 바탕으로 구현 계획과 작업 목록�
 
 ## 절차
 
-시작·검사·승인은 `<sdlc_runtime>/conventions.md`의 「스킬 공통 절차」를 따른다.
+시작·검사·승인은 `<sdlc_runtime>/conventions.md`의 「Shared skill procedure」를 따른다.
 작업 형식과 완료 증거는 `<sdlc_runtime>/references/tasks.md`를 읽는다.
 
 0. 프로필에 `upstream_repo`가 있으면 먼저 승인된 상류 문서를 끌어온다 —

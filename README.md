@@ -2,28 +2,29 @@
 
 *[한국어](README.ko.md)*
 
-A Claude Code plugin that guides changes through a traceable SDLC artifact workflow — intent,
-spec, plan, implementation — and validates traceability **as you write**, not afterward.
+A Claude Code plugin that guides each change through a traceable SDLC artifact workflow —
+intent, spec, plan, implementation — and validates traceability **as you write**, not afterward.
 
-> **Artifacts are written in Korean or English**, set once per repository with
-> `lang` in the profile. It is a repository setting, not a person's: the artifact set is a
-> committed contract everyone in the repository reads, and CI has no conversation to
-> take a language from. Write to Claude in whichever language you like — the
+> **Artifacts are written in Korean or English**, selected per repository by `lang` in the
+> profile. This is a repository setting, not a personal preference: an artifact set is a
+> committed contract that everyone in the repository reads, and CI has no conversation
+> from which to infer a language. Write to Claude in whichever language you prefer; the
 > artifacts follow `lang`.
 >
-> The contract keywords take both forms always, whatever `lang` says: `basis:` and
-> `근거:`, `[required · all tiers]` and `[필수 · 모든 티어]`. Section titles were
-> never part of the contract — structure is decided by ID prefix and tier marker.
+> Contract keywords are always accepted in both languages, regardless of `lang`: `basis:`
+> and `근거:`, `[required · all tiers]` and `[필수 · 모든 티어]`. Section titles are not
+> part of the contract; structure is determined by ID prefixes and tier markers.
 >
-> `lang` selects the style bundle: the word lists and the character budgets in
-> `sdlc-runtime/locales/`. Korean's numbers are measured on this repository's 42
-> Korean artifacts. **English's are derived**, at 2.2× the Korean ones, from nine
-> matching sections of this README pair — the file says so, and says what would
-> replace it. The skills and reference documents are still Korean; they are read by
-> the model, not by you.
+> `lang` selects the style bundle: the word lists and character budgets in
+> `sdlc-runtime/locales/`. The Korean budgets were measured from 42 Korean artifacts in
+> this repository. **The English budgets are derived** by multiplying them by 2.2, based
+> on nine matching sections in this README pair. The locale file records both that basis
+> and what evidence should eventually replace it. The skills and reference documents
+> remain in Korean; they are read by the model, not by you.
 >
-> A document written in a language `lang` does not name still gets `lang-unsupported`,
-> because a style check that matches nothing is indistinguishable from one that passed.
+> A document written in a language other than the one selected by `lang` still receives
+> `lang-unsupported`, because a style check that matches nothing is indistinguishable
+> from one that passed.
 
 ## The problem
 
@@ -32,8 +33,8 @@ answer: *why was this done*, and *does it still match what was agreed*. Notes
 written after the fact drift from the code, and nobody notices until the drift has
 already cost something.
 
-This plugin keeps those answers next to the change, and makes them fail loudly
-when they stop matching.
+This plugin keeps those answers next to the change and fails loudly when the
+artifacts stop matching.
 
 ## Artifact workflow
 
@@ -53,20 +54,21 @@ For each change, this workflow produces an **artifact set** containing `finding.
 |---|---|---|
 | `finding.md` | What was observed, and where does it go | How to fix it |
 | `intent.md` | Why is this needed, what must change | APIs, frameworks, data models, file order |
-| `spec.md` | What observable behaviour satisfies it | Internal classes, functions, libraries |
+| `spec.md` | What observable behaviour satisfies it | Internal classes, functions, libraries, implementation order |
 | `plan.md` | How to build and ship it safely | Restating the problem and the requirements |
 | `ADR-NNN.md` | Why it was decided this way, what was rejected | Current implementation detail |
 
-Each document is a contract for **this change only** — except the ADR, which
-records a constraint the system carries from then on. Code is the source of truth
-for *what*; it is never the source of truth for *why*.
+Each document is a contract for **this change only** — except the ADR, which records a
+constraint the system carries from then on. Code is the source of truth for *what*, but
+not for *why*: a diff cannot preserve the rejected alternatives or the assumptions behind
+a decision.
 
 ## The IDs you will see in documents
 
 Artifacts are written as **identified items**, not paragraphs. A downstream document
 cites an upstream one by ID under `근거:` (*basis*), and the checker follows those links —
 so the prefix says which document an item belongs to and what kind of thing it is.
-`sdlc-runtime/conventions.md` §ID 접두 is authoritative.
+`sdlc-runtime/conventions.md` §ID prefixes is authoritative.
 
 ### Document IDs
 
@@ -115,7 +117,7 @@ one thing.
 
 ## What actually enforces it
 
-Three things run, at three different times. They are deliberately different.
+Three mechanisms run at different stages, each with a distinct purpose.
 
 | | When | What it does |
 |---|---|---|
@@ -143,9 +145,10 @@ Then, **in each repository** where you want the artifact workflow:
 That writes a profile (`.claude/spec-profile.yml`), installs the two hooks, and
 offers a line to add to CI.
 
-Installing the plugin alone turns nothing on. In a repository with no profile the
-hooks **exit silently** — not a gate failing open, but the plugin refusing to touch
-repositories that never asked for it. `intent.md` and `plan.md` are common filenames.
+Installing the plugin alone enables nothing. In a repository without a profile, the
+hooks **exit silently**. This is not a gate failing open; it is the plugin declining to
+touch a repository that never opted in. After all, `intent.md` and `plan.md` are common
+filenames.
 
 ## Skills
 
@@ -161,13 +164,14 @@ repositories that never asked for it. `intent.md` and `plan.md` are common filen
 | `/implement-spec` | Executing the plan, level by level |
 | `/iterate-spec` | Feedback or review changed what the spec should say |
 | `/create-adr` | A decision is hard to reverse and must outlive the change |
-| `/create-pr` | Turning the branch into a pull request — the body cites approved artifacts rather than re-deriving them |
+| `/create-pr` | Turning the branch into a pull request — the body draws its rationale from approved artifacts rather than the diff |
 
 `/implement-spec` runs same-level tasks in parallel, each in its own git worktree,
 and runs full verification at every join point.
 
-`/create-pr` is the one skill that writes outward. It only runs when you ask for it:
-`/implement-spec` commits and merges, but never pushes or opens a pull request.
+`/create-pr` is the only skill that changes remote state, and it runs only when you ask
+for it. `/implement-spec` commits and merges locally, but never pushes or opens a pull
+request.
 
 ### `eval` — measuring the agents
 
@@ -175,9 +179,9 @@ and runs full verification at every join point.
 |---|---|
 | `/agent-eval` | You changed a harness and want to know whether it actually got better |
 
-It seeds defects at three difficulty tiers, runs two configurations *k* times each
-in parallel, grades against a rubric, and reports the comparison — answering "did
-that prompt change help?" with a number rather than an impression.
+It seeds defects at three difficulty tiers, runs two configurations *k* times each in
+parallel, grades the results against a rubric, and reports the comparison. It answers
+"Did that prompt change help?" with a number rather than an impression.
 
 ## Repository layout
 
@@ -214,8 +218,8 @@ the only way to put the checker in a merge gate.
 
 ## Development
 
-Do not install a copy. One symlink makes Claude Code load this repository in place,
-so an edit is live and `git pull` is the update.
+For development, use a symlink instead of installing a copy. Claude Code then loads this
+repository in place, so edits take effect immediately and `git pull` performs the update.
 
 ```bash
 ./scripts/link-plugin.sh     # ~/.claude/skills/restart-harness -> this repo
@@ -242,8 +246,8 @@ calls. See the [evaluation guide](sdlc-runtime/evals/README.md) for coverage.
 
 The `skills` array in `plugin.json` is authoritative. Auto-discovery only goes one
 level into `skills/`, and this repository groups skills by category — so only what
-the array lists is loaded. A skill you create but forget to declare has no symptom
-other than not appearing. `scripts/list-skills.sh` is what catches that.
+the array lists is loaded. If you create a skill but forget to declare it, the only
+symptom is that it does not appear. `scripts/list-skills.sh` catches this omission.
 
 ## Releasing
 

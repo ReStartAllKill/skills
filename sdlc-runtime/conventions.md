@@ -1,364 +1,403 @@
-# 산출물 규약
+# Artifact Conventions
 
-SDLC 산출물의 공통 계약이다. 스킬은 작성 절차를, 이 문서는 유효한 결과를 정한다.
-`check-artifacts.mjs`가 기계적 판정의 정본이다. 둘이 갈리면 함께 고친다.
+*[한국어](conventions.ko.md)*
 
-조건부 세부사항은 필요한 때만 읽는다.
+This is the shared contract for SDLC artifacts. Skills define the authoring process; this
+document defines valid output. `check-artifacts.mjs` is authoritative for machine validation.
+If the two diverge, update both.
 
-- 레포 초기화·프로필: `references/profile.md`
-- 문체·글자 한도: `references/prose.md`
-- 작업 형식과 완료 증거: `references/tasks.md`
-- 스키마 버전과 상위 핀: `references/schema.md`
-- 탐지 밴드: `references/bands.md`
-- 훅·CI·벤더 런타임: `sdlc-runtime/references/runtime.md`
-- 자율 실행 정책: `references/autonomy.md`
+Read conditional details only when needed.
 
-## 권위와 수명
+- Repository initialization and profiles: `references/profile.md`
+- Prose style and character budgets: `references/prose.md`
+- Task format and completion evidence: `references/tasks.md`
+- Schema versions and upstream pins: `references/schema.md`
+- Detection bands: `references/bands.md`
+- Hooks, CI, and vendored runtime: `sdlc-runtime/references/runtime.md`
+- Autonomous execution policy: `references/autonomy.md`
 
-각 산출물 세트는 시스템 전체의 진실이 아니라 **이번 변경의 계약**이다. 구현 중 승인된 외부 동작과
-기존 코드가 다르면 스펙을 임의로 버리지 않는다. 코드에서 확인한 제약과 스펙이 충돌하면
-보고하고 `/iterate-spec`으로 스펙을 갱신한 뒤 계속한다.
+## Authority and lifetime
 
-머지 뒤에는 코드와 PR 본문이 현재 구현의 정본이다. 문서 경로를 코드나 주석에서 참조하지 않는다.
+Each artifact set is a contract for **this change**, not the truth of the whole system. If
+approved external behavior conflicts with existing code during implementation, do not discard
+the spec. Report any conflict between a code constraint and the spec, update the spec with
+`/iterate-spec`, and then continue.
 
-**예외는 ADR 하나다.** 코드는 «무엇» 의 정본이지 «왜» 의 정본이 아니다 — 기각한 대안과 그 판단이
-서 있던 전제는 코드 diff 가 전달하지 못한다. 되돌리기 어려운 결정은 이번 변경의 계약이 아니라
-시스템이 지고 있는 제약이므로, 산출물 세트 안이 아니라 `<adr_dir>` 의 ADR 에 적고 해당 세트는 `decisions:` 로
-가리키기만 한다. 규약은 `references/adr.md`.
+After merge, the code and PR body are authoritative for the current implementation. Do not
+reference artifact paths from code or comments.
 
-## 산출물 체계에 들어오는 두 길
+**The ADR is the sole exception.** Code is authoritative for *what*, not *why*: a diff cannot
+preserve rejected alternatives or the assumptions behind a decision. A hard-to-reverse decision
+is a constraint the system continues to carry, not merely a contract for one change. Record it
+in an ADR under `<adr_dir>`, outside the artifact set, and refer to it from the set through
+`decisions:`. See `references/adr.md`.
 
-산출물 체계에 들어오는 경로는 둘이다. 문서·검사기·CI는 같고, 다른 것은 셋뿐이다.
+## Two paths into the artifact workflow
 
-| | 사람 주도 | 자율 |
+There are two entry paths. They use the same documents, checker, and CI; only these three things
+differ.
+
+| | Human-led | Autonomous |
 |---|---|---|
-| 입구 | 사람의 의도 | 기계의 신호 — Sentry · 밴드 breach · 스캔 |
-| 승인 | 문서마다 사람이 | 미리 선언한 정책이 (`policy:<경로>`) |
-| 멈추는 곳 | 칸마다 | `advance_to` 까지 밀고 `in_review` |
+| Entry | Human intent | Machine signal — Sentry, band breach, scan |
+| Approval | A person approves each document | A predeclared policy approves (`policy:<path>`) |
+| Stop point | Each stage | Advance through `advance_to`, then stop at `in_review` |
 
-**자율 루트에서도 승인은 사라지지 않고 자리를 옮긴다.** 사람은 각 문서가 아니라 «이런
-부류는 여기까지 자율로 해도 된다»를 미리 승인하고, 그 정책이 커밋된 산출물이 된다.
-세부는 `references/autonomy.md`.
+**Approval does not disappear on the autonomous path; it moves.** Instead of approving every
+document, a person approves in advance that a class of work may proceed autonomously to a given
+point. That policy becomes a committed artifact. See `references/autonomy.md`.
 
-## 산출물 체계와 문서 경계
+## Artifact workflow and document boundaries
 
 ```text
 finding ──┬─ patch
           ├─ dismiss
           └─ intent → spec → plan → code/test/PR/deploy → finding
-                ↑      승인    승인      ↑
-                └────── adr ─────────────┘
-                   변경보다 오래 산다
+                ↑      approve  approve   ↑
+                └────── ADR ──────────────┘
+                   outlives the change
 ```
 
-| 파일 | 핵심 질문 | 담지 않는 것 |
+| File | Core question | Must not contain |
 |---|---|---|
-| `finding.md` | 무엇이 관측됐고 어디로 보내나 | 고치는 방법 |
-| `intent.md` | 왜 필요한가, 무엇이 달라져야 하나 | API·프레임워크·데이터 모델·파일·순서 |
-| `spec.md` | 어떤 관찰 가능한 동작이면 충족되나 | 내부 클래스·함수·파일·라이브러리·순서 |
-| `plan.md` | 어떻게 만들고 안전하게 전달하나 | 문제 배경과 요구사항 원문의 복제 |
-| `ADR-NNN-*.md` | 왜 그렇게 정했고 무엇을 기각했나 | 현재 구현 상세 · 담당자 · 일정 |
+| `finding.md` | What was observed, and where does it go? | How to fix it |
+| `intent.md` | Why is this needed, and what must change? | APIs, frameworks, data models, files, ordering |
+| `spec.md` | What observable behavior satisfies it? | Internal classes, functions, files, libraries, ordering |
+| `plan.md` | How will it be built and delivered safely? | Copies of the problem statement or requirements |
+| `ADR-NNN-*.md` | Why was this chosen, and what was rejected? | Current implementation details, owners, schedules |
 
-`plan.md`는 설계와 작업을 함께 가진다. 둘 다 «어떻게»이고 `/implement-spec`도 이 파일 하나를
-실행 입력으로 쓴다.
+`plan.md` contains both design and tasks. Both answer *how*, and `/implement-spec` uses this one
+file as its execution input.
 
-### 누가 쓰고 누가 완성하나
+### Authors and completion owners
 
-| 문서 | 시작 | 완성 | `approved_by` |
+| Document | Starts | Completes | `approved_by` |
 |---|---|---|---|
-| `intent.md` | 발안자(기획·제품) | 발안자 | 제품 책임자 |
-| `spec.md` | 발안자 — 시나리오 SCN · FR의 동작 문장 · 우선순위 | 엔지니어 — AC의 정밀도 · EDGE · NFR · 인터페이스 계약 · 데이터 (`/iterate-spec`) | 엔지니어 리드. PR 리뷰는 발안자와 엔지니어 둘 다 |
-| `plan.md` | 엔지니어 | 엔지니어 | 엔지니어 리드 |
+| `intent.md` | Initiator (planning/product) | Initiator | Product owner |
+| `spec.md` | Initiator — SCN scenarios, FR behavior statements, priority | Engineer — precise ACs, EDGE, NFR, interface contracts, data (`/iterate-spec`) | Engineering lead. Both initiator and engineer review the PR |
+| `plan.md` | Engineer | Engineer | Engineering lead |
 
-spec은 발안자 혼자 끝낼 문서가 아니다. 발안자가 끝까지 쓰면 수용 기준이 «정상 동작한다» 수준에
-머물고, 엔지니어가 처음부터 쓰면 사용자 흐름과 우선순위가 빠진다. 발안자는 모르는 항목을 지어내지
-않고 `SQ-*`로 남기며 `in_review`로 넘긴다.
+A spec is not completed by the initiator alone. If the initiator writes all of it, acceptance
+criteria tend to stop at “works correctly.” If the engineer writes it from the beginning, user
+flows and priorities tend to disappear. The initiator must not invent unknown details; leave them
+as `SQ-*` items and hand the document over in `in_review`.
 
-### 변경이 여러 레포에 걸치면
+### Changes spanning multiple repositories
 
-**spec은 시스템 하나에 한 벌이다. 레포로 쪼개지 않는다.** 하나의 기능이 컨트랙트·백엔드·프런트를
-함께 지나는 것이 정상인 조직에서 레포마다 spec을 쓰면 같은 요구사항을 세 번 적게 되고, 세 벌이
-갈리는 순간 어느 것이 동작의 정본인지 아무도 답하지 못한다.
+**Write one spec per system; do not split it by repository.** When one feature normally crosses
+contracts, backend, and frontend, repository-specific specs repeat the same requirement. Once
+those copies diverge, nobody can say which one is authoritative for behavior.
 
-대신 **수용 기준마다 어느 레포가 만드는지를 적는다.**
+Instead, **state which repository implements each acceptance criterion.**
 
 ```markdown
-### FR-003 — 상각 처리는 발행 잔량을 줄인다 `Must`
+### FR-003 — Write-down reduces the outstanding issuance `Must`
 
-근거: OUT-002
+basis: OUT-002
 scope: rwa-contracts, rwa-backend
 
-수용 기준:
+Acceptance criteria:
 
-- [ ] AC-007 — 상각이 확정되면 온체인 잔량이 감소한다 `scope: rwa-contracts`
-- [ ] AC-008 — 상각 확정 후 조회 API 가 줄어든 잔량을 반환한다 `scope: rwa-backend`
+- [ ] AC-007 — Once the write-down is confirmed, the on-chain balance decreases `scope: rwa-contracts`
+- [ ] AC-008 — After confirmation, the query API returns the reduced balance `scope: rwa-backend`
 ```
 
-`scope`는 요구사항의 `scope:` 줄이나 수용 기준 줄 끝의 `` `scope: <repo>` ``로 적는다. 수용 기준에
-없으면 상위 요구사항의 것을 물려받는다. 레포 이름은 마지막 경로 요소로 비교하므로 `acme/api`와
-`api`는 같은 레포다. **v6부터의 문법이다** — 옛 스키마로 선언한 문서에 쓰면 검사기가 막는다.
+Write `scope` either on the requirement's `scope:` line or as `` `scope: <repo>` `` at the end of
+an acceptance-criterion line. A criterion without one inherits its parent requirement's scope.
+Repository names are compared by their final path component, so `acme/api` and `api` name the same
+repository. **This syntax is available from v6.** The checker rejects it in documents declaring
+an older schema.
 
-#### 누가 무엇을 가지나
+#### Ownership by repository
 
-| 자리 | 가지는 것 | 프로필 |
+| Location | Owns | Profile |
 |---|---|---|
-| 문서 레포(상류) | `intent.md` · `spec.md` · ADR 정본 | `spec_consumers` |
-| 코드 레포(소비) | `plan.md` · 벤더한 사본 · `upstream.lock.json` · 실행 증거 | `upstream_repo` · `repo` |
+| Document repository (upstream) | Authoritative `intent.md`, `spec.md`, and ADRs | `spec_consumers` |
+| Code repository (consumer) | `plan.md`, vendored copies, `upstream.lock.json`, execution evidence | `upstream_repo`, `repo` |
 
-plan과 실행은 언제나 코드 레포가 진다. `/implement-spec`이 워크트리를 만들고 verify를 돌리는 곳이
-코드 트리이고, plan이 코드 diff와 다른 PR에서 리뷰되면 계획 검토가 하는 일이 없다. 상류 문서
-레포에 plan이 있으면 검사기가 경고한다.
+The code repository always owns the plan and execution. It is where `/implement-spec` creates
+worktrees and runs verification. If the plan is reviewed in a different PR from the code diff,
+plan review has no effect. The checker warns when an upstream document repository contains a plan.
 
-#### 사본은 도구가 만들고 해시가 지킨다
+#### Tools create copies; hashes protect them
 
-사람이 복사하면 어디서 왔는지가 기억에만 남는다. `pull-spec.mjs`가 승인된 상류 문서를 끌어오고
-`upstream.lock.json`에 **상류 경로·상류 커밋·내용 해시**를 찍는다. package-lock과 같은 자리다.
+Manual copying leaves provenance only in someone's memory. `pull-spec.mjs` retrieves approved
+upstream documents and records the **upstream path, upstream commit, and content hash** in
+`upstream.lock.json`. It serves the same role as a package lockfile.
 
 ```sh
-node <sdlc_runtime>/tools/pull-spec.mjs <산출물 디렉터리> [--from <상류 체크아웃>]
+node <sdlc_runtime>/tools/pull-spec.mjs <artifact-directory> [--from <upstream-checkout>]
 ```
 
-- 사본과 락은 **함께 커밋한다.** 락이 없으면 검사기는 그냥 단일 레포로 읽는다.
-- 사본은 **읽기 전용**이다. 고치면 해시가 어긋나 게이트가 막는다. 고칠 일은 상류에서
-  `/iterate-spec`으로 하고 다시 끌어온다.
-- `plan`의 `spec_version`은 **락이 가리키는 상류 커밋**이다. 사본이 코드 레포에 들어온 커밋이
-  아니다 — 그것은 «언제 받았나»일 뿐이라 상류가 바뀐 것을 잡지 못한다.
-- 승인은 상류에서 일어난다. `accepted`가 아닌 문서는 끌어오지 않는다(`--force`로 초안을 먼저 볼
-  수는 있고, 승인 뒤 반드시 다시 끌어온다).
+- Commit the copy and lock **together**. Without a lock, the checker treats the set as belonging
+  to a single repository.
+- The copy is **read-only**. Editing it changes the hash and the gate blocks it. Make changes
+  upstream with `/iterate-spec`, then pull it again.
+- A plan's `spec_version` is **the upstream commit referenced by the lock**, not the commit that
+  brought the copy into the code repository. The latter says only when it was received and cannot
+  detect later upstream changes.
+- Approval happens upstream. Documents not in `accepted` are not pulled. `--force` may be used to
+  inspect a draft early, but it must be pulled again after approval.
 
-#### 커버리지는 두 층위로 나뉜다
+#### Coverage has two layers
 
-| 어디서 | 무엇을 보나 |
+| Location | Checks |
 |---|---|
-| 코드 레포 | `scope`가 이 레포인 Must 수용 기준을 이 레포의 plan이 전부 덮나 (규칙 5-5) |
-| 문서 레포 | 모든 Must 수용 기준이 **어느 소비 레포엔가** 배정됐나 |
+| Code repository | Does its plan cover every Must acceptance criterion whose `scope` is this repository? (rule 5-5) |
+| Document repository | Is every Must acceptance criterion assigned to **at least one consumer repository**? |
 
-한 레포가 자기 몫을 통째로 빠뜨리는 것은 그 레포에서는 보이지 않는다. 상류에서만 보인다.
-반대로 남의 몫을 덮는 작업도 막는다 — 두 레포가 같은 기준을 만들면 합류에서 갈린다.
+A repository cannot detect locally that its entire share is missing; only upstream can. Work that
+covers another repository's share is also rejected, because duplicate implementations can diverge
+when integrated.
 
-#### 상류가 앞서갔는지는 체크아웃이 있을 때 본다
+#### Check upstream freshness when a checkout is available
 
-검사기는 네트워크를 쓰지 않는다. 상류 체크아웃이 옆에 있으면(`SDLC_UPSTREAM`, 또는 형제
-디렉터리에 origin이 그 레포인 체크아웃) 락의 커밋과 상류의 현재 커밋을 대조해 **사본이 낡았다는
-것을 오류로 세운다.** 없으면 사본의 무결성만 보고 그 사실을 노트로 남긴다. CI는 상류를
-체크아웃하고 `SDLC_UPSTREAM`으로 가리킨다.
+The checker does not use the network. If an upstream checkout is available through `SDLC_UPSTREAM`
+or a sibling checkout whose origin matches that repository, it compares the locked commit with the
+current upstream commit and reports a stale copy as **an error**. Otherwise it checks only copy
+integrity and records that limitation as a note. CI checks out upstream and points to it with
+`SDLC_UPSTREAM`.
 
-#### ADR은 한 곳에 모은다
+#### Keep ADRs in one place
 
-결정은 대개 레포 경계를 넘는다. 레포마다 `adr_dir`을 두면 «이 결정 어디 쓰지»를 매번 판단해야
-하고 번호 공간이 갈린다. 문서 레포 하나를 `adr_repo`로 두고 코드 레포는 `<repo>#ADR-NNN@<sha>`
-핀만 건다. 한 레포 안에서 닫히는 결정만 있는 조직이면 그때 `adr_dir`을 쓴다.
+Decisions often cross repository boundaries. Giving every repository an `adr_dir` forces repeated
+decisions about where an ADR belongs and splits the numbering space. Designate one document
+repository as `adr_repo`; code repositories keep only `<repo>#ADR-NNN@<sha>` pins. Organizations
+whose decisions never cross a repository boundary may use `adr_dir` instead.
 
-## 산출물 문법
+## Artifact syntax
 
-항목은 표의 행이 아니라 헤딩으로 쓴다. 사람이 읽는 글이 그대로 기계가 읽는 구조여야 한다.
-진짜 2차원 자료인 대안 비교·상태 전이·지표 비교에는 표를 써도 된다.
+Write items as headings, not table rows. Human-readable prose must also be the machine-readable
+structure. Tables are acceptable for genuinely two-dimensional material such as alternative,
+state-transition, and metric comparisons.
 
 ```markdown
-### FR-001 — 기본 검색은 보관 문서를 뺀다 `Must`
+### FR-001 — Default search excludes archived documents `Must`
 
-근거: OUT-001
+basis: OUT-001
 
-검색 질의는 별도 지시가 없으면 보관된 문서를 결과에서 제외한다.
+Unless instructed otherwise, search queries exclude archived documents from results.
 
-수용 기준:
+Acceptance criteria:
 
-- [ ] AC-001 — 보관 문서와 일반 문서가 함께 걸리면 일반 문서만 반환된다
+- [ ] AC-001 — When archived and active documents both match, the system returns only active documents
 ```
 
-- 정의: `### <ID> — <제목>`, 우선순위는 `` `Must|Should|Could|Won't` ``.
-- 필드: `근거:`, `확인:`, `covers:`처럼 `키: 값` 한 줄.
-- 수용 기준: `- [ ] AC-001 — <언제>이면 시스템은 <무엇을> 한다`.
-- 작업: 체크박스와 들여쓴 다섯 필드.
-- 코드펜스 안의 예시는 정의로 세지 않는다.
-- 템플릿 주석과 placeholder는 산출물에서 지운다.
+- Definition: `### <ID> — <title>`; priority is `` `Must|Should|Could|Won't` ``.
+- Field: one `key: value` line, such as `basis:`, `verification:`, or `covers:`.
+- Acceptance criterion: `- [ ] AC-001 — <when>, the system <does what>`.
+- Task: a checkbox followed by five indented fields.
+- Examples inside code fences do not count as definitions.
+- Remove template comments and placeholders from artifacts.
 
-### 계약 낱말은 두 언어를 다 받는다
+### Contract keywords accept both languages
 
-검사기가 «읽는» 글자는 `tools/keywords.mjs` 에 다 있다. **영어가 정본이고 한국어는 별칭이며, 둘 다
-언제나 통한다** — `근거:` 와 `basis:`, `[필수 · 모든 티어]` 와 `[required · all tiers]`,
-`해당 없음 —` 와 `N/A —` 가 같은 것으로 읽힌다.
+Every string recognized by the checker is in `tools/keywords.mjs`. **English is authoritative,
+Korean is an alias, and both are always accepted.** `basis:` and `근거:`,
+`[required · all tiers]` and `[필수 · 모든 티어]`, and `N/A —` and `해당 없음 —` are read as
+equivalent pairs.
 
-프로필의 언어 설정과 무관하다. 계약을 언어로 가르면 한국어 레포의 문서를 영어 레포에서 못 읽고,
-옮기는 동안 언어가 섞인 산출물 세트가 통째로 막힌다.
+This is independent of the profile language. Language-specific contracts would prevent a Korean
+repository's documents from being read by an English repository and block a whole artifact set
+while it contains mixed languages during migration.
 
-**절 제목은 계약이 아니다.** 구조는 ID 접두와 티어 표식으로 판정하므로 `## 목표 결과` 든
-`## Outcomes` 든 검사 결과가 같다. 제목을 문자열로 보는 곳은 plan 의 §실행 기록·§릴리스 영향과
-ADR 의 다섯 절뿐이고, 그 자리도 별칭을 받는다.
+**Section titles are not part of the contract.** Structure is determined by ID prefixes and tier
+markers, so `## 목표 결과` and `## Outcomes` produce the same result. Only the plan's execution
+record and release-impact sections and the ADR's five sections are matched by title; those also
+accept aliases.
 
-## 티어
+## Tiers
 
-`intent.md`에서 한 번 정하고 `spec.md`와 `plan.md`가 상속한다.
+Set the tier once in `intent.md`; `spec.md` and `plan.md` inherit it.
 
-| 티어 | 기준 |
+| Tier | Criteria |
 |---|---|
-| `light` | 외부 계약과 데이터가 안 바뀌고 revert나 플래그로 즉시 되돌릴 수 있다 |
-| `standard` | 기본값. 사용자가 보는 동작·성능·오류 처리가 달라진다 |
-| `full` | 마이그레이션·공개 계약·개인정보·규제·보안 경계·대규모 출시가 있다 |
+| `light` | No external contract or data changes, and an immediate rollback is available through revert or a flag |
+| `standard` | Default. User-visible behavior, performance, or error handling changes |
+| `full` | Includes migrations, public contracts, personal data, regulatory concerns, security boundaries, or a large rollout |
 
-의심스러우면 위 티어를 고른다. plan에서 더 큰 위험을 발견하면 intent부터 티어를 올린다.
-`finding.md`는 산출물 체계의 입력이라 티어를 상속하지 않고 자체 영향을 기준으로 정한다.
+When uncertain, choose the higher tier. If the plan reveals greater risk, raise the tier starting
+from the intent. `finding.md` is an input to the workflow, so it does not inherit a tier; assign
+one from the finding's own impact.
 
-| 섹션 표기 | 뜻 |
+| Section marker | Meaning |
 |---|---|
-| `[필수 · 모든 티어]` | 언제나 필수 |
-| `[필수 · standard+]` | standard·full에서 필수 |
-| `[필수 · full]` | full에서 필수 |
-| `[조건부 · <조건>]` | 조건이 성립할 때 필수. 아니면 `해당 없음 — <근거>` |
-| `[선택]` | 도움이 될 때만 사용 |
+| `[required · all tiers]` | Always required |
+| `[required · standard+]` | Required for standard and full |
+| `[required · full]` | Required for full |
+| `[conditional · <condition>]` | Required when the condition holds; otherwise write `N/A — <basis>` |
+| `[optional]` | Use only when helpful |
 
-## ID 접두
+## ID prefixes
 
-| 접두 | 뜻 | 정의되는 곳 |
+| Prefix | Meaning | Defined in |
 |---|---|---|
-| `OUT-*` | 목표 결과 | intent §목표 결과 |
-| `CON-*` | 제약·불변 조건 | intent §제약 |
-| `ASM-*` | 가정 | intent §가정 |
-| `Q-*` | 열린 질문 | intent §열린 질문 |
-| `SCN-*` | 시나리오 | spec §시나리오 |
-| `FR-*` | 기능 요구사항 | spec §요구사항 |
-| `NFR-*` | 비기능 요구사항 | spec §비기능 요구사항 |
-| `AC-*` | 수용 기준 | FR/NFR 밑 체크박스 |
-| `EDGE-*` | 오류·경계 조건 | spec §오류와 경계 |
-| `SQ-*` · `SD-*` | 열린 질문·명세 결정 | spec §열린 질문과 결정 |
-| `TD-*` | 설계 결정 | plan §설계 결정 |
-| `WP-*` | 작업 | plan §작업 |
-| `RISK-*` | 위험 | plan §위험 |
-| `PQ-*` | 열린 질문 | plan §열린 질문 |
-| `EV-*` | 관측 | finding §관측 |
-| `HYP-*` | 가설 | finding §진단 |
-| `FQ-*` | 열린 질문 | finding §열린 질문 |
-| `ALT-*` | 대안 | adr §대안 |
-| `RV-*` | 재검토 조건 | adr §확인과 재검토 |
-| `ASM-*` | 전제 | adr §문맥과 결정 요인 (intent 의 가정과 같은 뜻) |
+| `OUT-*` | Intended outcome | intent §Outcomes |
+| `CON-*` | Constraint or invariant | intent §Constraints |
+| `ASM-*` | Assumption | intent §Assumptions |
+| `Q-*` | Open question | intent §Open questions |
+| `SCN-*` | Scenario | spec §Scenarios |
+| `FR-*` | Functional requirement | spec §Requirements |
+| `NFR-*` | Non-functional requirement | spec §Non-functional requirements |
+| `AC-*` | Acceptance criterion | Checkbox under an FR/NFR |
+| `EDGE-*` | Error or boundary condition | spec §Errors and boundaries |
+| `SQ-*`, `SD-*` | Open question, specification decision | spec §Open questions and decisions |
+| `TD-*` | Design decision | plan §Design decisions |
+| `WP-*` | Work package | plan §Work |
+| `RISK-*` | Risk | plan §Risks |
+| `PQ-*` | Open question | plan §Open questions |
+| `EV-*` | Observation | finding §Observations |
+| `HYP-*` | Hypothesis | finding §Diagnosis |
+| `FQ-*` | Open question | finding §Open questions |
+| `ALT-*` | Alternative | ADR §Alternatives |
+| `RV-*` | Revisit condition | ADR §Confirmation and revisit |
+| `ASM-*` | Assumption | ADR §Context and decision drivers (same meaning as an intent assumption) |
 
-질문 접두는 답할 책임을 나타낸다. `Q`는 제품 책임자, `SQ`는 명세 검토자, `PQ`는 구현
-책임자, `FQ`는 서비스 소유자·온콜이 닫는다. ID는 삭제돼도 재사용하지 않는다.
+Question prefixes identify who must answer. `Q` belongs to the product owner, `SQ` to the spec
+reviewer, `PQ` to the implementation owner, and `FQ` to the service owner or on-call engineer.
+Never reuse an ID, even after deleting its item.
 
-## 상태와 승인
+## States and approval
 
 ```text
 draft → in_review → accepted ─────────→ superseded
                   ↘ rejected
 
-plan만: accepted → in_progress → completed
+plan only: accepted → in_progress → completed
 ```
 
-finding의 상태는 뜻이 다르다.
+Finding states have different meanings.
 
-| 값 | intent·spec·plan | finding |
+| Value | intent, spec, plan | finding |
 |---|---|---|
-| `in_review` | 검토 중 | 분류 중 |
-| `accepted` | 다음 단계 입력으로 승인 | 경로 확정 (`routed_to` 필수) |
-| `rejected` | 진행하지 않기로 함 | 기각 (`routed_to: dismiss:…` 필수) |
+| `in_review` | Under review | Being triaged |
+| `accepted` | Approved as input to the next stage | Route decided (`routed_to` required) |
+| `rejected` | Will not proceed | Dismissed (`routed_to: dismiss:…` required) |
 
-- 하위는 상위를 앞서갈 수 없다.
-- 막는 질문이 Open이면 `accepted`로 갈 수 없다.
-- 의미를 바꾸면 해당 문서와 영향받은 하위를 `in_review`로 되돌린다. 오탈자는 상태를 유지한다.
-- `superseded`면 `superseded_by`가 필수다.
+- A downstream document cannot advance beyond its upstream document.
+- A document with a blocking Open question cannot become `accepted`.
+- When meaning changes, return that document and affected downstream documents to `in_review`.
+  Typographical fixes preserve state.
+- `superseded_by` is required when the state is `superseded`.
 
-### 승인은 사람이 한다
+### A person approves
 
-적용: 스키마 v3 이상
+Applies to schema v3 and later.
 
-- intent·spec·plan이 `accepted` 이상이면 `approved_by`가 필수이고 `generated_by`와 같을 수 없다.
-- 승인 전이는 **승인 다이얼로그**로 간다. 에이전트가 승인 편집을 시도하면 가드가 `ask`를 내고
-  사람이 그 자리에서 승인하거나 거절한다 — 판단은 사람이 하되 명령을 손으로 칠 필요는 없다.
-  대화형에서는 권한 모드와 무관하게 다이얼로그가 뜨고, 비대화형 `-p`에서는 거부된다.
-- 자율 실행의 승인은 문서 단위가 아니라 **정책 단위**다. `approved_by: policy:<경로 id>`를
-  쓰고 가드는 자기 경로 id만 허용한다. 검사기가 그 경로의 실재·만료·`max_tier`·`advance_to`를
-  대조한다. 사람 세션에서는 `policy:`를 쓸 수 없다.
-- 위임을 넘는 문서는 승인 대상이 아니다. `approved_by`를 비우고 `in_review`로 두고 무엇이
-  넘었는지 적는다 — **거기서 멈춘 기록이 위임이 실제로 작동했다는 증거다.**
-- finding의 `accepted`는 승인 대신 경로 확정이므로 `approved_by`를 요구하지 않는다.
+- An intent, spec, or plan at `accepted` or later requires `approved_by`, which must differ from
+  `generated_by`.
+- An approval transition goes through the **approval dialog**. When an agent attempts the approval
+  edit, the guard returns `ask`, allowing a person to approve or reject it there. The judgment is
+  human, but the person need not type the command. Interactive sessions show the dialog regardless
+  of permission mode; non-interactive `-p` sessions reject the transition.
+- Autonomous execution is approved **per policy**, not per document. Write
+  `approved_by: policy:<route-id>`; the guard permits only its own route ID. The checker validates
+  the route's existence, expiry, `max_tier`, and `advance_to`. Human sessions cannot use `policy:`.
+- A document beyond the delegation is not eligible for approval. Leave `approved_by` empty, keep
+  it in `in_review`, and record what exceeded the delegation. **Stopping there is evidence that
+  the delegation actually worked.**
+- A finding's `accepted` means its route was decided, not that it was approved, so it does not
+  require `approved_by`.
 
-가드의 모드별 동작은 `sdlc-runtime/references/runtime.md`, 정책의 모양과 검사는 `references/autonomy.md`에 있다.
+See `sdlc-runtime/references/runtime.md` for guard behavior by mode and
+`references/autonomy.md` for policy structure and validation.
 
-## 공통 불변 조건
+## Shared invariants
 
-- 문서 하나에는 변경 의도 하나만 담는다.
-- 필수 섹션은 비우지 않는다. 없으면 `해당 없음 — <근거>`라고 쓴다.
-- 상위 내용을 복사하지 않고 ID와 상대 링크로 참조한다.
-- 확인한 사실·결정·가정을 구분한다.
-- 구현 방법은 intent·spec에 넣지 않고, 요구사항 원문은 plan에 복제하지 않는다.
-- 코드가 답하는 것은 조사하고, 사람의 판단이 필요한 것만 묻는다.
-- 열린 질문은 결정 ID로 닫는다.
-- Agent가 썼으면 `generated_by`·`generated_from`·`skills_in_force`를 채운다.
+- One document contains one change intent.
+- Do not leave required sections empty. When none applies, write `N/A — <basis>`.
+- Refer to upstream content by ID and relative link instead of copying it.
+- Distinguish verified facts, decisions, and assumptions.
+- Keep implementation methods out of intent and spec; do not copy requirement text into the plan.
+- Investigate questions the code can answer. Ask only for judgments a person must make.
+- Close open questions with decision IDs.
+- When an agent writes the document, populate `generated_by`, `generated_from`, and
+  `skills_in_force`.
 
-## 경로와 검증
+## Paths and validation
 
 ```text
 <spec_dir>/
 ├── findings/FND-YYYY-NNN-<slug>/finding.md
 └── YYYY-MM-DD-<slug>/
-    ├── intent.md              # 상류가 있으면 벤더한 사본
-    ├── spec.md                # 상류가 있으면 벤더한 사본
-    ├── upstream.lock.json     # 상류가 있을 때만. pull-spec.mjs 가 만든다
+    ├── intent.md              # vendored copy when upstream exists
+    ├── spec.md                # vendored copy when upstream exists
+    ├── upstream.lock.json     # only with upstream; created by pull-spec.mjs
     └── plan.md
 ```
 
-발견과 의도는 다른 폴더에 살고, 둘을 잇는 상대 경로는 각각 **자기 문서가 있는 폴더**
-기준이다. 기준점이 서로 다르므로 한쪽 모양을 다른 쪽에 그대로 쓰면 깨진다.
+Findings and intents live in different directories. Each relative path connecting them is resolved
+from the directory containing **its own document**. Because the base directories differ, copying
+one side's path shape to the other breaks the link.
 
-| 키 | 어느 문서에 | 무엇 기준 | 예 |
+| Key | Document | Relative to | Example |
 |---|---|---|---|
-| `routed_to` | `finding.md` | 그 발견 폴더 | `intent:../../2026-09-04-search/intent.md` |
-| `from_finding` | `intent.md` | 그 의도 폴더 | `../findings/FND-2026-007-ci/finding.md` |
+| `routed_to` | `finding.md` | Finding directory | `intent:../../2026-09-04-search/intent.md` |
+| `from_finding` | `intent.md` | Intent directory | `../findings/FND-2026-007-ci/finding.md` |
 
-검사기는 둘이 **같은 파일**을 가리키는지까지 본다. 경로가 성립하는 것만으로는 부족하다 —
-발견 하나가 여러 의도의 출처로 조용히 재사용되는 것이 그렇게 통과한다.
+The checker verifies that both paths point to **the same file**. Merely resolving successfully is
+not enough; otherwise one finding could silently be reused as the source of several intents.
 
 ```sh
-node <sdlc_runtime>/tools/check-artifacts.mjs <산출물 폴더> [--strict]
-node <sdlc_runtime>/tools/lint-prose.mjs      <산출물 폴더> [--strict]
+node <sdlc_runtime>/tools/check-artifacts.mjs <artifact-directory> [--strict]
+node <sdlc_runtime>/tools/lint-prose.mjs      <artifact-directory> [--strict]
 ```
 
-검사기는 구조와 추적성, 린터는 문체를 본다. 오류는 고치고 다시 실행한다. 경고는 판단해서
-남기는 이유를 보고한다. 로컬 훅이 조용히 꺼질 수 있으므로 직접 실행을 생략하지 않는다.
+The checker validates structure and traceability; the linter validates prose. Fix errors and run
+the tools again. Evaluate warnings and report why any remain. Local hooks may silently be disabled,
+so do not skip these direct invocations.
 
-## 스킬 공통 절차
+## Shared skill procedure
 
-`/create-finding` · `/create-intent` · `/create-spec` · `/create-plan` · `/create-adr`는 아래 공통
-절차를 따른다.
-스킬 본문은 그 칸에 고유한 것만 적는다.
+`/create-finding`, `/create-intent`, `/create-spec`, `/create-plan`, and `/create-adr` follow the
+procedure below. Each skill body contains only what is unique to that stage.
 
-시작:
+Start:
 
-1. `.claude/spec-profile.yml`을 읽는다. 없으면 `/sdlc-init`을 먼저 돌린다 — 프로필을 지어내지
-   않는다. 버전 없는 프로필은 v1, `sdlc_runtime`이 없으면 `references/runtime.md`의 발견
-   순서를 따른다.
+1. Read `.claude/spec-profile.yml`. If it is missing, run `/sdlc-init` first; do not invent a
+   profile. A profile without a version is v1. When `sdlc_runtime` is absent, follow the discovery
+   order in `references/runtime.md`.
 
-   **산출물 언어는 프로필의 `lang`이다**(없으면 `ko`). **대화 언어를 따르지 않는다** — 산출물 세트는
-   커밋되는 계약이라 한 레포에 한 언어여야 하고, CI에는 언어를 물어볼 대화가 없다. 대화 언어와
-   다르면 산출물은 `lang`으로 쓰고 그 사실을 한 줄로 알린다. 템플릿도 그 언어판을 쓴다.
-   계약 낱말(`근거:`·`basis:`)은 `lang`과 무관하게 양쪽 다 통한다 — 위 「계약 낱말은 두 언어를
-   다 받는다」.
-2. 이 문서와 `references/prose.md`를 읽는다. 다른 참조는 스킬이 지정할 때만 읽는다. 런타임
-   도구의 소스는 읽지 않는다 — 검사기가 하는 말은 실행하면 나온다.
-3. `schema_version`은 산출물 세트의 첫 문서(finding·intent)면 프로필의 `sdlc_version`, 하위(spec·plan)면
-   상위 문서의 값이다. 상위가 프로필과 달라도 산출물 세트의 버전을 유지하고 차이를 보고한다. v1이면
-   그 줄을 뺀다. 런타임이 그 버전을 읽는지는 검사기가 문서를 읽을 때 본다 — 따로 확인하지 않는다.
-4. 템플릿의 주석과 placeholder는 지우고 헤딩 층은 그대로 둔다. `generated_by` · `generated_from` ·
-   `skills_in_force`를 채운다.
+   **The artifact language is the profile's `lang`** (default: `ko`). **Do not follow the
+   conversation language.** An artifact set is a committed contract and must use one language per
+   repository; CI has no conversation from which to infer one. If the conversation uses another
+   language, write the artifact in `lang` and state that fact in one line. Use the template for
+   that language. Contract keywords such as `basis:` and `근거:` work in both languages regardless
+   of `lang`; see “Contract keywords accept both languages” above.
+2. Read this document and `references/prose.md`. Read another reference only when the skill directs
+   you to it. Do not read runtime tool source; run the checker to learn what it reports.
+3. For the first document in a set (finding or intent), take `schema_version` from the profile's
+   `sdlc_version`. For a downstream document (spec or plan), inherit it from the upstream document.
+   Preserve the set's version even when it differs from the profile, and report the difference.
+   Omit the line for v1. The checker determines whether the runtime supports the version while
+   reading the document; do not check separately.
+4. Remove template comments and placeholders while preserving heading levels. Populate
+   `generated_by`, `generated_from`, and `skills_in_force`.
 
-끝:
+Finish:
 
-5. 두 도구를 직접 돌리고 결과를 그대로 보고한다(«경로와 검증»). 훅이 조용히 꺼질 수 있으므로
-   생략하지 않는다.
-6. 통과하면 `status: in_review`로 저장하고 요약(경로 · 티어 · 검사 결과 · 남은 질문)을 보고한 뒤
-   **바로 승인 편집을 시도한다** — `status: accepted`와 `approved_by`를 한 편집에 쓴다. 가드가
-   그 편집을 승인 다이얼로그로 보내므로 **그 다이얼로그가 곧 승인 질문이다.** 대화로 먼저
-   «승인할까요»를 묻지 않는다 — 사람이 두 번 답하게 된다. 거절되면 그대로 두고 이유를 묻는다.
-   막는 질문이 열려 있으면 승인 편집을 시도하지 않는다.
-   - `approved_by`는 프로필의 `owner`, 없으면 `git config user.name`이다. 사람 이름이어야 하고
-     `generated_by`와 달라야 한다. 둘 다 없으면 승인 편집 전에 한 번 묻는다.
-   - finding은 승인이 아니라 경로 확정이다 — 승인 편집 대신 `routed_to`와 `status`를 채운다.
-   - ADR은 산출물 세트에 속하지 않아 `schema_version`이 언제나 5고 상위 문서가 없다. 나머지는 같다.
-7. 승인된 뒤 두 도구를 다시 돌리고 커밋한다.
+5. Run both tools directly and report their results unchanged (see “Paths and validation”). Do not
+   omit this step, because hooks can silently be disabled.
+6. After validation passes, save with `status: in_review`, report a summary (path, tier, validation
+   result, and remaining questions), and **immediately attempt the approval edit**. Write
+   `status: accepted` and `approved_by` in one edit. The guard sends that edit to an approval
+   dialog, so **the dialog itself is the approval question**. Do not first ask “Approve?” in the
+   conversation; that makes the person answer twice. If rejected, leave the document unchanged and
+   ask why. Do not attempt approval while a blocking question remains open.
+   - Set `approved_by` to the profile's `owner`, or to `git config user.name` when no owner exists.
+     It must be a person's name and differ from `generated_by`. If neither value exists, ask once
+     before attempting approval.
+   - A finding is routed rather than approved. Populate `routed_to` and `status` instead of making
+     an approval edit.
+   - An ADR is outside the artifact set, always has `schema_version: 5`, and has no upstream
+     document. The rest of the procedure is the same.
+7. After approval, run both tools again and commit.
 
-자율 실행이면(프롬프트가 «자율 실행이다»로 시작하고 `SDLC_AUTONOMY_ROUTE`가 있다):
+For autonomous execution (the prompt begins with “자율 실행이다” and `SDLC_AUTONOMY_ROUTE` exists):
 
-- 아무것도 묻지 않는다. 물을 것은 열린 질문으로 적고 그 문서는 `in_review`로 둔다.
-- 승인 편집의 `approved_by`는 `policy:<경로 id>`다. 위임의 `max_tier`를 넘거나 `advance_to`
-  뒤의 문서는 승인하지 않는다.
-- 커밋과 최종 검사는 디스패처가 한다. 허용된 도구 밖의 것은 시도하지 않고 «못 한 것»으로 적는다.
+- Ask nothing. Record anything that would require asking as an open question and leave that
+  document in `in_review`.
+- Set approval edits to `approved_by: policy:<route-id>`. Do not approve a document beyond the
+  delegation's `max_tier` or after `advance_to`.
+- The dispatcher performs the commit and final validation. Do not attempt tools outside the
+  allowed set; record them as work that could not be done.

@@ -37,6 +37,7 @@ if [[ $mode == check ]]; then
   same=true
   [[ $local_ver == "$global_ver" ]] || same=false
   cmp -s "$runtime_root/conventions.md" "$target/conventions.md" || same=false
+  cmp -s "$runtime_root/conventions.ko.md" "$target/conventions.ko.md" || same=false
   diff -qr "$runtime_root/tools" "$target/tools" >/dev/null 2>&1 || same=false
   diff -qr "$runtime_root/references" "$target/references" >/dev/null 2>&1 || same=false
   if [[ $same == true ]]; then
@@ -65,7 +66,10 @@ rm -rf "$target/references"
 cp -R "$runtime_root/tools" "$target/tools"
 cp -R "$runtime_root/references" "$target/references"
 cp "$runtime_root/VERSION" "$target/VERSION"
+# 규약은 두 언어를 함께 옮긴다. 정본인 영어판 머리에 한국어판 링크가 있어서, 한쪽만 옮기면
+# 벤더 사본에서 그 링크가 죽는다.
 cp "$runtime_root/conventions.md" "$target/conventions.md"
+cp "$runtime_root/conventions.ko.md" "$target/conventions.ko.md"
 chmod +x "$target"/tools/*.sh 2>/dev/null || true
 
 if [[ -n $prev ]]; then
