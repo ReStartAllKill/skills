@@ -1,24 +1,16 @@
-/** 한국어 문체 번들 — `lint-prose.mjs` 와 `adr-check.mjs` 가 «어떤 글이 읽기 좋은가» 를 재는 기준.
- *
- * 계약(`tools/keywords.mjs`)과 다른 것이다. 계약은 기계가 문서를 **읽으려고** 보는 낱말이라 언어를
- * 가르면 안 되고, 여기 있는 것은 사람이 읽을 글을 **재는 자** 라 언어마다 다를 수밖에 없다.
- *
- * 숫자는 전부 실측치다. 이 레포의 한국어 산출물 42장을 재서 나왔고, 다른 언어 번들을 만들 때
- * 이 값을 옮겨 쓰면 안 된다 — 언어마다 같은 뜻을 담는 글자 수가 다르다.
- */
+/** Korean prose rules and length limits based on measured Korean artifacts. */
 
-/** 이 번들이 맡는 언어인지 판정한다. 아니면 문체 검사가 하나도 안 걸리는데, 안 걸리는 것은
- *  통과와 구분되지 않으므로 `lang-unsupported` 로 그 사실을 보이게 한다. */
+/** Detect Korean documents. Report other languages as lang-unsupported. */
 export const script = {
   test: /[가-힣]/g,
   against: /[A-Za-z]/g,
   minRatio: 0.3,
-  /** 짧은 문서는 비율이 흔들려 판정하지 않는다. */
+  /** Skip short documents because their language ratio is unstable. */
   minChars: 200,
   name: '한국어',
 }
 
-/** 수용 기준이 서술문으로 끝나는지. 한국어는 «다» 가 그 자리다. */
+/** Use the Korean declarative ending `다` as a complete-statement heuristic. */
 export const acSentence = /(?:다|다\.)$/
 
 export const vague = ['빠르게', '빠른', '신속', '적절히', '적절한', '적당히', '쉽게', '편하게',
@@ -56,20 +48,19 @@ export const budget = {
   spec: { doc: 2000, section: 800, entity: 400 },
   plan: { doc: 3000, section: 1200, entity: 350 },
   finding: { doc: 2000, section: 600, entity: 250 },
-  /** ADR에는 위험 등급 배수를 적용하지 않는다. */
+  /** Do not apply risk-tier multipliers to ADRs. */
   adr: { doc: 2600, section: 900, entity: 400 },
 }
 
-/** 제목·필드·문장 수의 상한. 전부 한국어 밀도 기준이다. */
+/** Limits for titles, fields, and sentence counts based on Korean text density. */
 export const limits = { sentences: 4, title: 40, field: 200, ac: 100 }
 
-/** ADR 의 결과 절이 «대가» 를 말하는지. 낱말 목록이라 언어에 묶인다. */
+/** Detect whether an ADR consequences section names a cost. */
 export const tradeoff = /감수|대가|비용|포기|제약을 진다|trade-?off|cost|give up|sacrifice/i
-/** 재검토 조건이 기한일 뿐인지. */
+/** Detect revisit conditions that specify only a deadline. */
 export const deadlineOnly = /\d\s*(?:개월|달|주|분기|년|months?|weeks?|quarters?|years?)|다음 분기|next quarter|뒤에 재검토|정기 검토|periodic review/i
 
-/** 런타임이 산출물에 **써 넣는** 낱말. `keywords.mjs` 가 읽는 낱말이라면 이쪽은 쓰는 낱말이다 —
- *  읽을 때는 두 언어를 다 받지만 쓸 때는 하나를 골라야 하고, 그 선택이 곧 프로필의 `lang` 이다. */
+/** Text written to artifacts when profile.lang is ko. */
 export const written = {
   result: { done: '완료', partial: '부분', failed: '실패' },
   divergence: '계획과의 차이',

@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
-# create-pr §1(변경사항 파악)을 한 번에 — 브랜치·커밋·diffstat·영향 영역·분할 신호·사슬·워킹트리.
-#
-# 사용: pr-context.sh [base-branch]   # 기본은 프로필의 pr_base, 없으면 main. 대상 레포 안에서 실행한다.
-#
-# 레포마다 다른 값(워크스페이스 구조·분할 기준·집중해서 볼 경로)은 `.claude/spec-profile.yml` 의
-# pr_* 키에서 읽는다. 키가 없으면 그 신호를 내지 않는다 — 지어내지 않는다.
+# Collect the PR branch, commits, diff summary, and related artifacts.
+# Usage: pr-context.sh [base-branch] (default: profile pr_base or main)
+# Read repository-specific analysis rules from profile pr_* settings.
 set -uo pipefail
 
 . "$(dirname "$0")/pr-lib.sh"
@@ -55,7 +52,7 @@ CHANGED="$(git diff "$BASE"...HEAD --name-only)"
 WS_DIRS="$(conf pr_workspace_dirs)"
 if [[ -n "$WS_DIRS" ]]; then
   WS_RE="^($(printf '%s' "$WS_DIRS" | tr -s ' ' '|'))/"
-  # 접두는 여러 단계일 수 있다(src/features) — 접두 뒤 한 단계까지만 묶는다.
+  # Prefixes may span multiple levels; group through the first level after the prefix.
   AREAS="$(printf '%s\n' "$CHANGED" | grep -E "$WS_RE" | awk -v prefixes="$WS_DIRS" '
     BEGIN { n = split(prefixes, pre, " ") }
     {

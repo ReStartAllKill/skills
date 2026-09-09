@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""여러 케이스·설정의 runs.json 을 하나의 리포트로 합친다.
+"""Combine runs.json files from multiple cases and configurations into one report.
 
   report.py <runs.json...> [--out report.md] [--cases-root ~/.claude/evals/cases/<repo>]
 
-케이스는 `case` 필드로, 설정은 `label` 로 묶는다. 같은 케이스에 라벨이 둘 이상이면
-설정 비교로, 하나뿐이면 단일 측정으로 낸다. 난이도별 검출률은 case.json 의
-`defect_tiers`({"D1": "T2", ...})가 있을 때만 나온다.
+Group cases by `case` and configurations by `label`. Compare configurations when a case has
+multiple labels; otherwise report a single measurement. Detection rates by difficulty require
+`defect_tiers` ({"D1": "T2", ...}) in case.json.
 """
 
 import argparse
@@ -18,7 +18,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from scorecard import WEIGHTS_LEGACY, WEIGHTS_V2, score  # noqa: E402
 
-ADOPT_THRESHOLD = 85  # rubric §3 채택 규칙과 같은 값
+ADOPT_THRESHOLD = 85  # Matches the adoption rule in rubric section 3.
 
 TIER_LABEL = {
     "T1": "T1 기계 검출 (lint·typecheck가 잡는다)",
@@ -28,10 +28,10 @@ TIER_LABEL = {
 
 
 def default_cases_roots(files):
-    """runs.json 경로에서 케이스 루트를 유추한다.
+    """Infer case roots from runs.json paths.
 
-    runs 경로는 ~/agent-evals/runs/<repo>/<case>/<label>-<ts>/runs.json 이므로
-    같은 <repo> 의 케이스는 ~/.claude/evals/cases/<repo>/ 에 있다.
+    Given ~/agent-evals/runs/<repo>/<case>/<label>-<ts>/runs.json, cases for the same
+    repository live under ~/.claude/evals/cases/<repo>/.
     """
     roots = []
     for f in files:
@@ -97,8 +97,7 @@ def main():
         print("[!] case.json 을 못 찾아 난이도별 검출률을 건너뛴다 — --cases-root 를 지정해라", file=sys.stderr)
     lines = ["# 에이전트 평가 리포트", ""]
 
-    # ── 요약: 설정별 총점
-    # 라벨 순서는 인자로 준 순서를 따른다 — 첫 라벨이 비교 기준(BEFORE)이 된다
+    # Use the first label as the comparison baseline (BEFORE).
     labels = []
     for scores in by_case.values():
         for s in scores:
@@ -118,7 +117,7 @@ def main():
         rows.append(avg)
     lines += ["## 총점", "", md_table(head, rows), ""]
 
-    # ── 난이도별 검출률
+    # Detection rate by difficulty.
     tier_rows = []
     for case_id, scores in by_case.items():
         tiers = load_tiers(case_id, roots)
@@ -143,8 +142,7 @@ def main():
         lines += ["## 난이도별 검출률", "",
                   md_table(["케이스", "설정", "난이도", "검출", "비율"], tier_rows), ""]
 
-    # ── 축별 점수
-    # 대조 케이스는 축 구성이 다르다(검출·심각도 축 없음) — 없는 축은 평균에서 뺀다
+    # Exclude dimensions that do not apply to negative controls.
     axis_rows = []
     all_axes = list(weights) + [a for s in (x for v in by_case.values() for x in v)
                                 for a in s["axes"] if a not in weights]
@@ -160,7 +158,7 @@ def main():
     lines += ["## 축별 달성률", "", md_table(["축", *labels], axis_rows),
               "", "_케이스마다 배점이 다를 수 있어(대조 케이스는 오탐 축 60점) 점수 대신 달성률로 낸다._", ""]
 
-    # ── 비용
+    # Cost.
     cost_rows = []
     for key, name, fmt in (("tokens", "토큰", "{:,.0f}"), ("tools", "tool 호출", "{:.1f}"),
                            ("seconds", "소요 시간", "{:.0f}s"), ("cost_usd", "비용(USD)", "${:.2f}")):
@@ -175,7 +173,7 @@ def main():
             cost_rows.append(row)
     lines += ["## 비용 (실행 1회 평균)", "", md_table(["", *labels], cost_rows), ""]
 
-    # ── 약점
+    # Weaknesses.
     weak = []
     for case_id, scores in by_case.items():
         for s in scores:
@@ -187,8 +185,7 @@ def main():
         lines += ["## 만점 미달 축", "",
                   md_table(["케이스", "설정", "축", "점수", "내역"], weak), ""]
 
-    # ── 판정
-    # 즉시 FAIL은 점수보다 먼저 표시한다. 하네스 오류는 입력 검사에서 거부한다.
+    # Report immediate failures before scores. Input validation rejects harness errors.
     trust = []
     for case_id, scores in by_case.items():
         for s in scores:

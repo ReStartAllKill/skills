@@ -13,9 +13,9 @@ trigger: band_breach # band_breach | scheduled_scan | ticket | channel | manual
 band: null # trigger 가 band_breach 면 필수 — .claude/bands.yml 의 밴드 id
 autonomy_tier: diagnose # log | diagnose | propose — 이 발화가 **허용한** 범위
 routed_to: null # accepted 면 필수: "patch:<PR>" | "intent:<경로>" | "dismiss:<사유>"
-                # intent 경로는 **이 파일이 있는 폴더 기준**이다 — intent 쪽 from_finding 은
-                # 그쪽 폴더 기준이라 기준점이 서로 다르다. 둘 다 «자기 문서 폴더 기준».
-                # 예: "intent:../../2026-09-04-search-exclude-archived/intent.md"
+                # Resolve the intent path from this file's directory. The intent's from_finding
+                # resolves from its own directory, so each link uses its document as the base.
+                # Example: "intent:../../2026-09-04-search-exclude-archived/intent.md"
 superseded_by: null
 generated_by: null
 generated_from: null
@@ -24,7 +24,8 @@ skills_in_force: []
 
 # Finding: <제목>
 
-<!-- 나가는 길은 patch · intent · dismiss 셋. 고치는 방법은 여기서 정하지 않는다. §관측(잰 것)과 §진단(짐작)을 섞지 않는다. -->
+<!-- Three ways out: patch, intent, dismiss. How to fix it is not settled here. Keep §Observations
+     (what was measured) apart from §Diagnosis (what is guessed). -->
 
 ## 요약 `[필수 · 모든 티어]`
 
@@ -32,7 +33,7 @@ skills_in_force: []
 
 ## 발화 `[필수 · 모든 티어]`
 
-<!-- 누가 또는 무엇이 시작했나. -->
+<!-- Who or what started this. -->
 
 발화: <band_breach / scheduled_scan / ticket / channel / manual> — <탐지 스크립트·스캔·티켓·스레드>
 밴드: <프런트매터의 band 와 같은 id> — <등록부가 말하는 metric · window · rule>
@@ -41,7 +42,7 @@ skills_in_force: []
 
 ## 관측 `[필수 · 모든 티어]`
 
-<!-- 잰 것만. 재현은 명령이나 질의로. 못 잰 것은 «미측정». -->
+<!-- Only what was measured. Reproduce with a query or a command. What was not measured is «unmeasured». -->
 
 ### EV-001 — <잰 것>
 
@@ -57,7 +58,7 @@ skills_in_force: []
 
 ## 진단 `[필수 · 모든 티어]`
 
-<!-- 모델의 판정. 가설은 EV 를 가리키고 반증 방법을 가진다. -->
+<!-- The model's reading. A hypothesis points at EV ids and carries a way to disprove it. -->
 
 ### HYP-001 — <원인에 대한 판정>
 
@@ -68,13 +69,13 @@ skills_in_force: []
 
 ### 못 본 것
 
-<!-- 기록이 없는 것은 «못 봤다» 다. -->
+<!-- What has no record was not looked at. -->
 
 - <예: 배포 전후 30분의 애플리케이션 로그는 보존 기간이 지나 조회하지 못했다.>
 
 ## 취한 조치 `[필수 · 모든 티어]`
 
-<!-- 실제로 한 것과 하지 않은 것. 후자가 감사에서 더 중요하다. -->
+<!-- What was actually done, and what was not. The second matters more in an audit. -->
 
 - <ISO> <조치> — 허용 근거: 자율 티어 <값> · 결과: <무엇을 알게 됐나>
 
@@ -84,7 +85,7 @@ skills_in_force: []
 
 ## 경로 판정 `[필수 · 모든 티어]`
 
-<!-- 크기로 고른다. 애매하면 intent. 기각이면 밴드 조정 여부를 적는다. -->
+<!-- Choose by size. When unsure, intent. When dismissing, say whether the band moves. -->
 
 경로: <patch / intent / dismiss>
 근거: HYP-001
@@ -92,17 +93,17 @@ skills_in_force: []
 
 기각이면 — 밴드 조정: <무엇을 어떻게 또는 «조정 없음 — <근거>»> · 다시 서면: <그때는 무엇이 달라지나>
 
-<!-- 조정했으면 bands.yml 의 `revised:` 에도 남긴다 — 검사기가 두 방향을 본다. -->
+<!-- If the band moved, record it under `revised:` in bands.yml too — the checker reads both directions. -->
 
 ## 재발 방지 `[필수 · 모든 티어]`
 
-<!-- 그 부류의 eval·테스트·훅·밴드 조정. patch 경로에서도 필요하다. -->
+<!-- An eval case, a test, a hook or a band adjustment for this class. Needed on the patch route too. -->
 
 - 부류: <이 발견이 속한 결함 부류> → <eval 케이스 / 테스트 / 훅 / 밴드 조정> · <경로> · <언제>
 
 ## 열린 질문 `[필수 · 모든 티어]`
 
-<!-- 경로를 못 정하게 하는 질문은 `막힘`. 없으면 `해당 없음 — <근거>`. -->
+<!-- A question that stops the route from being settled is `blocked`. If none, write `N/A — <basis>`. -->
 
 ### FQ-001 — <경로를 가르는 질문>
 

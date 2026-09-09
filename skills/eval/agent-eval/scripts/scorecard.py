@@ -1,22 +1,21 @@
 #!/usr/bin/env python3
-"""채점된 runs.json 들을 원시 결과표·스코어카드·비용표로 집계한다.
+"""Aggregate graded runs.json files into raw results, scorecards, and cost tables.
 
-사용:
+Usage:
   scorecard.py <BEFORE-runs.json> [<AFTER-runs.json> ...]
-  scorecard.py --md <...>            # 마크다운 표로 출력 (PR·문서용)
+  scorecard.py --md <...>            # Emit Markdown tables for PRs and documentation.
 
-배점은 ${CLAUDE_PLUGIN_ROOT}/skills/eval/agent-eval/rubrics/agent-run-quality.md §3 과 같다:
-  검출률 25 · 심각도 정확도 10 · 게이트 정확도 20 · 증거 재현성 20 · 드리프트 분리 10 · 오탐 없음 10 · 심각도 일관성 5
-  대조 케이스(defects 빈 배열)는 오탐 없음 60 · 게이트 정확도 20 · 증거 재현성 20
-  --weights legacy 는 심각도 정확도 축이 없던 초기 배점(과거 측정치 대조용)
+Weights match section 3 of the agent-run-quality rubric. Negative controls assign 60 points to
+false-positive avoidance, 20 to gate accuracy, and 20 to evidence reproducibility. Use
+--weights legacy only to compare historical measurements without severity accuracy.
 
-runs.json 의 한 회차 스키마 (판단 항목은 채점자가 채운다):
-  detected        {"D1": "Low", "D2": "Critical", "D3": null}   # null = 미검출
+runs.json schema for one run (the grader completes judgment fields):
+  detected        {"D1": "Low", "D2": "Critical", "D3": null}   # null = not detected
   evidence_cited  4        evidence_total 4
-  gate_reported   "FAIL (lint)"    gate_actual "FAIL (lint)"    # 원인까지 맞아야 만점
+  gate_reported   "FAIL (lint)"    gate_actual "FAIL (lint)"    # Cause must match for full credit.
   drift_isolated  true|false       false_positives 0
-  immediate_fail  "사유" | null    # 채워지면 점수와 무관하게 반려
-  tokens / tools / seconds / cost_usd / harness_error           # run-case.sh 가 자동 기입
+  immediate_fail  "reason" | null  # Reject regardless of score when set.
+  tokens / tools / seconds / cost_usd / harness_error           # Populated by run-case.sh.
 """
 
 import argparse
@@ -36,7 +35,7 @@ WEIGHTS_V2 = {
     "오탐 없음": 10,
     "심각도 일관성": 5,
 }
-# 심각도 정확도 축이 없던 초기 배점. 과거 측정치와 대조할 때만 쓴다(--weights legacy).
+# Legacy weights without severity accuracy, for historical comparisons only.
 WEIGHTS_LEGACY = {
     "검출률": 30,
     "게이트 정확도": 25,
@@ -46,23 +45,21 @@ WEIGHTS_LEGACY = {
     "심각도 일관성": 5,
 }
 WEIGHTS = WEIGHTS_V2
-# 결함을 심지 않은 대조 케이스(negative control) 전용 배점. 검출·심각도 축은 잴 대상이 없으므로
-# 그 배점을 "없는 결함을 만들어내지 않는가"로 몰아준다 — 안 그러면 65점이 공짜로 깔려
-# 산탄총 전략과 절제된 감사가 100 vs 94 로만 갈린다.
+# Negative controls assign detection and severity weight to false-positive avoidance.
 WEIGHTS_NEGATIVE_CONTROL = {
     "오탐 없음": 60,
     "게이트 정확도": 20,
     "증거 재현성": 20,
 }
-# 회차당 오탐 1건에 −3. k 로 정규화하지 않으면 k 가 큰 설정이 구조적으로 불리해진다.
+# Penalize each false positive by 3 per run; normalize by k to keep configurations comparable.
 FALSE_POSITIVE_PENALTY = 3
-# 대조 케이스에서는 오탐이 유일한 변별점이라 배점에 맞춰 벌점도 키운다(회차당 1건에 −15).
+# For negative controls, penalize each false positive by 15 because it is the primary signal.
 FALSE_POSITIVE_PENALTY_NC = 15
 SEVERITY_ORDER = ["INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL"]
 
 
 def severity_distance(reported, expected):
-    """기대 severity(예: "High|Critical")와 보고값의 단계 차이. 판정 불가면 None."""
+    """Return distance from expected severity, such as High|Critical, or None."""
     if not reported or not expected:
         return None
     r = str(reported).strip().upper()
@@ -82,13 +79,11 @@ GATE_NAMES = ("format", "lint", "typecheck", "test", "build", "browser", "design
 
 
 def norm_gate(value):
-    """게이트 보고를 (상태, 원인 집합)으로 정규화한다.
+    """Normalize a gate report to (status, causes).
 
     'FAIL (lint)' → ('FAIL', {'lint'}), 'FAIL(lint, typecheck)' → ('FAIL', {'lint','typecheck'}).
-    상태를 앞에 안 쓰고 게이트별로 나열한 보고('format:check PASS / lint FAIL …')도 읽는다 —
-    하나라도 FAIL 이면 FAIL, 아니면 PASS. 채점자 문장 습관이 20 점 축을 좌우하면 안 된다.
-    상태만 맞고 원인이 다르면(예: 실제는 lint FAIL 인데 typecheck FAIL 이라고 보고) 절반만 인정한다 —
-    "무조건 FAIL 이라고 찍기"가 만점이 되는 걸 막는다.
+    Also accept per-gate reports without a leading status. Any FAIL makes the overall status FAIL.
+    Award half credit when status matches but the reported cause differs.
     """
     if value is None:
         return None
@@ -99,31 +94,29 @@ def norm_gate(value):
     elif upper.startswith("PASS"):
         status = "PASS"
     elif re.search(r"\bFAIL\b", upper) or "실패" in text:
-        # 상태를 앞에 안 쓰고 게이트별로 나열한 보고("format:check PASS / lint FAIL ...").
-        # 하나라도 FAIL 이면 전체는 FAIL 이다. 단어 경계로 찾는다 — 그러지 않으면
-        # `ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL` 같은 에러코드가 전체를 FAIL 로 뒤집는다.
+        # Any failed gate makes the result FAIL. Use word boundaries to avoid matching error codes.
         status = "FAIL"
     elif re.search(r"\bPASS\b", upper) or "통과" in text:
         status = "PASS"
     else:
-        # "미실행" 처럼 상태 자체가 없는 보고 — 정답과 절대 일치하지 않아 0 점이 된다.
+        # Reports without a status, such as "not run", cannot match the expected result.
         status = upper
     causes = {g for g in GATE_NAMES if g in text.lower()}
     return status, frozenset(causes)
 
 
 def gate_credit(reported, actual):
-    """1.0 = 상태·원인 일치, 0.5 = 상태만 일치, 0 = 불일치."""
+    """Score 1.0 for matching status and cause, 0.5 for status only, or 0 otherwise."""
     r, a = norm_gate(reported), norm_gate(actual)
     if r is None or a is None or r[0] != a[0]:
         return 0.0
-    if not a[1]:            # 정답에 원인 표기가 없으면 상태만 본다
+    if not a[1]:            # Compare status only when the answer has no cause.
         return 1.0
     return 1.0 if r[1] & a[1] else 0.5
 
 
 def validate_runs(data, weights):
-    """미채점·실행 오류는 집계하지 않는다. 미검출 null과 대조군의 빈 detected는 유효하다."""
+    """Reject ungraded runs and execution errors; allow misses and empty negative controls."""
     if not isinstance(data, dict) or not isinstance(data.get("runs"), list) or not data["runs"]:
         raise ValueError("runs에는 실행 결과가 하나 이상 있어야 한다")
     problems = []
@@ -168,7 +161,7 @@ def validate_runs(data, weights):
         for defect, severity in detected.items():
             if severity is not None and (not isinstance(severity, str) or severity.upper() not in SEVERITY_ORDER):
                 problems.append(f"{prefix}: {defect} 심각도는 Info·Low·Medium·High·Critical 또는 null이어야 한다")
-    # 모든 회차가 null이면 선행 결함이 없는 케이스다. 일부만 null이면 채점 누락이다.
+    # All-null values mean the case has no seeded defects; partial nulls indicate missing grading.
     if any(value is None for value in drift_values) and any(value is not None for value in drift_values):
         problems.append("drift_isolated 일부 회차 미채점 — 선행 결함이 없을 때만 모든 회차에 null을 사용한다")
     expected = data.get("expected_severity")
@@ -192,15 +185,13 @@ def score(data, weights=None):
     opportunities = k * len(defects)
 
     found = sum(1 for r in runs for v in r["detected"].values() if v)
-    # 결함을 심지 않은 대조 케이스(negative control)는 검출 축이 해당 없음이다 —
-    # 그 케이스의 관심사는 "없는 결함을 만들어내지 않는가"(오탐 축)다.
+    # Do not score detection rate for negative controls.
     negative_control = len(defects) == 0
     if negative_control:
         weights = WEIGHTS_NEGATIVE_CONTROL
     detection = weights.get("검출률", 0) * (found / opportunities if opportunities else 1.0)
 
-    # 심각도 정확도 — 기대 범위 안 1.0, 한 단계 벗어남 0.5, 두 단계 이상 0.
-    # 미검출은 분모에서 뺀다(검출률에서 이미 벌점). 이 축이 없으면 "전부 Critical" 전략이 만점이다.
+    # Severity scores 1.0 in range, 0.5 one level away, and 0 otherwise. Detection handles misses.
     expected = data.get("expected_severity", {})
     sev_scores = []
     for r in runs:
@@ -223,7 +214,7 @@ def score(data, weights=None):
     total = sum(r.get("evidence_total") or 0 for r in runs)
     evidence = weights.get("증거 재현성", 0) * cited / total if total else 0
 
-    # 드리프트가 없는 케이스는 이 축이 해당 없음이다 — 0점으로 깎으면 케이스마다 만점이 달라진다
+    # Drift isolation does not apply when the case contains no drift.
     drift_applicable = any(r.get("drift_isolated") is not None for r in runs)
     drift_ok = sum(1 for r in runs if r.get("drift_isolated"))
     drift = weights.get("드리프트 분리", 0) * (drift_ok / k if drift_applicable else 1.0)
@@ -233,8 +224,7 @@ def score(data, weights=None):
     penalty = FALSE_POSITIVE_PENALTY_NC if negative_control else FALSE_POSITIVE_PENALTY
     fp_score = max(0, weights["오탐 없음"] - penalty * fp_per_run)
 
-    # 심각도 일관성 — 결함별로 k회 부여된 severity 의 흔들림. 한 단계 2점, 두 단계 이상 0점.
-    # k<2 거나 표본이 1개뿐인 결함은 "흔들림 없음"이 아니라 측정 불가다.
+    # Severity consistency scores 2 for one-level variance and 0 for two or more; require two samples.
     spreads = []
     for d in defects:
         levels = [str(r["detected"][d]).upper() for r in runs if r["detected"].get(d)]
@@ -263,7 +253,7 @@ def score(data, weights=None):
     axes = {name: axes[name] for name in weights}  # 표 순서를 배점 정의 순서에 맞춘다
 
     fails = [(r["n"], r["immediate_fail"]) for r in runs if r.get("immediate_fail")]
-    # 회차별 총점 — k회 평균 차이가 회차 간 편차보다 작으면 그 차이는 노이즈다
+    # Per-run totals distinguish mean differences from run-to-run noise.
     run_totals = []
     if k > 1:
         for r in runs:
@@ -380,7 +370,7 @@ def table(head, rows, md):
 
 
 def dwidth(text):
-    """한글·전각 문자를 2칸으로 세는 표시 폭."""
+    """Display width counting Korean and full-width characters as two columns."""
     return sum(2 if unicodedata.east_asian_width(ch) in "WF" else 1 for ch in text)
 
 
@@ -410,7 +400,7 @@ def verdict(scores):
             lines.append("  → 개선이지만 총점 85 미만. 케이스를 늘려 재측정")
         else:
             lines.append("  → 채택 근거 없음")
-        # 회차 편차와 겹치는 차이는 결론이 아니다
+        # Differences within run-to-run variance are inconclusive.
         if gap > 0 and s["run_totals"] and base["run_totals"]:
             if min(s["run_totals"]) <= max(base["run_totals"]):
                 lines.append(

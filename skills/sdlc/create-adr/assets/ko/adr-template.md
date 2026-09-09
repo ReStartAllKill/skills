@@ -18,26 +18,27 @@ revisit: ["RV-001"]
 
 # ADR-{NNN} — <제목>
 
-<!-- 절은 아래 다섯. 번호를 붙이지 않고 임의로 추가·분할하지 않는다.
-     안내 주석과 <> placeholder는 제출 전 전부 지운다. -->
+<!-- Five sections, below. Do not number them, add to them, or split them.
+     Delete every guide comment and <> placeholder before submitting. -->
 
 ## 결정
 
-<!-- 두괄식 평서문. 무엇을 정했고 **어디까지** 적용되는가. 근거는 여기 쓰지 않는다.
-     필드 정의·식·시그니처는 코드가 정본이므로 이해에 필요한 최소한만 인용한다. -->
+<!-- State it first, in the plain present tense. What was decided, and **how far** it reaches.
+     No reasoning here. Code is the source of truth for field definitions, formulas and
+     signatures, so quote only what is needed to follow the decision. -->
 
 <정한 것.>
 
 ### Non-goals
 
-<!-- 이 ADR이 정하지 않는 것 — 별도 ADR·코드·이슈로 가는 것. 스코프 논쟁을 미리 닫는다.
-     에이전트 프롬프트에 이 목록이 그대로 실린다. -->
+<!-- What this ADR does not settle — what goes to another ADR, to code, or to an issue. It closes
+     a scope argument before it opens. This list is carried into the implementing agent's prompt. -->
 
 - <정하지 않는 것.>
 
 ## 문맥과 결정 요인
 
-<!-- 무엇이 불편·위험·불명확한가. 결정이나 해법을 미리 흘리지 않는다. -->
+<!-- What is uncomfortable, risky or unclear. Do not leak the decision or the fix. -->
 
 <문제.>
 
@@ -47,17 +48,20 @@ revisit: ["RV-001"]
 
 ### ASM-001 — <미검증 전제>
 
-<!-- 결정이 미검증 전제 위에 설 때만. 무엇이 왜 미확정이고 결정의 어느 부분이 그 위에 서 있는지.
-     전제를 적었으면 그것이 무너지는 것을 아래 RV-*로 짝지어 적는다. 없으면 이 하위 절째 삭제. -->
+<!-- Only when the decision stands on something unverified. What is unsettled, why, and which part
+     of the decision rests on it. If you write a premise, pair it with an RV-* below for the case
+     where it fails. If there is none, delete this subsection. -->
 
 <전제와 그 위에 선 부분.>
 
 ## 대안
 
-<!-- 실제로 검토한, 서로 **배타적인** 선택지만. 동시에 채택 가능하면 대안이 아니라 조합이다.
-     기각한 대안의 장점도 정직하게 적는다 — 장점 없는 대안만 나열된 ADR은 사후 정당화로 읽힌다.
-     현상 유지가 실질적 선택지면 그것도 대안으로 세운다.
-     대안 3개 이상 또는 축 3개 이상이면 비교표를 쓰고, 표를 쓰면 대안별 상세 절은 두지 않는다. -->
+<!-- Only options that were really considered and are **mutually exclusive**. If two can be adopted
+     together they are a combination, not alternatives. State the strengths of what was rejected —
+     an ADR listing only weak alternatives reads as justification written afterwards.
+     If staying as-is was a real option, list it as one.
+     With three or more alternatives, or three or more axes, use a comparison table; with a table,
+     drop the per-alternative subsections. -->
 
 ### ALT-001 — <대안 이름>
 
@@ -71,25 +75,27 @@ revisit: ["RV-001"]
 
 ## 결과
 
-<!-- 얻는 것과 **감수하기로 한 제약**. 후자가 이 문서의 핵심 기록이고, 하나도 없으면 검사기가
-     반려한다 — 대가 없는 결정은 결정이 아니다. "~할 수도 있다"는 비용이 아니다.
-     담당 팀·일정은 쓰지 않는다. 프로젝트 관리 정보는 이슈가 정본이고 가장 먼저 낡는다. -->
+<!-- What is gained, and **the limits accepted**. The second is the point of this document, and the
+     checker rejects an ADR with none — a decision without a cost is not a decision. "It might"
+     is not a cost. No owning team, no schedule: project management belongs in the issue and goes
+     stale first. -->
 
 - 얻는 것: <내용>
 - 감수하는 제약: <내용>
 
 ## 확인과 재검토
 
-<!-- `confirms:`가 가리키는 것과 결정을 다시 여는 조건. 링크는 실재하는 것만 적는다.
-     이 결정과 어긋나는 문서 목록은 여기 두지 않는다 — 고쳐지면 지워야 하는 할 일이라
-     동기화 부담이 되살아난다. 구현 이슈의 체크리스트가 있을 자리다. -->
+<!-- What `confirms:` points at, and what would reopen the decision. Link only things that exist.
+     Do not keep a list of documents that contradict this decision here — that list is a chore that
+     has to be deleted once each is fixed, which brings the synchronisation burden back. It belongs
+     on the implementation issue's checklist. -->
 
 - **확인:** <무엇이 검증되면 결정이 지켜진 것인가 — 정본은 어느 테스트인가.>
 
 ### RV-001 — <재검토 조건>
 
-<!-- 시한이 아니라 **참·거짓이 판정되는 조건**으로 쓴다. «6개월 뒤 재검토»는 조건이 아니다.
-     `/create-finding`이 운영 신호에서 이 ID를 깨울 수 있다. -->
+<!-- A condition that is true or false, not a date. «Revisit in six months» is not a condition.
+     `/create-finding` can wake this ID from an operational signal. -->
 
 <이것이 참이 되면 이 결정을 다시 연다.>
 

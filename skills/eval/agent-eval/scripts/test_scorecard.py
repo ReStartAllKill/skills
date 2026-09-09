@@ -1,4 +1,4 @@
-"""점수와 판정에 사용할 수 없는 입력을 CLI와 공통 채점 함수에서 거부하는지 검증한다."""
+"""Verify that the CLI and shared scorer reject inputs unsuitable for scoring."""
 import copy
 import json
 from pathlib import Path

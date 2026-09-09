@@ -20,7 +20,8 @@ skills_in_force: []
 
 # Plan: <계획 제목>
 
-<!-- `/implement-spec` 의 입력. 요구사항은 ID 로 참조. 외부 동작이 바뀌면 spec 부터. -->
+<!-- The input to `/implement-spec`. Cite requirements by ID. If external behaviour changes,
+     the spec changes first. -->
 
 ## 입력과 범위 `[필수 · 모든 티어]`
 
@@ -37,13 +38,14 @@ skills_in_force: []
 
 ## 코드 실태 `[필수 · standard+]`
 
-<!-- `<경로>:<줄>` 로. 새로 만들면 «없음». 확인한 것과 믿는 것을 섞지 않는다. -->
+<!-- Cite as `<path>:<line>`. Write «none» when building from scratch. Keep what was checked
+     separate from what is believed. -->
 
 - `<경로>:<줄>` — <현재 책임> / <왜 건드리는가>
 
 ## 도달 상태와 변경 지점 `[필수 · 모든 티어]`
 
-<!-- 구현 후 흐름과 어느 파일이 어떻게 바뀌는가. light 계획의 본체. -->
+<!-- The flow after this lands, and which file changes how. This is the body of a light plan. -->
 
 <1~3문장으로 흐름.>
 
@@ -52,7 +54,7 @@ skills_in_force: []
 
 ## 릴리스 영향 `[필수 · 모든 티어]`
 
-<!-- `/implement-spec` 이 읽는 값. 비우지 않는다. -->
+<!-- `/implement-spec` reads these. Do not leave them blank. -->
 
 target_branch: <브랜치>
 pr_strategy: <단일 PR / 레벨별 PR / PR 없음>
@@ -62,7 +64,7 @@ pr_strategy: <단일 PR / 레벨별 PR / PR 없음>
 
 ## 설계 결정 `[필수 · standard+]`
 
-<!-- 되돌리기 어려운 결정만. 기각안과 사유를 남긴다. -->
+<!-- Only decisions that are hard to reverse. Record what was rejected and why. -->
 
 ### TD-001 — <결정 이름>
 
@@ -82,7 +84,8 @@ covers: FR-001
 
 ## 작업 `[필수 · 모든 티어]`
 
-<!-- 형식과 규칙은 references/tasks.md. 다섯 필드 필수, 같은 레벨은 files 가 겹치면 안 된다. -->
+<!-- Format and rules live in references/tasks.md. All five fields are required, and tasks on the
+     same level must not share a file. -->
 
 실행 순서:
 
@@ -152,9 +155,9 @@ covers: FR-001
 
 ## 실행 기록 `[필수 · 모든 티어]`
 
-<!-- 계획과 실제의 차이. 승인 전에는 `해당 없음 — 아직 실행 전`. 커밋 SHA 와 검증 로그 이름은
-     적지 않는다 — plan-progress 가 trailer 와 로그 폴더에서 직접 찾는다. 계획대로 끝난 작업은
-     `plan-check mark` 가 같은 날의 앞줄에 ID 만 보탠다. -->
+<!-- Where the plan and reality differ. Before execution starts, write `N/A — not started`. Do not
+     write commit SHAs or verify log names — plan-progress finds both from the trailers and the log
+     directory. Tasks that went as planned are folded onto one line by `plan-check mark`. -->
 
 - YYYY-MM-DD WP-001 — <부분/실패> · <PR 링크> · 계획과의 차이: <무엇이 어떻게 달랐는가>
 - YYYY-MM-DD WP-002 WP-003 — 완료 · PR 없음 · 계획과의 차이: 없음

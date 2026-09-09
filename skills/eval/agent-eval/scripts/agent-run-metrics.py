@@ -27,9 +27,9 @@ import sys
 from datetime import datetime
 
 WRITE_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
-# 감사·탐색 에이전트에 허용되는 write 경로(메모리 갱신·임시 파일). 이 밖은 역할 위반 후보.
+# Write paths allowed for audit and exploration agents. Other writes may violate the role.
 DEFAULT_WRITE_ALLOW = r"agent-memory|scratchpad|/tmp/|/T/"
-# read-only 로 규정된 역할. 이 패턴에 걸리는 agentType 만 write 위반을 표시한다.
+# Only agent types matching this read-only role pattern report write violations.
 DEFAULT_READONLY = r"auditor|reviewer|locator|finder|Explore|explorer"
 
 
@@ -63,8 +63,7 @@ def measure(path, write_allow, readonly_pattern, agent_type=None):
             meta = json.load(open(meta_path))
         except ValueError:
             pass
-    # 최상위 `claude -p --agent X` 세션에는 .meta.json 이 없다 — 역할을 모르면 write 검사가 꺼지므로
-    # 호출자가 --agent-type 으로 알려준다.
+    # Top-level sessions have no .meta.json, so accept the role through --agent-type.
     if agent_type and not meta.get("agentType"):
         meta["agentType"] = agent_type
 
@@ -72,8 +71,7 @@ def measure(path, write_allow, readonly_pattern, agent_type=None):
     reads = collections.Counter()
     bash_cmds = collections.Counter()
     writes, first_ts, last_ts = [], None, None
-    # 같은 assistant 메시지가 content block 수만큼 줄로 쪼개져 기록되고 usage 가 그대로 반복된다.
-    # 그냥 더하면 배로 뻥튀기된다(실측 2.36배) — message.id 별 마지막 값만 남긴다.
+    # Usage repeats for each content block; count only the last value per message.id.
     tokens_by_msg = {}
     orphan_tokens = 0
     final_text = ""

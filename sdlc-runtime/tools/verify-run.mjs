@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-/** 검증 명령의 출력·종료 코드·파일 지문을 verify_log_dir에 기록하고 종료 코드를 그대로 반환한다.
- *  통과한 실행의 출력은 끝만 남긴다 — 자세한 것은 아래 «통과한 실행의 본문은 잘라서 남긴다». */
+/** Record verification output, exit code, and file fingerprints in verify_log_dir. */
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { resolve, join, relative, basename } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -24,7 +23,7 @@ const LABEL = flag('label')
 if (!/^[1-9]\d*$/.test(LEVEL ?? '')) { console.error('`--level` 이 없다 — 어느 합류점인지 없이 기록할 수 없다.'); process.exit(2) }
 if (!TASKS.length) { console.error('`--tasks` 가 없다 — 어느 작업의 검증인지 없이 기록할 수 없다.'); process.exit(2) }
 
-/** 프로필이 있는 가장 가까운 상위 디렉터리를 저장소 루트로 사용한다. */
+/** Use the nearest parent directory containing a profile as the repository root. */
 let ROOT = null
 for (let d = DIR, prev = null; d !== prev; prev = d, d = resolve(d, '..')) {
   if (existsSync(resolve(d, '.claude/spec-profile.yml'))) { ROOT = d; break }
@@ -50,7 +49,7 @@ const slug = basename(DIR)
 const dir = join(logRoot, slug)
 mkdirSync(dir, { recursive: true })
 
-/** 재실행 로그가 덮어쓰이지 않도록 밀리초와 충돌 번호를 사용한다. */
+/** Use milliseconds and a collision counter to avoid overwriting rerun logs. */
 const stamp = new Date().toISOString().replace(/[-:.]/g, '')
 const base = `L${LEVEL}${LABEL ? `-${LABEL.replace(/[^\w.-]+/g, '_')}` : ''}-${stamp}`
 let file = join(dir, `${base}.log`)
@@ -65,13 +64,8 @@ const out = (r.stdout ?? '') + (r.stderr ?? '')
 process.stdout.write(out)
 const code = r.status ?? 1
 
-/** 통과한 실행의 본문은 잘라서 남긴다.
- *
- *  증거는 --- 위의 헤더다. 지문·저장소 해시·HEAD 가 거기 있고 plan-progress 는 그것만 읽는다.
- *  --- 아래는 사람이 실패를 볼 때 쓰는 재료라, 통과한 실행에서는 아무도 다시 열지 않는 1000 줄이
- *  레포에 영구히 쌓인다. 실패한 실행은 그 1000 줄이 곧 용건이므로 그대로 둔다.
- *
- *  자른 자리는 전체 출력의 sha256 이 지킨다 — 자른 로그도 조용히 고쳐 쓸 수 없다. */
+/** Keep only the output tail for successful runs and full output for failed runs.
+ * Preserve the evidence header and SHA-256 of the complete output. */
 const PASS_TAIL = 40
 const FAIL_MAX = 2000
 const FAIL_HEAD = 400
@@ -90,7 +84,7 @@ const [body, shape] = (() => {
   return [out, `full ${lines.length} lines`]
 })()
 
-/** plan-progress는 헤더만 읽는다. 명령 출력은 --- 아래에 저장한다. */
+/** plan-progress reads only the header; command output follows the --- separator. */
 writeFileSync(file, [
   '# sdlc verify',
   `date: ${started}`,

@@ -19,11 +19,12 @@ skills_in_force: [] # 예: ["brand@a3f2c1"]
 
 # Intent: <변경 제목>
 
-<!-- 주 독자는 제품 책임자와 발안자. 구현 방법이 나오면 spec 이거나 plan 이다. -->
+<!-- Written for the product owner and the person proposing the change. If a way to build it
+     appears here, it belongs in the spec or the plan. -->
 
 ## 문제 `[필수 · 모든 티어]`
 
-<!-- 해결책이 아니라 문제. 사실과 해석을 섞지 않는다. 2~4문장. -->
+<!-- The problem, not the solution. Keep observation separate from reading. Two to four sentences. -->
 
 <현재 [대상]은 [상황]에서 [문제]를 겪는다. 그 결과 [비용]이 든다.>
 
@@ -33,7 +34,7 @@ skills_in_force: [] # 예: ["brand@a3f2c1"]
 
 ## 목표 결과 `[필수 · 모든 티어]`
 
-<!-- 관찰 가능한 결과. Must 는 spec 의 요구사항으로 덮여야 한다. -->
+<!-- Observable results. Every Must has to be covered by a requirement in the spec. -->
 
 ### OUT-001 — <한 줄 요약> `Must`
 
@@ -53,7 +54,7 @@ skills_in_force: [] # 예: ["brand@a3f2c1"]
 
 ## 제약 `[필수 · 모든 티어]`
 
-<!-- 지켜야 할 경계. 구현을 지시하지 않는다. 없으면 `해당 없음 — <근거>`. -->
+<!-- Boundaries to hold. Do not prescribe an implementation. If none, write `N/A — <basis>`. -->
 
 ### CON-001 — <한 줄 요약>
 
@@ -61,7 +62,7 @@ skills_in_force: [] # 예: ["brand@a3f2c1"]
 
 ## 열린 질문 `[필수 · 모든 티어]`
 
-<!-- `막힘` 이 Open 이면 accepted 로 못 간다. 없으면 `해당 없음 — <근거>`. -->
+<!-- An Open question marked `blocked` keeps this out of accepted. If none, write `N/A — <basis>`. -->
 
 ### Q-001 — <결정하거나 확인할 질문>
 
@@ -71,7 +72,7 @@ skills_in_force: [] # 예: ["brand@a3f2c1"]
 
 ## 영향 범위와 지표 `[필수 · standard+]`
 
-<!-- 기준값을 모르면 «미측정» 과 측정 계획. 0 이나 공란으로 두지 않는다. -->
+<!-- If a baseline is unknown, write «unmeasured» and how it will be measured. Never 0, never blank. -->
 
 영향 받는 것: <사용자군 · 내부 운영 · 연계 시스템>
 

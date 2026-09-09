@@ -1,12 +1,7 @@
 #!/usr/bin/env bash
-# PR 본문 초안 검사(create-pr §본문) — 통과하면 무출력 exit 0, 걸리면 사유를 찍고 exit 1.
-#
-# 사용: pr-body-lint.sh <body-file>
-#       PR_BODY_LINT_BASE=origin/release  pr-body-lint.sh <body-file>   # 베이스를 바꿀 때
-#
-# 여기서 잡는 건 형식과 잡음, 그리고 «빠뜨리면 안 되는 섹션» 뿐이다. 내용 판단(Problem 이 동기가 아니라
-# 현재 상태를 쓰는지, Changes 가 설계 의도로 시작하는지, Review Point 가 사람만 판단할 수 있는 것인지)은
-# ../references/pr.md 를 보고 직접 한다.
+# Check PR body structure and required sections. Return 0 on success or print errors and return 1.
+# Usage: pr-body-lint.sh <body-file>
+# Set PR_BODY_LINT_BASE to override the comparison base. See ../references/pr.md for content review.
 set -uo pipefail
 
 . "$(dirname "$0")/pr-lib.sh"
@@ -14,19 +9,13 @@ set -uo pipefail
 FILE="${1:?usage: pr-body-lint.sh <body-file>}"
 [[ -f "$FILE" ]] || { echo "no such file: $FILE" >&2; exit 2; }
 
-# 프로필을 먼저 읽는다 — 아래 문체 검사가 lang 으로 갈린다.
+# Read the profile before selecting language-specific prose checks.
 pr_repo_profile || PROFILE=""
 BODY_LANG="ko"
 [ -n "$PROFILE" ] && BODY_LANG="$(pr_yml lang "$PROFILE")"
 BODY_LANG="${BODY_LANG:-ko}"
 
-# 언어에 묶인 검사는 여기 다 있다. 빈 값이면 그 언어에 그 규칙이 없다는 뜻이다 —
-# «건너뛴다» 가 아니라 «없다» 이고, 어느 것이 그런지는 이 표가 말한다.
-#   narrative  작업 경위 서술          ko/en 둘 다
-#   register   합쇼체                  ko 만 — 영어에는 대응하는 화계가 없다
-#   noise      «변경 없음» 표 행        ko/en 둘 다
-#   asking     Reviewer Focus 안의 질문 ko/en 둘 다
-#   wordy      번역체·군더더기          ko/en 둘 다
+# Language-specific prose patterns. An empty value means the rule does not apply.
 if [ "$BODY_LANG" = "en" ]; then
   RE_NARRATIVE='Phase [0-9]|thoughts/|as discussed|after (some )?discussion|[0-9](st|nd|rd|th) (attempt|try)|while (working|debugging)|it turned out|I (found|noticed|realised|realized)'
   RE_REGISTER=''
@@ -45,51 +34,47 @@ fi
 
 fail=0
 note() { fail=1; printf '%s\n' "$1"; }
-# 막지 않는 알림. 검사가 «안 걸린 것» 인지 «못 본 것» 인지 구분해 준다.
+# Report checks that were not applicable.
 remark() { printf '%s\n' "$1"; }
 
-# 1) 작업 경위·플랜 참조·판단 과정 서술 — 독자는 세션·사슬 문서에 접근할 수 없다.
+# 1) Session history, plan references, and decision-process narration.
 if hits="$(grep -niE "$RE_NARRATIVE" "$FILE")"; then
   note "[경위] 작업 과정 서술로 보이는 줄 — 리뷰어에게 새 정보인지 다시 보고 아니면 지운다:"
   printf '%s\n' "$hits"
 fi
 
-# 2) 합쇼체 — 문체는 체언·평서 종결(런타임 references/prose.md 와 같은 기준).
-# «합니다» 에는 «습니다» 가 없다. 하나로 줄이면 검사가 조용히 죽는다. «아니다» 를 잡지 않도록
-# 어간을 붙여 적는다.
+# Check Korean formal endings, including 합니다 and 습니다 while excluding 아니다.
 if [ -n "$RE_REGISTER" ] && hits="$(grep -niE "$RE_REGISTER" "$FILE")"; then
   note "[문체] 합쇼체 — 체언·평서 종결로 바꾼다:"
   printf '%s\n' "$hits"
 fi
 
-# 3) Co-Author 금지.
+# 3) Disallow Co-Author trailers.
 if hits="$(grep -niE 'co-authored-by|generated with' "$FILE")"; then
   note "[서명] Co-Author·생성 도구 서명은 넣지 않는다:"
   printf '%s\n' "$hits"
 fi
 
-# 4) 채우지 않은 템플릿 잔재 — 안내 주석·빈 표 행·빈 목록·빈 콜아웃.
+# 4) Unfilled template remnants: guide comments, empty table rows, lists, and callouts.
 if hits="$(grep -nE '^[[:space:]]*<!--|^\|([[:space:]]*\|)+$|^-[[:space:]]*$|^[0-9]+\.[[:space:]]*$|^>[[:space:]]*\*\*(Reviewer Focus|Root cause|Not the cause|Open question):\*\*[[:space:]]*$' "$FILE")"; then
   note "[템플릿] 안내 주석·빈 표 행·빈 항목이 남아 있다 — 채우거나 섹션째 지운다:"
   printf '%s\n' "$hits"
 fi
 
-# 5) 남은 플레이스홀더.
+# 5) Remaining placeholders.
 if hits="$(grep -nE '^[[:space:]]*(-|[0-9]+\.)?[[:space:]]*\.\.\.[[:space:]]*$' "$FILE")"; then
   note "[플레이스홀더] '...' 가 그대로 남아 있다:"
   printf '%s\n' "$hits"
 fi
 
-# 6) 변경 없는 영역의 표 행 — 정보가 아니라 잡음.
+# 6) Table rows for unchanged areas.
 if hits="$(grep -niE "$RE_NOISE" "$FILE")"; then
   note "[잡음] 바뀌지 않은 영역의 표 행 — 행째 지운다:"
   printf '%s\n' "$hits"
 fi
 
-# 7) Behavior 표에 ✅/❌ — 검증 결과는 Verification 이 맡는다. '의도대로 거부'가 결함으로 읽힌다.
-#    이모지 판정은 awk 정규식이 아니라 grep -F 로 한다 — 브래킷 표현식은 C 로케일에서 멀티바이트를
-#    바이트로 쪼개 한글을 오탐한다(예: '즉시' 의 9C 바이트가 ✅ 의 9C 와 겹침).
-#    표는 헤더에 Scenario 가 있는 것만 본다 — Verification 표도 Before/After 열을 쓰기 때문이다.
+# Check verdict emoji only in Behavior tables identified by a Scenario header.
+# Use grep -F to avoid multibyte-character false positives.
 hits="$(awk '
   /^\|/ && /Scenario/ { intable = 1; next }
   /^\|/ && intable { print NR": "$0; next }
@@ -100,14 +85,14 @@ if [[ -n "$hits" ]]; then
   printf '%s\n' "$hits"
 fi
 
-# 8) Risk 가 🟢 뿐인 표 — 리뷰 순서를 못 정해주므로 자리값을 못 한다.
+# Reject Risk tables containing only low-risk entries.
 green="$(grep -cE '^\|.*🟢' "$FILE" || true)"
 graded="$(grep -cE '^\|.*(🔴|🟡|🟢)' "$FILE" || true)"
 if [[ "$graded" -gt 0 && "$green" -eq "$graded" ]]; then
   note "[등급] Risk 가 🟢 뿐이다 — 섹션째 지우거나, 실제로 대가가 큰 축을 찾아 올린다."
 fi
 
-# 9) 위치 참조 과다 — 리뷰어가 실제로 열어봐야 할 한두 곳만 남긴다.
+# 9) Excessive location references.
 refs="$(grep -oE '[A-Za-z0-9_.-]+\.(ts|tsx|js|jsx|mjs|cjs|py|go|rs|rb|java|kt|swift|php|c|cc|cpp|h|hpp|sh|sql|ya?ml|json|toml|md):[0-9]+' "$FILE" | sort -u)"
 ref_count="$(printf '%s\n' "$refs" | sed '/^$/d' | wc -l | tr -d ' ')"
 if [[ "$ref_count" -gt 2 ]]; then
@@ -115,27 +100,25 @@ if [[ "$ref_count" -gt 2 ]]; then
   printf '%s\n' "$refs" | sed 's/^/  /'
 fi
 
-# 10) Reviewer Focus 안의 질문 — 확인할 사실(단언)과 저자의 질문을 갈라 둔다.
+# 10) Questions inside Reviewer Focus.
 if hits="$(grep -niE "^>[[:space:]]*\*\*Reviewer Focus:\*\*.*$RE_ASKING" "$FILE")"; then
   note "[콜아웃] Reviewer Focus 에 질문이 섞였다 — 단언만 남기고 질문은 **Open question:** 줄로 뺀다:"
   printf '%s\n' "$hits"
 fi
 
-# 11) 번역체 — 런타임 references/prose.md 의 목록과 같은 축이다. 주어를 세우고 능동으로 쓴다.
+# 11) Translated phrasing and wordiness, aligned with runtime references/prose.md.
 if hits="$(grep -niE "$RE_WORDY" "$FILE")"; then
   note "$MSG_WORDY"
   printf '%s\n' "$hits"
 fi
 
-# 12) 분량 — 화면 한 스크롤 남짓(70행).
+# 12) Length: about one screen (70 lines).
 lines="$(wc -l < "$FILE" | tr -d ' ')"
 if [[ "$lines" -gt 70 ]]; then
   note "[분량] 본문 ${lines}행 (상한 70) — 문장을 다듬기 전에 지울 섹션·행이 없는지 먼저 본다."
 fi
 
-# 13) 하드랩 — GitHub 는 단일 개행을 그대로 렌더링한다. 문단은 한 줄로 쓰므로, 산문 줄이 연달아
-#     나오면 하드랩이다. 길이로 재지 않는다 — awk 의 length() 는 바이트를 세어 한글에서 어긋난다.
-#     제목·표·목록·인용은 앞줄이든 뒷줄이든 정상적으로 이어지므로 양쪽 다 제외한다.
+# Treat consecutive prose lines as hard wraps; exclude headings, tables, lists, and quotes.
 wrapped="$(awk '
   function prose(s) {
     return (s !~ /^[[:space:]]*$/ && s !~ /^[[:space:]]*[|>#]/ && s !~ /^[[:space:]]*[-*] / && s !~ /^[[:space:]]*[0-9]+\. /)
@@ -152,7 +135,7 @@ if [[ -n "$wrapped" ]]; then
   printf '%s\n' "$wrapped"
 fi
 
-# --- 여기서부터는 레포를 본다. 프로필과 Git 이 있을 때만 돈다. ---
+# Check repository changes when both a profile and Git are available.
 BASE="${PR_BODY_LINT_BASE:-}"
 if [[ -z "$BASE" && -n "$PROFILE" ]]; then BASE="$(pr_yml pr_base "$PROFILE")"; fi
 BASE="${BASE:-origin/main}"
@@ -161,8 +144,7 @@ if git rev-parse --verify --quiet "$BASE" >/dev/null 2>&1; then
   CHANGED="$(git diff "$BASE"...HEAD --name-only 2>/dev/null)"
 fi
 
-# 14) 위험 축을 건드렸는데 Risks 섹션이 없음 — 프로필 pr_review_focus 와 본문을 교차 검증한다.
-#     경로 규칙이라 내용 단위 탐지는 아니다. 평범한 이름의 파일이 흘리는 위험은 사람이 본다.
+# Require a Risks section when pr_review_focus paths change.
 if [[ -n "$PROFILE" && -n "$CHANGED" ]] && ! grep -qE '^#{1,3} .*Risks' "$FILE"; then
   axes=""
   while IFS= read -r rule; do

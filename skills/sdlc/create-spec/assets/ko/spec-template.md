@@ -19,7 +19,8 @@ skills_in_force: []
 
 # Spec: <명세 제목>
 
-<!-- 내부 구조·라이브러리·순서는 plan. 외부 인터페이스의 필드·이벤트 이름은 계약이라 여기. 배경은 intent ID 로 참조. -->
+<!-- Internal structure, libraries and ordering belong in the plan. Field and event names on an
+     external interface are a contract, so they belong here. Background stays in the intent, cited by ID. -->
 
 ## 범위 `[필수 · 모든 티어]`
 
@@ -31,7 +32,7 @@ skills_in_force: []
 
 ## 시나리오 `[필수 · 모든 티어]`
 
-<!-- 정상 하나에 오류·경계 하나 이상. 관찰 가능한 상호작용만. -->
+<!-- One nominal flow and at least one error or edge flow. Observable interaction only. -->
 
 ### SCN-001 — <대표 정상 흐름>
 
@@ -47,7 +48,7 @@ skills_in_force: []
 
 ## 요구사항 `[필수 · 모든 티어]`
 
-<!-- 요구사항 하나에 동작 하나. `근거:` 필수. Must 는 수용 기준 필수. -->
+<!-- One behaviour per requirement. `basis:` is required. Every Must needs acceptance criteria. -->
 
 ### FR-001 — <한 줄 요약> `Must`
 
@@ -78,7 +79,7 @@ skills_in_force: []
 
 ## 비기능 요구사항 `[필수 · standard+]`
 
-<!-- 백분위·부하·측정 위치로. 범주별로 없으면 `해당 없음 — <근거>`. -->
+<!-- Percentiles, load, and where it is measured. If a category does not apply, write `N/A — <basis>`. -->
 
 ### NFR-001 — 성능: <한 줄 요약> `Must`
 
@@ -113,7 +114,7 @@ skills_in_force: []
 
 ## 열린 질문과 결정 `[필수 · 모든 티어]`
 
-<!-- plan 을 못 시작하게 하는 질문은 `막힘`. 없으면 `해당 없음 — <근거>`. -->
+<!-- A question that stops the plan from starting is `blocked`. If none, write `N/A — <basis>`. -->
 
 ### SQ-001 — <질문>
 

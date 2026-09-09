@@ -1,15 +1,10 @@
 #!/usr/bin/env bash
-# 케이스 여러 개를 병렬로 돌린다 (run-case.sh 를 케이스마다 호출).
-#
-#   run-suite.sh <cases-root|case-dir...> --label BEFORE [--k 3] [--jobs 3] [--harness <.claude>] [--agent <type>]
-#
-#   --jobs   동시에 도는 claude 프로세스 총수 (기본 3). 케이스 수 × k 를 이 한도 안에서 나눠 쓴다.
-#
-# 산출: 케이스마다 ~/agent-evals/runs/<repo>/<case>/<label>-<ts>/ , 마지막에 경로 목록을 찍는다.
+# Run run-case.sh for multiple cases in parallel.
+# Usage: run-suite.sh <cases-root|case-dir...> --label BEFORE [--k 3] [--jobs 3] [--harness <.claude>] [--agent <type>]
+# --jobs limits concurrent processes (default: 3). Print result paths when complete.
 set -euo pipefail
 SELF_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-# 형제 스크립트는 **자기 위치 기준**으로 부른다 — 홈 경로를 박아 두면 플러그인 안에서
-# 도는 순간 옛 설치본을 부르거나 못 찾는다.
+# Resolve sibling scripts relative to this file.
 
 ARGS=() CASES=() LABEL="" JOBS=3
 while [[ $# -gt 0 ]]; do
@@ -26,7 +21,7 @@ done
 [[ -n "$LABEL" ]] || { echo "--label 이 필요하다"; exit 1; }
 [[ ${#CASES[@]} -gt 0 ]] || { echo "케이스 디렉터리나 케이스 루트를 넘겨라"; exit 1; }
 
-# 케이스 루트를 넘기면 case.json 이 있는 하위 디렉터리를 전부 편다
+# Expand a case root to every child directory containing case.json.
 EXPANDED=()
 for c in "${CASES[@]}"; do
   if [[ -f "$c/case.json" ]]; then
@@ -40,8 +35,7 @@ done
 
 echo "케이스 ${#EXPANDED[@]}개 · 라벨 $LABEL · 동시 케이스 $JOBS (케이스 내부 회차는 순차)"
 
-# 병렬은 **케이스 단위로만** 준다. 한 케이스의 k회는 같은 워크트리를 공유하므로 기본 순차다
-# (필요하면 run-case.sh --jobs 로 직접 올린다).
+# Parallelize by case; keep runs that share a worktree sequential.
 CASE_PARALLEL=$JOBS; [[ $CASE_PARALLEL -lt 1 ]] && CASE_PARALLEL=1
 
 STAMP=$(date +%Y%m%d-%H%M%S)
@@ -50,8 +44,7 @@ mkdir -p "$WORK"
 LIST="$WORK/runs.list"; FAILED="$WORK/failed.list"
 : > "$LIST"; : > "$FAILED"
 
-# 배치 전체를 감싸는 메모리 스냅샷 하나. 케이스마다 각자 뜨면 병렬일 때 A의 오염이 B의 스냅샷에
-# 섞여 복원으로 되살아난다 — run-case.sh 는 EVAL_MEMORY_SNAPSHOT 이 있으면 손대지 않는다.
+# Share one memory snapshot across the batch to prevent cross-case contamination.
 FIRST_CASE="${EXPANDED[0]}"
 REPO_PATH=$(python3 -c "import json;print(json.load(open('$FIRST_CASE/case.json')).get('repo_path',''))")
 REPO_PATH="${REPO_PATH/#\~/$HOME}"
@@ -74,8 +67,7 @@ trap restore_memory_batch EXIT INT TERM
 
 for case_dir in "${EXPANDED[@]}"; do
   (
-    # set -e 를 끈다 — 실패한 케이스가 서브셸을 조용히 죽여 목록에서 사라지면
-    # BEFORE 6케이스 / AFTER 5케이스 같은 비대칭이 경고 없이 리포트로 간다
+    # Disable set -e so failed cases remain in the result list.
     set +e
     out=$("$SELF_DIR/run-case.sh" "$case_dir" "${ARGS[@]}" 2>&1)
     rc=$?

@@ -1,20 +1,6 @@
-/** English style bundle — the ruler `lint-prose.mjs` and `adr-check.mjs` measure prose with.
- *
- * The contract (`tools/keywords.mjs`) does not come through here. That layer is what a checker
- * reads to *parse* a document and must never depend on a language; this file is what measures
- * prose a person will read, and that can only be per-language.
- *
- * **The numbers here are derived, not measured on English artifacts.** See §Budget below for the
- * derivation and for what would replace it. The word lists are authored; the Korean bundle's
- * lists are not translations of these and neither is a translation of the other.
- */
+/** English prose rules and length limits. Limits are estimates derived from the Korean bundle. */
 
-/** Does this bundle own the document's language?
- *
- *  Measured on this repository's parallel README pair: README.md is 0.989 Latin, README.ko.md is
- *  0.124 Latin. A 0.7 threshold sits clear of both, the way `ko`'s 0.3 sits clear of 0.876 and
- *  0.011. Code spans are stripped before counting, so identifiers do not pull a Korean document up.
- */
+/** Detect English after removing code spans. Require a Latin-character ratio of at least 0.7. */
 export const script = {
   test: /[A-Za-z]/g,
   against: /[가-힣]/g,
@@ -24,13 +10,10 @@ export const script = {
   name: 'English',
 }
 
-/** Does an acceptance criterion read as a full statement?
- *  A final period is the proxy, the way `다` is in Korean. Like that rule it is only a proxy —
- *  «AC-001 — only archived.» passes it and is still not a criterion. */
+/** Use a final period as a heuristic for a complete acceptance criterion. */
 export const acSentence = /\.$/
 
-/** Words that stand where a measurement belongs. Matched with word boundaries: without them
- *  `most` fires inside `almost` and `fast` inside `breakfast`. A line carrying a number is exempt. */
+/** Flag vague measurements using word boundaries. Lines containing numbers are exempt. */
 export const vague = [
   /\bfast(er)?\b/i, /\bquick(ly)?\b/i, /\bslow\b/i, /\bappropriate(ly)?\b/i, /\bproper(ly)?\b/i,
   /\beas(y|ily)\b/i, /\bsimple\b/i, /\bseamless(ly)?\b/i, /\brobust\b/i, /\bscalable\b/i,
@@ -41,8 +24,7 @@ export const vague = [
   /\band so on\b/i, /\betc\b/i,
 ]
 
-/** Wordiness and hidden actors. English's equivalent of the Korean list's 번역체 — the passive
- *  voice hides who does the work, and the long forms say nothing the short ones do not. */
+/** Flag wordiness and passive constructions. */
 export const translationese = [
   [/\bis\s+\w+ed\s+by\b/i, 'name the actor — «is processed by A» → «A processes»'],
   [/\bare\s+\w+ed\s+by\b/i, 'name the actor'],
@@ -71,24 +53,8 @@ export const meta = [
   [/\bfor reference,/i, 'if it belongs in the body, write it; otherwise drop it'],
 ]
 
-/** Characters excluding whitespace, at the `light` tier.
- *
- *  **Derivation, not measurement.** Each value is the `ko` bundle's × 2.2. The ratio comes from
- *  this repository's parallel READMEs: nine matching sections, English over Korean, mean 2.16,
- *  median 2.21, range 1.90–2.49 — a tight spread across sections of different length and subject.
- *
- *  What is weak about it: a README is explanatory prose, and an artifact is short ID-headed items,
- *  tables and acceptance criteria. Korean artifacts also use a clipped nominal ending that
- *  compresses them further, so the artifact ratio is more likely above 2.2 than below. And a
- *  budget is a judgement about how much a document should *say*, which a character ratio only
- *  approximates.
- *
- *  One artifact pair now exists to check it against: the `english-chain` and `clean-spec` eval
- *  cases hold the same intent and spec in both languages, and they come out at 2.25 and 1.97 —
- *  inside the README range rather than above it. That is two documents, not a measurement.
- *
- *  Replace these once a handful of English chains exist: measure them the way the Korean values
- *  were measured (42 artifacts), and delete this note. */
+/** Light-tier character limits exclude whitespace. Estimate each limit as the Korean value × 2.2,
+ * based on parallel README sections. Recalibrate with representative English artifacts. */
 export const budget = {
   intent: { doc: 2600, section: 1100, entity: 550 },
   spec: { doc: 4400, section: 1800, entity: 880 },
@@ -106,9 +72,7 @@ export const tradeoff = /trade-?off|cost|give[s]? up|sacrific|accept(s|ed)? (the
 /** Is a revisit condition only a deadline? */
 export const deadlineOnly = /\d\s*(months?|weeks?|quarters?|years?|days?)|next quarter|periodic(ally)? review|revisit (in|after)/i
 
-/** Words the runtime **writes into** an artifact. Where `keywords.mjs` is what a checker reads,
- *  this is what a tool writes: reading accepts both languages, writing has to pick one, and the
- *  profile's `lang` is that pick. */
+/** Text written to artifacts when the profile lang is en. */
 export const written = {
   result: { done: 'done', partial: 'partial', failed: 'failed' },
   divergence: 'differs from plan',

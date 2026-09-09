@@ -1,61 +1,50 @@
-/** 계약 낱말 — 검사기가 «읽는» 글자의 전부.
- *
- * 산출물에서 사람이 쓰는 말은 자유고, 여기 적힌 것만 기계가 본다. 절 제목조차 자유다 — 구조는
- * ID 접두(OUT-·FR-·AC-)와 티어 표식으로 판정하므로, 이 파일이 곧 «언어에 묶인 표면» 의 전체 목록이다.
- *
- * **영어가 정본이고 한국어는 별칭이다. 둘 다 언제나 받는다.**
- * 프로필의 `lang` 과 무관하다 — lang 은 문체 검사의 기준을 고르는 키이지 계약을 고르는 키가 아니다.
- * 계약을 lang 으로 가르면 한국어 레포의 문서를 영어 레포에서 못 읽고, 이행기에 섞인 사슬이 통째로
- * 막힌다. 별칭으로 두면 기존 문서를 한 글자도 안 고쳐도 되고, 두 낱말이 같은 뜻이라는 사실이
- * 이 파일 한 곳에만 적힌다.
- */
+/** English artifact contract keywords and Korean aliases. Accept both regardless of profile.lang. */
 
-/** 공백을 없애고 소문자로. `모든 티어`·`모든티어`, `All Tiers`·`all tiers` 를 같게 본다. */
+/** Remove whitespace and lowercase so spacing and case variants compare equally. */
 const squash = (s) => String(s ?? '').replace(/\s+/g, '').toLowerCase()
-/** 별칭 중 하나라도 들어 있으면 참. 표식·라벨처럼 «포함» 으로 판정하는 자리에 쓴다. */
+/** Return true when the value contains an alias. Used for markers and labels. */
 export const hasAlias = (text, aliases) => aliases.some((a) => squash(text).includes(squash(a)))
-/** 별칭 중 하나와 같으면 참. CLI 인자처럼 «일치» 로 판정하는 자리에 쓴다. */
+/** Return true when the value equals an alias. Used for CLI arguments. */
 export const isAlias = (text, aliases) => aliases.some((a) => squash(text) === squash(a))
-/** 별칭을 정본으로 되돌린다. 없으면 null. */
+/** Return the canonical value for an alias, or null. */
 export const canonical = (text, table) =>
   Object.entries(table).find(([, aliases]) => isAlias(text, aliases))?.[0] ?? null
 
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-/** 항목의 필드 키. `근거:` 처럼 줄 앞에 선다. WP 필드(files·depends·covers·tests·verify)는 처음부터 영어다. */
+/** Field-key aliases. WP fields use English keys. */
 export const FIELD = {
   basis: ['basis', '근거'],
   acceptance: ['acceptance', '수용 기준'],
 }
 
-/** 절의 필수 여부를 정하는 표식. `[required · all tiers]` · `[필수 · 모든 티어]`.
- *  standard+ 와 full 은 티어 이름이라 처음부터 영어다. */
+/** Markers for required sections and applicable tiers. */
 export const MARKER = {
   conditional: ['conditional', '조건부'],
   optional: ['optional', '선택'],
   allTiers: ['all tiers', '모든 티어'],
 }
 
-/** 작업 결과. plan-check --result 와 §실행 기록의 줄에 함께 쓴다. */
+/** Task results used by plan-check --result and execution-log entries. */
 export const RESULT = {
   done: ['done', '완료'],
   partial: ['partial', '부분'],
   failed: ['failed', '실패'],
 }
 
-/** §실행 기록 줄의 «계획과의 차이» 라벨. `mark` 가 앞줄을 다시 읽어 묶을 때 본다. */
+/** Deviation labels in execution-log entries, read by mark when grouping entries. */
 export const DIVERGENCE = ['differs from plan', '계획과의 차이']
-/** 차이가 없다는 말. 이 말이면 같은 날의 앞줄에 작업 ID 를 묶는다. */
+/** Values that indicate no deviation, allowing task IDs to share the day's preceding entry. */
 export const NO_DIVERGENCE = ['none', '없음', 'N/A']
-/** PR 링크가 아직 없다는 자리표시. `/create-pr` 이 이 자리를 링크로 바꾼다. */
+/** Placeholder used until /create-pr replaces it with a PR link. */
 export const NO_PR = ['no PR', 'PR 없음']
 
-/** 열린 질문이 진행을 막는다는 표시. */
+/** Marker for an open question that blocks progress. */
 export const BLOCKED = ['blocked', '막힘']
-/** ADR 대안 중 채택안 표시. */
+/** Marker for the selected ADR alternative. */
 export const CHOSEN = ['chosen', '채택']
 
-/** 절 제목을 문자열로 찾는 자리 — plan 의 두 절과 ADR 의 다섯 절뿐이다. */
+/** Section-title aliases for the two plan sections and five ADR sections parsed as text. */
 export const SECTION = {
   executionLog: ['Execution log', '실행 기록'],
   releaseImpact: ['Release impact', '릴리스 영향'],
@@ -66,23 +55,21 @@ export const SECTION = {
   revisit: ['Review and revisit', '확인과 재검토'],
 }
 
-/** `## <절 이름>` 부터 다음 `##` 앞까지. 별칭 전부를 받는다. */
+/** Match a section from `## <name>` to the next `##`, accepting every alias. */
 export const sectionBlock = (aliases) =>
   new RegExp(`##\\s*(?:${aliases.map(esc).join('|')})[\\s\\S]*?(?=\\n##\\s|\\n*$)`)
-/** `## <절 이름>` 줄 하나. */
+/** Match a single `## <name>` heading. */
 export const sectionHeading = (aliases) =>
   new RegExp(`^##\\s*(?:${aliases.map(esc).join('|')}).*$`, 'm')
 
-/** 필수 절을 «정말 없다» 로 면제하는 말. 근거를 요구하는 것이 요점이라 두 형태를 함께 본다. */
+/** Reason-bearing notation used to omit a required section. */
 export const RE_NA = /^\s*(?:N\/A|해당\s*없음)/i
 export const RE_NA_WITH_BASIS = /(?:N\/A|해당\s*없음)\s*[—–-]\s*\S/i
 
-/** 별칭을 정규식 조각으로 바꾼다. 낱말 사이의 공백은 없어도 되게 푼다 — 원래 규칙이 `밴드조정` 도
- *  받았고, 별칭을 그대로 이어붙이면 그 여유가 사라진다. */
+/** Convert an alias to a regular-expression fragment with optional interword whitespace. */
 const loose = (aliases) => aliases.map((a) => esc(a).replace(/\\?\s+/g, '\\s*')).join('|')
 
-/** finding 을 기각하면서 밴드는 안 건드리기로 했다는 선언. 근거를 요구하는 것이 요점이다.
- *  «조정 없음» 만 적고 왜인지 안 적으면, 같은 신호가 다음 실행에서 새 발견으로 다시 선다. */
+/** Notation that explains why dismissing a finding does not adjust the band. */
 export const BAND_ADJUSTMENT = ['band adjustment', '밴드 조정']
 export const NO_ADJUSTMENT = ['no adjustment', '조정 없음']
 export const RE_BAND_NO_CHANGE = new RegExp(

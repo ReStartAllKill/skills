@@ -38,14 +38,15 @@
 
 ### Changes
 
-<!-- 무엇을 그렇게 정했는지가 먼저. 구현 세부는 하위 불릿으로. 파일 나열이 아니다. -->
+<!-- What was decided comes first; implementation detail drops to sub-bullets. Not a file list. -->
 
 -
 
 ## ⚠️ Risks & Review Points
 
-<!-- 위험·확인 지점이 있을 때만. PII·자격증명·되돌리기 어려운 쓰기·스키마·권한 경계를 건드렸으면
-     생략할 수 없다. 🟢 만 남으면 섹션째 지운다. 아래 범례 한 줄은 그대로 둔다. -->
+<!-- Only when there is a risk or a place to look. You cannot skip it after touching PII,
+     credentials, a write that is hard to undo, a schema, or an authorisation boundary. If only 🟢
+     remains, delete the section. Keep the legend line below as it is. -->
 
 Risk 는 확률이 아니라 **틀렸을 때 치르는 대가** — 🔴 조용히 잘못된 상태로 남음 · 🟡 드러나고 되돌릴 수 있음 · 🟢 영향 범위가 좁음.
 
@@ -55,13 +56,14 @@ Risk 는 확률이 아니라 **틀렸을 때 치르는 대가** — 🔴 조용�
 
 > **Reviewer Focus:**
 
-<!-- 저자가 답을 구하는 질문은 콜아웃에 섞지 않는다:
+<!-- Do not mix a question you want answered into the callout:
 > **Open question:**
 -->
 
 ## 🧪 Verification
 
-<!-- 검증할 동작·지표가 있을 때만. 측정값은 근거 문단에, 예측은 Expected After 열에. -->
+<!-- Only when there is behaviour or a measure to verify. Measurements go in the prose below the
+     table; predictions go in the Expected After column. -->
 
 | Metric | Before | Expected After |
 | --- | ---: | ---: |

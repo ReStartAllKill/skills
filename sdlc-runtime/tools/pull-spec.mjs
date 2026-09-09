@@ -1,9 +1,6 @@
 #!/usr/bin/env node
-/** 상류 문서 레포의 승인된 intent·spec 을 사슬 폴더로 끌어오고 락을 찍는다.
- *  사용법: node pull-spec.mjs <사슬 폴더> [--from <상류 체크아웃>] [--slug <상류 폴더명>] [--force]
- *
- *  사본을 **사람이 복사하지 않게** 하는 것이 이 도구의 전부다. 사람이 복사하면 어디서
- *  왔는지가 기억에만 남고, 상류가 바뀐 것을 아무도 모른다. */
+/** Pull approved intent and spec artifacts from the upstream repository and write a lock file.
+ * Usage: node pull-spec.mjs <artifact-dir> [--from <upstream-checkout>] [--slug <upstream-dir>] [--force] */
 import { readFileSync, writeFileSync, existsSync, statSync, readdirSync } from 'node:fs'
 import { resolve, join, relative, basename } from 'node:path'
 import { frontmatter } from './artifact-parse.mjs'
@@ -73,8 +70,7 @@ for (const name of VENDORED) {
   if (!existsSync(src)) { skipped.push(`${name} — 상류에 없다`); continue }
   const text = readFileSync(src, 'utf8')
   const fm = frontmatter(text) ?? {}
-  // 승인은 상류에서 일어난다. 승인 전 문서를 끌어오면 소비 레포의 plan 이 무엇에 걸려
-  // 있는지 알 수 없고, 상태 층 검사(하위는 상위보다 앞서갈 수 없다)도 그때부터 거짓말이 된다.
+  // Approval belongs upstream. Pulling unapproved documents breaks provenance and state-order checks.
   if (!FORCE && fm.status !== 'accepted') {
     die(`상류의 ${name} 이 \`${fm.status ?? '(상태 없음)'}\` 다 — 승인된 것만 끌어온다.`,
       '상류에서 승인한 뒤 다시 돌린다. 초안으로 먼저 계획을 짜려면 `--force` 를 쓰고, 승인 뒤 반드시 다시 끌어온다.')
