@@ -27,7 +27,7 @@ BRANCH="$(git branch --show-current)"
 echo "branch: $BRANCH"
 echo "base:   $BASE"
 if [ "$PROFILE_STATE" -ne 0 ]; then
-  echo "profile: 없음 — 분할 신호·위험 축·사슬 검사를 건너뛴다 (/sdlc-init 으로 만든다)"
+  echo "profile: 없음 — 분할 신호·위험 축·산출물 세트 검사를 건너뛴다 (/sdlc-init 으로 만든다)"
 fi
 if PR_JSON="$(gh pr view --json number,state,isDraft,url -q '"#\(.number) \(.state) draft=\(.isDraft) \(.url)"' 2>/dev/null)"; then
   echo "existing-pr: $PR_JSON"
@@ -98,18 +98,18 @@ while IFS= read -r rule; do
 done < <(conf_list pr_review_focus)
 
 echo
-echo "== chain =="
-# 브랜치가 건드린 사슬 폴더가 이 PR 의 «왜» 다. 없으면 diff 가 유일한 출처다.
+echo "== artifact sets =="
+# Find PR rationale in changed artifact directories.
 CHAINS=""
 if [ "$PROFILE_STATE" -eq 0 ]; then
   CHAINS="$(printf '%s\n' "$CHANGED" | grep -E "^${SPEC_DIR}/" \
     | sed -E "s|^(${SPEC_DIR}/(findings/)?[^/]+)/.*|\1|" | sort -u || true)"
 fi
 if [[ -z "$CHAINS" ]]; then
-  echo "chain: none — 본문의 Intent·Problem 을 diff 와 커밋에서 세운다"
+  echo "artifact-set: none — 본문의 Intent·Problem을 diff와 커밋에서 작성한다"
 else
   for chain in $CHAINS; do
-    echo "chain: $chain"
+    echo "artifact-set: $chain"
     for doc in finding.md intent.md spec.md plan.md; do
       path="$TREE/$chain/$doc"
       [[ -f "$path" ]] || continue

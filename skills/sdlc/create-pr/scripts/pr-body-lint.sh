@@ -177,20 +177,16 @@ if [[ -n "$PROFILE" && -n "$CHANGED" ]] && ! grep -qE '^#{1,3} .*Risks' "$FILE";
   fi
 fi
 
-# 15) 사슬을 건드린 브랜치인데 본문이 근거 ID 를 하나도 인용하지 않음.
-#     사슬이 있으면 «왜» 는 이미 승인된 문서에 있다. 본문이 그것을 안 가리키면 리뷰어는
-#     같은 판단을 처음부터 다시 하게 되고, 두 벌이 갈렸을 때 어느 쪽이 계약인지 알 수 없다.
+# Require rationale IDs when a PR changes artifacts.
 if [[ -n "$PROFILE" && -n "$CHANGED" ]]; then
   if printf '%s\n' "$CHANGED" | grep -qE "^${SPEC_DIR}/" \
      && ! grep -qE '\b(OUT|CON|SCN|FR|NFR|AC|EDGE|TD|WP|RISK|FND|CHG|SPEC|PLAN|ADR)-[0-9]+' "$FILE"; then
-    note "[사슬] 이 브랜치는 ${SPEC_DIR} 의 사슬을 건드렸는데 본문이 근거 ID 를 하나도 인용하지 않는다 — Intent·Problem 은 승인된 문서에서 가져오고 그 ID 를 적는다."
+    note "[추적성] 이 브랜치는 ${SPEC_DIR} 의 산출물을 변경했지만 본문에 근거 ID가 없다 — Intent·Problem은 승인된 문서에서 가져오고 해당 ID를 적는다."
   fi
 fi
 
-# 16) 언어 — 위 문체 검사는 낱말 목록이라 언어를 탄다. 프로필의 lang 과 본문의 언어가 다르면
-#     하나도 안 걸리는데, 안 걸리는 것은 통과와 구분되지 않는다.
-#     글자 수는 로케일을 지정한 grep·wc 로 센다. awk 의 length() 는 바이트를 세어 한글에서 어긋난다.
-#     200자가 안 되는 본문은 비율이 흔들려 판정하지 않는다.
+# Check that profile.lang matches the body language; skip bodies under 200 characters.
+# Set the locale for grep and wc so Korean text is counted by character.
 ko="$(LC_ALL=en_US.UTF-8 grep -o '[가-힣]' "$FILE" | wc -l | tr -d ' ')"
 all="$(LC_ALL=en_US.UTF-8 tr -d '[:space:]' < "$FILE" | wc -m | tr -d ' ')"
 if [ "$BODY_LANG" = "en" ]; then

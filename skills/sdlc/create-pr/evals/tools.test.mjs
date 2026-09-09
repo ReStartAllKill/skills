@@ -33,7 +33,7 @@ function put(path, body, mode) {
   if (mode) chmodSync(path, mode)
 }
 
-/** 프로필의 pr_* 키와 사슬 한 벌을 브랜치에 올려 둔 저장소. */
+/** 프로필의 pr_* 키와 산출물 세트 하나를 브랜치에 올려 둔 저장소. */
 function prRepo(t) {
   const d = temp(t, 'pr-tools')
   git(d, 'init', '-q', '-b', 'main'); git(d, 'config', 'user.email', 'eval@local'); git(d, 'config', 'user.name', 'eval')
@@ -80,7 +80,7 @@ pr_strategy: 단일 PR
   return d
 }
 
-test('pr-context 는 프로필의 pr_* 키로 분할 신호·위험 축·사슬을 낸다', (t) => {
+test('pr-context 는 프로필의 pr_* 키로 분할 신호·위험 축·산출물 세트를 낸다', (t) => {
   const d = prRepo(t)
   const r = run('bash', [script('pr-context.sh')], { cwd: d })
   assert.equal(r.code, 0, r.out)
@@ -88,9 +88,9 @@ test('pr-context 는 프로필의 pr_* 키로 분할 신호·위험 축·사슬�
   assert.ok(r.out.includes('review-focus: DB 스키마'), `위험 축 신호가 없다 — 블록 시퀀스를 못 읽었다:\n${r.out}`)
   assert.doesNotMatch(r.out, /#\s*주석/, `규칙 값에 주석이 딸려 왔다:\n${r.out}`)
   assert.ok(!r.out.includes('권한 경계'), `걸리지 않은 축까지 냈다:\n${r.out}`)
-  assert.ok(r.out.includes('chain: .sdlc/specs/2026-09-08-cancel'), `사슬을 못 찾았다:\n${r.out}`)
-  assert.match(r.out, /intent\.md\s+status=accepted/, `사슬 문서의 상태를 안 냈다:\n${r.out}`)
-  assert.ok(r.out.includes('OUT-001'), `사슬 문서의 ID 를 안 냈다:\n${r.out}`)
+  assert.ok(r.out.includes('artifact-set: .sdlc/specs/2026-09-08-cancel'), `산출물 세트를 찾지 못했다:\n${r.out}`)
+  assert.match(r.out, /intent\.md\s+status=accepted/, `산출물 문서의 상태를 안 냈다:\n${r.out}`)
+  assert.ok(r.out.includes('OUT-001'), `산출물 문서의 ID 를 안 냈다:\n${r.out}`)
   assert.ok(r.out.includes('pr_strategy: 단일 PR'), `plan 의 pr_strategy 를 안 냈다:\n${r.out}`)
   assert.ok(r.out.includes('apps/api') && r.out.includes('apps/worker'), `영역을 두 단계로 안 묶었다:\n${r.out}`)
 })
@@ -107,19 +107,19 @@ test('pr-context 는 프로필이 없어도 돌고, 무엇이 꺼졌는지 말�
   const r = run('bash', [script('pr-context.sh')], { cwd: d })
   assert.equal(r.code, 0, r.out)
   assert.ok(r.out.includes('profile: 없음'), `꺼진 검사를 안 알린다 — 미검사가 통과로 읽힌다:\n${r.out}`)
-  assert.ok(r.out.includes('chain: none'), `사슬 없음을 안 알린다:\n${r.out}`)
+  assert.ok(r.out.includes('artifact-set: none'), `산출물 세트 없음을 알리지 않았다:\n${r.out}`)
 })
 
-test('pr-body-lint 는 위험 축과 사슬 인용 누락을 막는다', (t) => {
+test('pr-body-lint 는 위험 축과 산출물 세트 인용 누락을 막는다', (t) => {
   const d = prRepo(t)
   const env = { ...process.env, PR_BODY_LINT_BASE: 'main' }
 
   const bare = join(d, 'bare.md')
   put(bare, '## 🎯 Intent\n\n집행 전 취소를 허용한다.\n\n## 🔍 Problem\n\n취소 창구가 CS 뿐이라 1건에 2.3영업일이 든다.\n')
   const r1 = run('bash', [script('pr-body-lint.sh'), bare], { cwd: d, env })
-  assert.equal(r1.code, 1, `위험 축과 사슬 인용이 없는 본문을 통과시켰다:\n${r1.out}`)
+  assert.equal(r1.code, 1, `위험 축과 산출물 세트 인용이 없는 본문을 통과시켰다:\n${r1.out}`)
   assert.ok(r1.out.includes('DB 스키마'), `어느 축이 걸렸는지 안 알려준다:\n${r1.out}`)
-  assert.ok(r1.out.includes('[사슬]'), `사슬을 건드렸는데 근거 ID 누락을 안 잡는다:\n${r1.out}`)
+  assert.ok(r1.out.includes('[추적성]'), `산출물을 변경했는데 근거 ID 누락을 잡지 못했다:\n${r1.out}`)
 
   const full = join(d, 'full.md')
   put(full, `## 🎯 Intent

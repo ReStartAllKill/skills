@@ -89,7 +89,7 @@ sdlc_resolve() {
   fi
   [ -n "$root" ] && [ -d "$root" ] || return 1
 
-  # 프로필이 없으면 사슬을 쓰지 않는 저장소이므로 검사하지 않는다.
+  # 프로필이 없으면 산출물 체계를 쓰지 않는 저장소이므로 검사하지 않는다.
   # intent.md·spec.md·plan.md는 흔한 파일명이라 이 관문이 없으면 무관한 문서까지 막힌다.
   [ -f "$root/.claude/spec-profile.yml" ] || return 1
   local profile="$root/.claude/spec-profile.yml"
@@ -104,7 +104,7 @@ sdlc_resolve() {
 
   # 옛 스펙(requirements.md·design.md·tasks.md)은 검사 대상이 아니다.
   SPEC_DIR="$(sdlc_yml spec_dir "$profile")"; SPEC_DIR="${SPEC_DIR:-.sdlc/specs}"
-  # ADR 은 사슬 밖에 살지만 가드와 검사는 똑같이 받는다 — 승인된 결정의 불변성이 이 모음을
+  # ADR 은 산출물 세트 밖에 살지만 가드와 검사는 똑같이 받는다 — 승인된 결정의 불변성이 이 모음을
   # 믿을 수 있게 만드는 유일한 근거라, 여기서 빠지면 accepted 를 아무도 안 지킨다.
   # adr_dir 이 없는 레포는 ADR 을 안 쓰므로 그대로 통과시킨다.
   ADR_DIR="$(sdlc_yml adr_dir "$profile")"

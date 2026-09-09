@@ -1,34 +1,36 @@
-<!-- 레포에 .github/pull_request_template.md 가 있으면 이 파일 대신 그것을 따른다. -->
-<!-- 안내 주석은 전부 지운다 — 남으면 pr-body-lint.sh 가 [템플릿] 으로 막는다. -->
+<!-- If the repository has .github/pull_request_template.md, follow that instead of this file. -->
+<!-- Delete every guide comment — pr-body-lint.sh blocks a body that still carries them. -->
 
 ## 🎯 Intent
 
-<!-- 이 PR 이 끝난 뒤 시스템이 어떤 상태이길 바라는가. 한두 문장. 구현 방법이 아니라 목표 상태다.
-     사슬이 있으면 intent.md 의 OUT-* 에서 가져오고 «근거: OUT-00N» 을 적는다. -->
+<!-- What state the system should be in once this lands. One or two sentences. The goal, not the
+     method. Where an artifact set exists, take it from intent.md's OUT-* and cite «basis: OUT-00N». -->
 
 ### Non-goals
 
-<!-- 이번에 하지 않는 것. 없으면 이 하위 제목째 지운다. -->
+<!-- What this deliberately does not do. If there is none, delete this subheading too. -->
 
 -
 
 ## 🔍 Problem
 
-<!-- 지금 무엇이 불편·위험·부정확한가. 작성자의 동기가 아니라 시스템의 현재 상태를 쓴다.
-     결론을 세우는 수치 두어 개만. 사슬이 있으면 finding.md 의 EV-* · intent.md §문제에서 가져온다. -->
+<!-- What is uncomfortable, risky or wrong right now. Write the system's current state, not the
+     author's motivation. Two numbers at most, the ones that carry the conclusion. Where an artifact set
+     exists, take it from finding.md's EV-* and intent.md's problem section. -->
 
-<!-- 원인 규명이 쟁점일 때만 남긴다:
+<!-- Keep this only when the cause is what is in dispute:
 > **Root cause:**
 >
 > **Not the cause:**
 -->
 
-<!-- 근거 링크: Closes #N (완전히 닫음) · Refs #N (부분·참조) · Depends on #N (선행 PR) -->
+<!-- Links: Closes #N (fully closes it) · Refs #N (partial or related) · Depends on #N (merge order) -->
 
 ## 🔄 Behavior & Changes
 
-<!-- 관측되는 동작이 바뀌거나 변경이 여러 갈래일 때만. 아니면 섹션째 지운다.
-     칸은 낱말로(허용·거부·멱등·-). ✅/❌ 는 쓰지 않는다 — 검증 결과는 Verification 이 맡는다. -->
+<!-- Only when observable behaviour changes or the change runs in several directions. Otherwise
+     delete the section. Cells are words (allowed, rejected, idempotent, -). No ✅/❌ — verification
+     results belong under Verification. -->
 
 | Scenario | Before | After |
 | --- | --- | --- |

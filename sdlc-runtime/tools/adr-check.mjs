@@ -10,7 +10,7 @@ const CHOSEN_RE = new RegExp(`\\((?:${CHOSEN.join('|')})\\)`, 'i')
 export const ADR_STATUS = ['draft', 'in_review', 'accepted', 'deprecated', 'superseded', 'rejected']
 /** 참조할 수 없는 ADR 상태. */
 export const ADR_DEAD = ['deprecated', 'superseded', 'rejected']
-/** ADR 은 사슬 문서와 달리 절 제목을 문자열로 본다 — 다섯 절이 곧 문서의 형식이다. */
+/** ADR 은 산출물 문서와 달리 절 제목을 문자열로 본다 — 다섯 절이 곧 문서의 형식이다. */
 const SECTION_KEYS = ['decision', 'forces', 'alternatives', 'consequences', 'revisit']
 const SECTIONS = SECTION_KEYS.map((k) => SECTION[k][1])
 /** 별칭 중 실제로 문서에 있는 제목을 찾아 그 이름으로 절을 읽는다. */
@@ -110,7 +110,7 @@ export function checkAdr(doc, { seam, siblings = [] }, push) {
   if (!/^---\r?\n/.test(doc.text)) {
     push('info', '프런트매터가 없는 옛 문서다 — 이름과 번호만 검사했다',
       '새 계약으로 옮기려면 프런트매터(artifact · id · status · scope · confirms)를 더한다. ' +
-      '그 전까지 이 결정은 승인 가드가 지키지 않고, 사슬이 핀해도 상태를 못 본다.')
+      '그 전까지 이 결정은 승인 가드가 지키지 않고, 산출물 세트가 핀해도 상태를 못 본다.')
     return
   }
 
@@ -122,13 +122,13 @@ export function checkAdr(doc, { seam, siblings = [] }, push) {
   }
 
   if (String(fm.artifact ?? '') !== 'adr') err('`artifact: adr` 이 아니다', '이 값으로 검사기가 ADR 을 가려낸다.')
-  if (Number(fm.schema_version) !== 5) err(`schema_version 이 ${fm.schema_version ?? '(없음)'} 다`, 'ADR 은 언제나 5 다 — 사슬의 버전과 별개다(references/schema.md).')
+  if (Number(fm.schema_version) !== 5) err(`schema_version 이 ${fm.schema_version ?? '(없음)'} 다`, 'ADR 은 언제나 5 다 — 산출물 세트의 버전과 별개다(references/schema.md).')
   for (const k of ['id', 'title', 'status', 'generated_by']) {
     if (isNull(fm[k])) err(`\`${k}\` 가 비었다`)
   }
   const status = String(fm.status ?? '')
   if (status && !ADR_STATUS.includes(status)) {
-    err(`status 가 \`${status}\` 다`, `허용값: ${ADR_STATUS.join(' · ')}. 사슬의 상태값을 그대로 쓴다 — 모르는 값이면 승인 가드가 상태 전이를 못 본다.`)
+    err(`status 가 \`${status}\` 다`, `허용값: ${ADR_STATUS.join(' · ')}. 산출물 상태값을 그대로 쓴다 — 모르는 값이면 승인 가드가 상태 전이를 못 본다.`)
   }
 
   // 작성자와 승인자는 달라야 한다.
@@ -137,14 +137,14 @@ export function checkAdr(doc, { seam, siblings = [] }, push) {
     else if (String(fm.approved_by) === String(fm.generated_by)) err('`approved_by` 와 `generated_by` 가 같다', '쓴 쪽이 승인하면 관문이 아니라 자기선언이다.')
   }
   if (status === 'superseded' && isNull(fm.superseded_by)) {
-    err('superseded 인데 `superseded_by` 가 없다', '무엇이 대체했는지 없으면 사슬을 되짚을 수 없다.')
+    err('superseded 인데 `superseded_by` 가 없다', '무엇이 대체했는지 없으면 결정의 변경 이력을 추적할 수 없다.')
   }
   for (const [k, other] of [['superseded_by', 'supersedes'], ['supersedes', 'superseded_by']]) {
     for (const ref of [].concat(fm[k] ?? []).filter((v) => !isNull(v))) {
       const target = siblings.find((s) => String(s.fm?.id ?? '') === String(ref))
       if (!target) { warn(`\`${k}: ${ref}\` 가 이 폴더에 없다`, '다른 레포의 결정이면 그대로 두고, 오타면 고친다.'); continue }
       const back = [].concat(target.fm?.[other] ?? []).map(String)
-      if (!back.includes(String(fm.id))) warn(`${ref} 의 \`${other}\` 에 ${fm.id} 가 없다`, '대체 관계는 양쪽에 적어야 어느 쪽에서 읽어도 사슬이 이어진다.')
+      if (!back.includes(String(fm.id))) warn(`${ref} 의 \`${other}\` 에 ${fm.id} 가 없다`, '대체 관계는 양쪽에 적어야 어느 쪽에서 읽어도 추적 관계가 이어진다.')
     }
   }
 
@@ -283,10 +283,10 @@ export function checkPins(docs, { seam }, push) {
       const st = String(target.status ?? '')
       if (ADR_DEAD.includes(st)) {
         err(`핀한 ${m.groups.id} 의 상태가 \`${st}\` 다`,
-          st === 'superseded' ? `${target.superseded_by ?? '후속 ADR'} 이 대체했다. 그쪽을 읽고 이 사슬이 아직 맞는지 본 뒤 핀을 옮긴다.`
-                              : '효력이 없는 결정을 전제하고 있다. 이 사슬이 아직 맞는지 본다.')
+          st === 'superseded' ? `${target.superseded_by ?? '후속 ADR'} 이 대체했다. 그쪽을 읽고 이 산출물 세트가 여전히 유효한지 확인한 뒤 핀을 옮긴다.`
+                              : '효력이 없는 결정을 전제하고 있다. 이 산출물 세트가 여전히 유효한지 확인한다.')
       } else if (['draft', 'in_review'].includes(st)) {
-        warn(`핀한 ${m.groups.id} 가 아직 \`${st}\` 다`, '승인 안 된 결정을 전제하고 구현하면, 결정이 뒤집힐 때 이 사슬이 통째로 어긋난다.')
+        warn(`핀한 ${m.groups.id} 가 아직 \`${st}\` 다`, '승인 안 된 결정을 전제하고 구현하면, 결정이 바뀔 때 산출물 세트 전체의 추적 관계가 어긋난다.')
       }
     }
 

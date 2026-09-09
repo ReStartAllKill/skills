@@ -10,14 +10,14 @@ import { SDLC_VERSION, CURRENT_SCHEMA_VERSION } from './artifact-parse.mjs'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const argv = process.argv.slice(2)
 const DO_PROFILE = argv.includes('--profile')
-const DO_CHAINS = argv.includes('--chains')
+const DO_CHAINS = argv.includes('--chains') || argv.includes('--artifact-sets')
 const FORCE = argv.includes('--force')
 const ROOT = resolve(argv.find((a) => !a.startsWith('--')) ?? process.cwd())
 const DOCS = ['intent.md', 'spec.md', 'plan.md', 'finding.md']
 
 const profilePath = join(ROOT, '.claude/spec-profile.yml')
 if (!existsSync(profilePath)) {
-  console.log(`이 레포는 산출물 사슬을 쓰지 않는다 — ${relative(ROOT, profilePath)} 이 없다.`)
+  console.log(`이 레포는 SDLC 산출물 체계를 쓰지 않는다 — ${relative(ROOT, profilePath)} 이 없다.`)
   console.log('`/sdlc-init` 이 프로필을 만든다.')
   process.exit(0)
 }
@@ -101,11 +101,11 @@ if (profileVer > TARGET) {
 
 const profileStale = profileVer < TARGET
 if (profileStale) {
-  console.log(`프로필  v${profileVer} → v${TARGET} 로 올릴 수 있다 — **새 사슬에만 영향한다.**`)
+  console.log(`프로필  v${profileVer} → v${TARGET} 로 올릴 수 있다 — **새 산출물 세트에만 영향한다.**`)
   const missing = []
   if (profileVer < 3) missing.push('v3 승인 분리')
   if (profileVer < 4) missing.push('v4 작업 귀속·완료 증거')
-  console.log(`  지금은 새 사슬이 v${profileVer} 로 만들어져 ${missing.join(' · ')} 규칙이 걸리지 않는다.`)
+  console.log(`  지금은 새 산출물 세트가 v${profileVer} 로 만들어져 ${missing.join(' · ')} 규칙이 걸리지 않는다.`)
   console.log('  안 걸리는 것은 통과와 구분되지 않으므로, 그대로 두는 것도 선택이 아니라 결정이다.')
 } else {
   console.log(`프로필  v${profileVer} — 런타임과 같다.`)
@@ -113,9 +113,9 @@ if (profileStale) {
 
 const stale = []
 if (chains.length === 0) {
-  console.log('\n사슬  없음 — 올릴 문서가 없다.')
+  console.log('\n산출물 세트  없음 — 올릴 문서가 없다.')
 } else {
-  console.log('\n사슬:')
+  console.log('\n산출물 세트:')
   for (const c of chains) {
     const versions = new Set(c.files.map((f) => schemaOf(readFileSync(join(c.dir, f), 'utf8'))))
     const v = versions.size === 1 ? [...versions][0] : null
@@ -127,7 +127,7 @@ if (chains.length === 0) {
     for (const b of breaks) console.log(`      ${b}`)
   }
   if (stale.some((s) => s.breaks.length)) {
-    console.log('\n  깨지는 사슬은 **이미 끝난 계약**일 수 있다. 소급해서 올릴 이유가 없으면 그대로 둔다 —')
+    console.log('\n  검사에 실패하는 산출물 세트는 **이미 끝난 계약**일 수 있다. 소급해서 올릴 이유가 없으면 그대로 둔다 —')
     console.log('  옛 버전으로 남은 문서도 검사기가 계속 읽는다(schemas ' + `1..${TARGET}` + ').')
   }
   console.log('\n  git 이 없는 사본에서 검사하므로 **버전 고정(SHA) 검사만 빠진 결과**다.')
@@ -162,7 +162,7 @@ if (DO_CHAINS) {
 if (!DO_PROFILE && !DO_CHAINS && (profileStale || stale.length)) {
   console.log('\n올리려면:')
   if (profileStale) console.log('  node migrate-schema.mjs <repo> --profile    프로필만 (안전)')
-  if (stale.length) console.log('  node migrate-schema.mjs <repo> --chains     깨지지 않는 사슬만')
+  if (stale.length) console.log('  node migrate-schema.mjs <repo> --artifact-sets     검사에 통과하는 산출물 세트만')
 }
 if (wrote) console.log('\n바꾼 것을 커밋한다.')
 process.exit(0)

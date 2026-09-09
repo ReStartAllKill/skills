@@ -4,13 +4,13 @@ schema_version: 4
 id: "CHG-YYYY-NNN"
 title: "<변경 의도를 한 문장으로>"
 status: draft # draft | in_review | accepted | rejected | superseded
-tier: standard # light | standard | full — 이 사슬 전체의 무게를 여기서 정한다
+tier: standard # light | standard | full — 이 산출물 세트 전체의 무게를 여기서 정한다
 owner: "<의사결정 책임자 또는 팀>"
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 superseded_by: null # status 가 superseded 이면 필수
 from_finding: null # 운영 신호에서 왔다면 그 finding.md 경로 — **이 파일이 있는 폴더 기준**
-                   # 예: "../findings/FND-2026-007-ci-failure-rate/finding.md"
+                   # Example: "../findings/FND-2026-007-ci-failure-rate/finding.md"
 approved_by: null # status 가 accepted 이상이면 필수 — 승인한 **사람**. generated_by 와 같을 수 없다
 generated_by: null # 예: "claude-opus-5" — Agent 가 썼으면 채운다
 generated_from: null # 그 세션의 프롬프트나 슬래시 커맨드

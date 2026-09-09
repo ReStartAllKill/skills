@@ -4,7 +4,7 @@ schema_version: 4
 id: "CHG-YYYY-NNN"
 title: "<the change you intend, in one sentence>"
 status: draft # draft | in_review | accepted | rejected | superseded
-tier: standard # light | standard | full — this sets the weight of the whole chain
+tier: standard # light | standard | full — this sets the weight of the entire artifact set
 owner: "<the person or team who decides>"
 created: YYYY-MM-DD
 updated: YYYY-MM-DD

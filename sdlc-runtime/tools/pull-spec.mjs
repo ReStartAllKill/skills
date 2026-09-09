@@ -17,7 +17,7 @@ const DIR = resolve(positional[0] ?? '.')
 
 const die = (msg, ...more) => { console.error(msg); for (const m of more) console.error(m); process.exit(2) }
 
-if (!existsSync(DIR) || !statSync(DIR).isDirectory()) die(`사슬 폴더가 없다 — ${DIR}`)
+if (!existsSync(DIR) || !statSync(DIR).isDirectory()) die(`산출물 디렉터리가 없다 — ${DIR}`)
 
 const repoRoot = (() => {
   for (let d = DIR, prev = null; d !== prev; prev = d, d = resolve(d, '..')) {
@@ -62,7 +62,7 @@ if (!existsSync(srcDir)) {
     ? readdirSync(resolve(upstreamRoot, upstreamSpecDir)).filter((n) => !n.startsWith('.')).slice(0, 8)
     : []
   die(`상류에 ${slug} 가 없다 — ${relative(process.cwd(), srcDir)}`,
-    near.length ? `상류의 사슬: ${near.join(' · ')}` : '상류의 spec_dir 이 비었다.')
+    near.length ? `상위 산출물 세트: ${near.join(' · ')}` : '상류의 spec_dir 이 비었다.')
 }
 
 const files = {}

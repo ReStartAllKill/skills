@@ -1,6 +1,6 @@
 {
   "kind": "negative-control",
-  "why": "`/create-intent` 직후의 모양 — intent.md 하나. **부분 사슬이 정상이라는 것이 이 케이스의 요지다.** 아직 없는 spec·plan 때문에 오류가 나면 첫 칸부터 빨갛고, 빨간 것이 기본이면 아무도 안 본다.",
+  "why": "`/create-intent` 직후의 모양 — intent.md 하나. **불완전한 산출물 세트도 이 단계에서는 정상이라는 것이 이 케이스의 요지다.** 아직 없는 spec·plan 때문에 오류가 나면 첫 칸부터 빨갛고, 빨간 것이 기본이면 아무도 안 본다.",
   "check": { "errors": 0, "warns": 0 },
   "lint": { "errors": 0, "warns": 0 }
 }

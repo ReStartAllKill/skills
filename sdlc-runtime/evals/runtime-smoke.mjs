@@ -348,7 +348,7 @@ test('게이트는 경고가 하나도 없는 문서에서도 조용히 통과�
     input: JSON.stringify({ tool_input: { file_path: join(chain, 'intent.md') } }),
     env: { ...process.env, CLAUDE_PROJECT_DIR: d },
   })
-  assert(r.status === 0, `깨끗한 사슬에서 게이트가 실패했다 (code ${r.status})\n${r.stdout}\n${r.stderr}`)
+  assert(r.status === 0, `깨끗한 산출물 세트에서 게이트가 실패했다 (code ${r.status})\n${r.stdout}\n${r.stderr}`)
   assert(!/unbound|command not found/.test(r.stderr ?? ''), `게이트가 셸 오류를 냈다:\n${r.stderr}`)
 })
 
@@ -425,7 +425,7 @@ test('마이그레이션은 실행 이력이 있는 v3 plan을 자동 승격하�
   assert(/^schema_version: 3$/m.test(readFileSync(plan, 'utf8')), '실행 중인 v3 plan을 자동 승격했다')
 })
 
-test('migrate-schema는 프로필만 올리고 깨지는 사슬은 건너뛴다', () => {
+test('migrate-schema는 프로필만 올리고 검사에 실패하는 산출물 세트는 건너뛴다', () => {
   const d = temp('sdlc-migrate')
   const cur = readFileSync(join(ROOT, 'VERSION'), 'utf8').trim()
   put(join(d, '.claude/spec-profile.yml'), 'spec_dir: .claude/specs\n')
@@ -484,11 +484,11 @@ generated_by: "claude-opus-5"
   assert(readFileSync(join(d, '.claude/spec-profile.yml'), 'utf8').includes(`sdlc_version: ${cur}`), r.out)
 
   // --chains는 새 스키마 검사를 통과하지 못한 문서를 제외한다.
-  r = run('node', [tool('migrate-schema.mjs'), d, '--chains'])
+  r = run('node', [tool('migrate-schema.mjs'), d, '--artifact-sets'])
   assert(r.code === 0, r.out)
   assert(r.out.includes('건너뜀'), r.out)
   assert(!readFileSync(join(chain, 'intent.md'), 'utf8').includes('schema_version'),
-    '깨지는 사슬을 올려버렸다')
+    '검사에 실패하는 산출물 세트를 올려버렸다')
 
   // 런타임보다 높은 프로필 버전은 낮추지 않는다.
   writeFileSync(join(d, '.claude/spec-profile.yml'), 'sdlc_version: 99\nspec_dir: .claude/specs\n')
@@ -719,7 +719,7 @@ generated_by: "claude-opus-5"
   assert(check().stdout.includes('까지 맡았는데'), '위임의 끝을 넘은 문서가 그 위임으로 승인됐다')
 })
 
-test('check-all은 빈 사슬에서도 정책을 검사하고 필수 설정 누락을 거부한다', () => {
+test('check-all은 빈 산출물 세트에서도 정책을 검사하고 필수 설정 누락을 거부한다', () => {
   const d = temp('sdlc-required')
   const check = (...args) => run(process.execPath, [tool('check-all.mjs'), d, ...args])
   assert(check().code === 0 && check('--required').code !== 0, '프로필 누락의 필수 모드를 구분하지 않았다')
@@ -728,7 +728,7 @@ test('check-all은 빈 사슬에서도 정책을 검사하고 필수 설정 누�
   mkdirSync(join(d, 'missing'))
   assert(check().code === 0 && check('--required').code !== 0, '빈 디렉터리의 필수 모드를 구분하지 않았다')
   put(join(d, '.claude/autonomy.yml'), 'version: 1\nroutes:\n  bad:\n    expires: 2099-01-01\n')
-  assert(check().code !== 0, '사슬이 없다는 이유로 잘못된 정책 검사를 생략했다')
+  assert(check().code !== 0, '산출물 체계가 없다는 이유로 잘못된 정책 검사를 생략했다')
 })
 
 test('작업 귀속은 같은 ID라도 다른 계획의 커밋을 제외한다', () => {
@@ -878,7 +878,7 @@ test('소비 레포는 자기 scope 의 Must 만 덮으면 된다', () => {
 
   const r = check(chain, up)
   assert(!r.out.includes('AC-002'), `다른 레포 몫인 AC-002 를 이 레포에 물렸다:\n${r.out}`)
-  assert(r.code === 0, `두 레포로 갈린 정상 사슬이 실패했다:\n${r.out}`)
+  assert(r.code === 0, `두 레포로 갈린 정상 산출물 세트가 실패했다:\n${r.out}`)
 
   // 남의 몫을 덮으면 막는다 — 두 레포가 같은 기준을 만들면 합류에서 갈린다.
   edit(join(chain, 'plan.md'), (s) => s.replace('covers: AC-001', 'covers: AC-001, AC-002'))
@@ -911,8 +911,8 @@ test('사본을 손으로 고치면 해시가 막고, 상류가 앞서가면 검
   assert(stale.code !== 0 && stale.out.includes('상류가 이 사본보다 앞서 있다'), `상류 드리프트를 놓쳤다:\n${stale.out}`)
 })
 
-test('상류 프로필을 켜도 옛 스키마 사슬은 배정 검사에 걸리지 않는다', () => {
-  // 새 오류 규칙은 도입된 스키마 이상에서만 적용한다(schema.md). 프로필 한 줄로 옛 사슬이
+test('상류 프로필을 켜도 이전 스키마의 산출물 세트는 배정 검사에 걸리지 않는다', () => {
+  // 새 오류 규칙은 도입된 스키마 이상에서만 적용한다(schema.md). 프로필 한 줄로 이전 산출물 세트가
   // 전부 빨개지면 아무도 상류를 선언하지 않는다.
   const { upChain } = twoRepos()
   for (const f of ['intent.md', 'spec.md']) {
@@ -920,7 +920,7 @@ test('상류 프로필을 켜도 옛 스키마 사슬은 배정 검사에 걸리
   }
   edit(join(upChain, 'spec.md'), (s) => s.replace(/ `scope: [^`]+`/g, ''))
   const r = check(upChain)
-  assert(!r.out.includes('`scope` 가 없다'), `v5 사슬에 v6 배정 검사가 걸렸다:\n${r.out}`)
+  assert(!r.out.includes('`scope` 가 없다'), `v5 산출물 세트에 v6 배정 검사가 걸렸다:\n${r.out}`)
 })
 
 test('상류 문서 레포는 배정되지 않은 Must 수용 기준을 막는다', () => {
@@ -986,7 +986,7 @@ test('번들은 같은 모양이어야 한다 — 키 하나가 빠지면 그 �
 })
 
 
-test('승인 가드는 ADR 도 본다 — 사슬 밖에 산다고 예외가 아니다', () => {
+test('승인 가드는 ADR 도 본다 — 산출물 세트 밖에 산다고 예외가 아니다', () => {
   /** references/adr.md 가 «ADR 은 그 규칙의 예외가 아니다» 라고 적어 둔 자리다. 관문이 ADR 을
    *  걸러내면 가드의 ADR 처리(deprecated 전이까지 아는)가 통째로 죽은 코드가 된다. */
   const d = temp('sdlc-guard-adr')
@@ -1120,7 +1120,7 @@ test('템플릿의 언어판은 같은 구조여야 한다 — 한쪽만 고치�
   for (const [skill, file] of [['create-intent', 'intent-template.md'], ['create-spec', 'spec-template.md'],
                                ['create-plan', 'plan-template.md'], ['create-adr', 'adr-template.md'],
                                ['create-finding', 'finding-template.md'],
-                               // 사슬 산출물은 아니지만 같은 이유로 언어판이 갈린다 — 보고 형식은
+                               // SDLC 산출물은 아니지만 같은 이유로 언어판이 갈린다 — 보고 형식은
                                // 대화 언어가, PR 본문은 프로필의 lang 이 고른다.
                                ['implement-spec', 'report-templates.md'], ['create-pr', 'pr-body-template.md']]) {
     const dir = join(findSkill(skill, HERE), 'assets')
@@ -1262,7 +1262,7 @@ status: in_progress
 
 
 test('커밋되지 않은 프로필과 ADR 은 «나만 보는 검사» 라고 말한다', () => {
-  /** 프로필이 Git 밖에 있으면 내 사슬은 이 규칙으로, 남의 사슬은 저마다의 규칙으로 통과하고 CI 는
+  /** 프로필이 Git 밖에 있으면 내 산출물 체계는 이 규칙으로, 남의 산출물 체계는 저마다의 규칙으로 통과하고 CI 는
    *  아무것도 안 본다. 셋 다 화면에서는 «통과» 로 보인다 — 이 하네스가 가장 싫어하는 모양이다. */
   const d = temp('sdlc-tracked')
   const profile = join(d, '.claude/spec-profile.yml')

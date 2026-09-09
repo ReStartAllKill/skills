@@ -26,14 +26,14 @@ const yml = (key, file) => {
 const failed = []
 const profile = join(ROOT, '.claude/spec-profile.yml')
 if (!existsSync(profile)) {
-  console.log(`이 레포는 산출물 사슬을 쓰지 않는다 — ${relative(ROOT, profile)} 이 없다.`)
+  console.log(`이 레포는 SDLC 산출물 체계를 쓰지 않는다 — ${relative(ROOT, profile)} 이 없다.`)
   process.exit(REQUIRED ? 2 : 0)
 }
 const specDir = resolve(ROOT, yml('spec_dir', profile) || '.sdlc/specs')
 
 /** 커밋되지 않은 설정은 나만 보는 검사다.
  *
- *  프로필이 Git 밖에 있으면 내 사슬은 이 규칙으로, 남의 사슬은 저마다의 규칙으로 통과하고,
+ *  프로필이 Git 밖에 있으면 내 산출물 세트는 이 규칙으로, 남의 산출물 세트는 저마다의 규칙으로 통과하고,
  *  CI 는 프로필 자체가 없어 아무것도 안 본다. 셋 다 «통과» 로 보이는 것이 문제다.
  *  gitignore 뿐 아니라 «아직 add 안 함» 도 같은 결과라, 무시 여부가 아니라 추적 여부를 본다. */
 const inGit = (() => { try { run('git', ['-C', ROOT, 'rev-parse', '--git-dir'], { stdio: 'ignore' }); return true } catch { return false } })()
@@ -44,7 +44,7 @@ const tracked = (p) => {
 if (!tracked(profile)) {
   const msg = `프로필이 Git 에 없다 — ${relative(ROOT, profile)}`
   console.log(`${REQUIRED ? '✗' : '⚠'} ${msg}\n` +
-    '    나만 보는 검사가 된다 — 남의 사슬은 다른 규칙으로 통과하고 CI 는 프로필이 없어 아무것도 안 본다.\n' +
+    '    나만 보는 검사가 된다 — 남의 산출물 세트는 다른 규칙으로 통과하고 CI 는 프로필이 없어 아무것도 안 본다.\n' +
     '    사람마다 다른 값 때문에 못 올리는 것이면 그 키만 뺀다. `owner` 는 비우면 git config user.name 이라\n' +
     '    여럿이 쓰는 레포에서는 비우는 쪽이 맞다 — 적어 두면 남이 승인한 것도 그 이름으로 적힌다.')
   if (REQUIRED) failed.push({ rel: relative(ROOT, profile), out: msg })
@@ -62,7 +62,7 @@ const walk = (dir, depth = 0) => {
 walk(specDir)
 
 if (chains.length === 0) {
-  console.log(`검사할 사슬이 없다 — ${relative(ROOT, specDir)} 아래에 산출물이 없다.`)
+  console.log(`검사할 산출물 세트가 없다 — ${relative(ROOT, specDir)} 아래에 산출물이 없다.`)
 }
 
 /** 런타임은 프로필 설정을 우선한다. */
@@ -116,7 +116,7 @@ if (adrDir) {
     }
     console.log(`\n결정 기록 ${ok ? '통과' : '실패'}  ${rel}`)
     if (!ok) failed.push({ rel, out: out.join('\n') })
-    /** 사슬은 이번 변경의 계약이라 지워도 되지만 ADR 은 시스템이 지고 있는 제약이다 —
+    /** 산출물 세트는 이번 변경의 계약이라 지워도 되지만 ADR 은 시스템이 지고 있는 제약이다 —
      *  커밋되지 않으면 기각한 대안이 이 기계 밖에서는 없던 일이 된다. */
     if (!tracked(dir)) {
       const msg = `결정 기록이 Git 에 없다 — ${rel}`
@@ -163,6 +163,6 @@ if (existsSync(vendored)) {
   if (b && a !== b) console.log(`\n참고: 벤더 런타임 ${a} · 이 기계의 글로벌 ${b} — vendor-runtime.sh --check 로 내용까지 대조한다.`)
 }
 
-console.log(`\n사슬 ${chains.length}개 · 실패 ${failed.length}개`)
+console.log(`\n산출물 세트 ${chains.length}개 · 실패 ${failed.length}개`)
 for (const f of failed) console.log(`\n──── ${f.rel}\n${f.out}`)
 process.exit(failed.length ? 1 : 0)

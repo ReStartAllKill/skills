@@ -4,7 +4,7 @@
 ## 🎯 Intent
 
 <!-- What state the system should be in once this lands. One or two sentences. The goal, not the
-     method. Where a chain exists, take it from intent.md's OUT-* and cite «basis: OUT-00N». -->
+     method. Where an artifact set exists, take it from intent.md's OUT-* and cite «basis: OUT-00N». -->
 
 ### Non-goals
 
@@ -15,7 +15,7 @@
 ## 🔍 Problem
 
 <!-- What is uncomfortable, risky or wrong right now. Write the system's current state, not the
-     author's motivation. Two numbers at most, the ones that carry the conclusion. Where a chain
+     author's motivation. Two numbers at most, the ones that carry the conclusion. Where an artifact set
      exists, take it from finding.md's EV-* and intent.md's problem section. -->
 
 <!-- Keep this only when the cause is what is in dispute:

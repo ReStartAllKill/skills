@@ -15,7 +15,7 @@ description: '승인된 spec.md를 바탕으로 구현 계획과 작업 목록�
 작업 형식과 완료 증거는 `<sdlc_runtime>/references/tasks.md`를 읽는다.
 
 0. 프로필에 `upstream_repo`가 있으면 먼저 승인된 상류 문서를 끌어온다 —
-   `node <sdlc_runtime>/tools/pull-spec.mjs <사슬 폴더>`. 사본과 `upstream.lock.json`을 함께
+   `node <sdlc_runtime>/tools/pull-spec.mjs <산출물 디렉터리>`. 사본과 `upstream.lock.json`을 함께
    커밋한다. 사본은 읽기 전용이다(규약 「변경이 여러 레포에 걸치면」).
 1. intent·spec을 읽고 위험 등급(`tier`)을 상속한다. 프로필의 검증 명령과 `extra_gates`를 확인한다.
    상류에서 온 spec이면 **`scope`가 이 레포인 수용 기준만** 이 계획의 몫이다. 남의 몫을 `covers`에

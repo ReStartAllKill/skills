@@ -2,11 +2,11 @@
 
 *[한국어](README.ko.md)*
 
-A Claude Code plugin that makes changes go through a written chain — intent, spec,
-plan, implementation — and checks that chain **as you write it**, not after.
+A Claude Code plugin that guides changes through a traceable SDLC artifact workflow — intent,
+spec, plan, implementation — and validates traceability **as you write**, not afterward.
 
 > **Artifacts are written in Korean or English**, set once per repository with
-> `lang` in the profile. It is a repository setting, not a person's: the chain is a
+> `lang` in the profile. It is a repository setting, not a person's: the artifact set is a
 > committed contract everyone in the repository reads, and CI has no conversation to
 > take a language from. Write to Claude in whichever language you like — the
 > artifacts follow `lang`.
@@ -35,7 +35,7 @@ already cost something.
 This plugin keeps those answers next to the change, and makes them fail loudly
 when they stop matching.
 
-## The chain
+## Artifact workflow
 
 ```text
 finding ──┬─ patch
@@ -45,6 +45,9 @@ finding ──┬─ patch
                 └────── ADR ──────────────┘
                    outlives the change
 ```
+
+For each change, this workflow produces an **artifact set** containing `finding.md`, `intent.md`,
+`spec.md`, and `plan.md`. The checker validates **traceability** across IDs and state transitions.
 
 | Document | The question it answers | What it must not contain |
 |---|---|---|
@@ -118,11 +121,11 @@ Three things run, at three different times. They are deliberately different.
 |---|---|---|
 | **Approval guard** | `PreToolUse` | Blocks self-approval, and unapproved edits to approved documents. Runs *before* the write, because a check that runs after cannot undo one. |
 | **Artifact gate** | `PostToolUse` | Checks structure, traceability and prose the moment a document is saved — fast enough that you fix it where you are. |
-| **CI checker** | `check-all.mjs` | Checks *every* chain in the repository. Hooks live on one machine; only CI is a gate for a team. |
+| **CI checker** | `check-all.mjs` | Checks *every* artifact set in the repository. Hooks live on one machine; only CI is a gate for a team. |
 
 The gate looks only at the folder you just touched, so a downstream document can
 quietly go stale after its parent changes. That is the most common way this kind
-of chain collapses, and it is exactly what the CI checker exists to catch.
+of traceability breaks down, and it is exactly what the CI checker exists to catch.
 
 ## Install
 
@@ -131,7 +134,7 @@ claude plugin marketplace add ReStartAllKill/restart-harness
 claude plugin install restart-harness
 ```
 
-Then, **in each repository** where you want the chain:
+Then, **in each repository** where you want the artifact workflow:
 
 ```
 /sdlc-init
@@ -146,11 +149,11 @@ repositories that never asked for it. `intent.md` and `plan.md` are common filen
 
 ## Skills
 
-### `sdlc` — the chain
+### `sdlc` — artifact workflow
 
 | Skill | Use it when |
 |---|---|
-| `/sdlc-init` | Setting the chain up in a repository |
+| `/sdlc-init` | Setting up the artifact workflow in a repository |
 | `/create-finding` | An incident, alert, metric or scan result should become an input |
 | `/create-intent` | Starting a change — settling *why* before *what* |
 | `/create-spec` | Turning an approved intent into verifiable behaviour |
@@ -158,7 +161,7 @@ repositories that never asked for it. `intent.md` and `plan.md` are common filen
 | `/implement-spec` | Executing the plan, level by level |
 | `/iterate-spec` | Feedback or review changed what the spec should say |
 | `/create-adr` | A decision is hard to reverse and must outlive the change |
-| `/create-pr` | Turning the branch into a pull request — the body cites the chain rather than re-deriving it |
+| `/create-pr` | Turning the branch into a pull request — the body cites approved artifacts rather than re-deriving them |
 
 `/implement-spec` runs same-level tasks in parallel, each in its own git worktree,
 and runs full verification at every join point.

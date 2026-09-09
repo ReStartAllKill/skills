@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PostToolUse(Edit|Write) — 방금 쓴 산출물이 사슬로 맞물리는지 검사한다.
+# PostToolUse(Edit|Write) — validate traceability for the artifact just written.
 # 로직은 여기에만 두고 저장소의 훅은 이 파일을 호출하는 껍데기로 유지한다.
 # 훅에 직접 등록하면 stdin의 훅 JSON을 읽고, 저장소 훅이 위임하면 파일 경로를 인자로 받는다.
 # 종료 코드 2는 차단이며 stderr는 에이전트에게 그대로 전달된다.
@@ -28,7 +28,7 @@ fi
 dir="$(dirname "$file")"
 
 if ! out="$("$NODE" "$RUNTIME/tools/check-artifacts.mjs" "$dir" 2>&1)"; then
-  printf '산출물 사슬 검사 실패 — 문서끼리 맞물리지 않는다\n\n%s\n' "$out" >&2
+  printf '산출물 추적성 검사 실패 — 문서 연결이 유효하지 않다\n\n%s\n' "$out" >&2
   exit 2
 fi
 

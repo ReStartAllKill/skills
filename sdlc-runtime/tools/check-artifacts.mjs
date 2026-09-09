@@ -95,7 +95,7 @@ if (ADR_TARGETS) {
     checkAdr(d, { seam: SEAM, siblings: all }, (level, msg, hint) =>
       level === 'info' ? notes.push(`${d.name} — ${msg}`) : problems.push({ level, doc: d.name, msg, hint }))
   }
-  if (!SEAM.configured) notes.push('프로필에 `adr_dir` 이 없다 — 등재하면 사슬의 `decisions:` 핀 검사가 함께 돈다')
+  if (!SEAM.configured) notes.push('프로필에 `adr_dir` 이 없다 — 등재하면 산출물 세트의 `decisions:` 핀 검사도 실행한다')
   process.exit(report({
     title: `결정 기록 검사 — ${targets.length}장${malformed.length ? ` (이름 규칙 위반 ${malformed.length}개)` : ''}`,
     notes, problems, strict: STRICT, ruleDoc: '`references/adr.md` 에 있다.',
@@ -113,7 +113,7 @@ if (Object.keys(docs).length === 0) {
 }
 // finding만 있는 디렉터리도 유효하다.
 if (!TEMPLATE && !docs.intent && (docs.spec || docs.plan)) {
-  err('(폴더)', 'intent.md 가 없다', '사슬은 의도에서 시작한다. spec·plan 만으로는 «왜»가 어디에도 없다.')
+  err('(폴더)', 'intent.md 가 없다', '산출물 세트는 intent에서 시작한다. spec·plan만으로는 변경 이유를 추적할 수 없다.')
 }
 
 /** 템플릿은 내용·상태·버전 검사를 생략하되 구조와 ID 참조는 검사한다. */
@@ -139,7 +139,7 @@ for (const d of Object.values(docs)) {
   if (d.fm.status && !STATUS[d.kind].includes(d.fm.status)) err(d.name, `허용되지 않는 status \`${d.fm.status}\``, `쓸 수 있는 값: ${STATUS[d.kind].join(' · ')}`)
   if (d.fm.tier && !TIERS.includes(d.fm.tier)) err(d.name, `허용되지 않는 tier \`${d.fm.tier}\``, `${TIERS.join(' · ')} 중 하나여야 한다.`)
   if (d.fm.status === 'superseded' && isNull(d.fm.superseded_by)) {
-    err(d.name, '`superseded` 인데 `superseded_by` 가 비었다', '적지 않으면 사슬을 과거로만 거슬러 갈 수 있고 «지금 무엇이 되었나» 에 답할 수 없다.')
+    err(d.name, '`superseded` 인데 `superseded_by` 가 비었다', '적지 않으면 이전 문서만 추적할 수 있고 현재 대체 문서를 찾을 수 없다.')
   }
 }
 
@@ -270,7 +270,7 @@ for (const d of chain.slice(1)) {
   const schema = schemaVersion(d.fm)
   if (schema != null && chainSchema != null && schema !== chainSchema) {
     err(d.name, `schema_version 이 ${chain[0].name} 와 다르다 (\`${schema}\` != \`${chainSchema}\`)`,
-      '한 사슬은 한 스키마 버전만 쓴다. 기존 사슬은 통째로 마이그레이션하거나 현재 버전을 유지한다.')
+      '한 산출물 세트는 한 스키마 버전만 쓴다. 기존 산출물 세트는 통째로 마이그레이션하거나 현재 버전을 유지한다.')
   }
 }
 const shownSchema = chainSchema ?? (docs.finding ? schemaVersion(docs.finding.fm) : null)
@@ -638,6 +638,6 @@ if (!TEMPLATE) {
 
 
 process.exit(report({
-  title: `산출물 사슬 검사 — ${basename(DIR)}  (tier: ${TIER}, 문서 ${Object.keys(docs).length}개, ID ${ALL.size}개)`,
+  title: `산출물 추적성 검사 — ${basename(DIR)}  (tier: ${TIER}, 문서 ${Object.keys(docs).length}개, ID ${ALL.size}개)`,
   notes, problems, strict: STRICT, ruleDoc: '`conventions.md` 의 «티어» · «ID 접두» · «상태와 승인» 절에 있다.',
 }))

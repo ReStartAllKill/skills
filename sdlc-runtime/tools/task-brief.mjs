@@ -112,7 +112,7 @@ if (seam.configured && seam.dir) {
     adrLines.push('', `전문: \`${relative(ROOT, join(seam.dir, g.file))}\``, '')
   }
   const missed = [...pinned].filter((id) => !hit.some((d) => String(d.fm?.id) === id))
-  if (missed.length) console.error(`· 사슬이 핀한 ${missed.join(' · ')} 는 이 작업의 files 에 안 걸려 싣지 않았다`)
+  if (missed.length) console.error(`· 산출물 세트가 핀한 ${missed.join(' · ')} 는 이 작업의 files 에 안 걸려 싣지 않았다`)
 }
 
 const { level } = levelsOf([...docs.plan.ents.values()].filter((e) => e.kind === 'wp'))

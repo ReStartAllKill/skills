@@ -2,7 +2,7 @@
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "restart-harness",
   "version": "0.1.1",
-  "description": "산출물 사슬(intent → spec → plan → 구현)과 에이전트 평가 하네스. 쓰기 시점 게이트·승인 가드·CI 검사기를 포함한다.",
+  "description": "SDLC 산출물 체계(intent → spec → plan → 구현)와 에이전트 평가 하네스. 쓰기 시점 추적성 검사·승인 가드·CI 검사기를 포함한다.",
   "author": {
     "name": "ReStartAllKill",
     "url": "https://github.com/ReStartAllKill"

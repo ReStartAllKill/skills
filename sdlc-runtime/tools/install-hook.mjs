@@ -57,7 +57,7 @@ exit 0
 const SHIMS = [
   {
     file: 'sdlc-gate.sh', tool: 'gate-artifacts.sh', event: 'PostToolUse', matchers: ['Edit|Write'], timeout: 60,
-    why: 'PostToolUse(Edit|Write) — 산출물 사슬 게이트. 쓴 문서가 맞물리는지 그 자리에서 본다.',
+    why: 'PostToolUse(Edit|Write) — 산출물을 저장할 때 문서 간 추적성을 검사한다.',
   },
   {
     file: 'sdlc-approval.sh', tool: 'guard-approval.sh', event: 'PreToolUse', matchers: ['Edit|Write', 'Bash'], timeout: 15,
@@ -97,7 +97,7 @@ const specDir = (existsSync(profilePath)
 if (specDir === '.claude' || specDir.startsWith('.claude/')) {
   console.warn(`\n⚠ spec_dir 가 \`${specDir}\` 다 — .claude/ 아래 편집은 Claude Code 가 언제나 사람에게 묻는다.`)
   console.warn('  대화형에서는 문서 편집마다 다이얼로그가 뜨고, 자율 경로(dispatch-auto)는 이 폴더에 쓸 수 없다.')
-  console.warn('  프로필의 spec_dir 를 `.sdlc/specs` 로 바꾸고 사슬 폴더를 옮기는 것을 권한다.\n')
+  console.warn('  프로필의 spec_dir 를 `.sdlc/specs` 로 바꾸고 산출물 디렉터리를 옮기는 것을 권한다.\n')
 }
 
 for (const s of SHIMS) {

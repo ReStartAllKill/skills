@@ -1,6 +1,6 @@
 ---
 name: create-pr
-description: '현재 브랜치의 변경으로 PR 제목·본문을 쓰고 gh pr create로 올린다. PR 본문 작성, 커밋 후 PR 생성, 사슬을 근거로 한 리뷰 가이드 작성, 생성 후 본문 갱신에 사용한다.'
+description: '현재 브랜치의 변경으로 PR 제목·본문을 쓰고 gh pr create로 올린다. PR 본문 작성, 커밋 후 PR 생성, 승인된 산출물을 근거로 한 리뷰 가이드 작성, 생성 후 본문 갱신에 사용한다.'
 ---
 
 # PR 작성
@@ -12,7 +12,7 @@ description: '현재 브랜치의 변경으로 PR 제목·본문을 쓰고 gh pr
 
 ## 준비
 
-`.claude/spec-profile.yml` 을 읽는다. 없으면 사슬·분할·위험 축 신호 없이 diff 만 보고 쓰며, 그
+`.claude/spec-profile.yml` 을 읽는다. 없으면 산출물·분할·위험 축 신호 없이 diff 만 보고 쓰며, 그
 사실을 보고한다 — 프로필 값을 지어내지 않는다.
 
 본문 구조·섹션 규칙·예시는 이 스킬의 `references/pr.md` 를 읽는다. 선행 PR 위에 선형으로 쌓는
@@ -25,7 +25,7 @@ same-repository stack 일 때만 `references/pr-stack.md` 를 더 읽는다.
 
 ```sh
 git fetch origin
-${CLAUDE_PLUGIN_ROOT}/skills/sdlc/create-pr/scripts/pr-context.sh [base]   # 브랜치·커밋·diffstat·영향 영역·분할 신호·사슬·워킹트리
+${CLAUDE_PLUGIN_ROOT}/skills/sdlc/create-pr/scripts/pr-context.sh [base]   # 브랜치·커밋·diffstat·영향 영역·분할 신호·산출물·워킹트리
 ```
 
 출력의 신호를 따른다.
@@ -33,8 +33,8 @@ ${CLAUDE_PLUGIN_ROOT}/skills/sdlc/create-pr/scripts/pr-context.sh [base]   # 브
 - `review-focus` 가 붙은 영역은 `git diff <base>...HEAD -- <경로>` 로 실제 diff 를 읽고 판단한다.
 - `SPLIT_HINT` 가 나오면 **PR 생성 전에 분할 여부를 먼저 묻는다.** 근거가 되는 관행·CI 게이트는
   프로필의 `pr_split_hint` 가 들고 있으므로 물을 때 그 이유를 함께 전한다.
-- `chain:` 이 나오면 그 사슬이 이 PR 의 «왜» 다. 해당 `intent.md` · `spec.md` · `plan.md` 를 읽는다.
-  `chain: none` 이면 커밋과 diff 가 유일한 출처다.
+- `artifact-set:`이 나오면 해당 산출물 세트가 이 PR의 근거다. `intent.md`·`spec.md`·`plan.md`를 읽는다.
+  `artifact-set: none`이면 커밋과 diff가 유일한 출처다.
 
 인자로 브랜치명이 오면 베이스로 쓴다. 없으면 프로필의 `pr_base`, 그것도 없으면 `main` 이다.
 
@@ -53,7 +53,7 @@ ${CLAUDE_PLUGIN_ROOT}/skills/sdlc/create-pr/scripts/pr-context.sh [base]   # 브
 | `.claude/` 스킬·에이전트 | `chore/` | `chore(claude):` |
 | 문서 | `docs/` | `docs:` |
 
-슬러그는 영문 소문자 + 하이픈. 사슬이 있으면 그 폴더 이름을 슬러그로 쓴다
+슬러그는 영문 소문자 + 하이픈. 산출물 세트가 있으면 그 폴더 이름을 슬러그로 쓴다
 (`.sdlc/specs/2026-09-08-cancel-application` → `feat/cancel-application`). 만든 브랜치명을 알린다.
 
 ## 3. 커밋
@@ -85,7 +85,7 @@ ${CLAUDE_PLUGIN_ROOT}/skills/sdlc/create-pr/scripts/pr-context.sh [base]   # 브
 
 ## 5. 본문
 
-`references/pr.md` 를 따른다. 그 문서가 섹션 구성, 사슬에서 무엇을 가져오는지, Risk
+`references/pr.md` 를 따른다. 그 문서가 섹션 구성, 산출물 세트에서 무엇을 가져오는지, Risk
 등급의 뜻, 문체와 분량을 정한다. 여기서 되풀이하지 않는다.
 
 섹션 골격이 필요하면 `assets/<lang>/pr-body-template.md` 로 시작한다. **안내 주석은 전부 지운다** — 남으면
@@ -103,7 +103,7 @@ ${CLAUDE_PLUGIN_ROOT}/skills/sdlc/create-pr/scripts/pr-body-lint.sh "$BODY"
 ```
 
 린트는 형식·잡음과 **빠뜨리면 안 되는 섹션** 을 잡는다(번역체·합쇼체·경위 서술·템플릿 잔재·위치 참조
-과다·Reviewer Focus 안의 질문·분량·하드랩·위험 축을 건드렸는데 없는 Risks·사슬을 건드렸는데 없는 근거
+과다·Reviewer Focus 안의 질문·분량·하드랩·위험 축을 건드렸는데 없는 Risks·산출물을 건드렸는데 없는 근거
 ID). Problem 이 동기가 아니라 현재 상태를 쓰는지, Changes 가 설계 의도로 시작하는지, Review Point 가
 사람만 판단할 수 있는 것인지는 스크립트가 못 보므로 `pr.md` 의 기준으로 직접 확인한다.
 
@@ -134,10 +134,10 @@ PR 본문·커밋에 Co-Author 정보를 넣지 않는다.
 
 자율 실행이면 draft 로만 만들고 ready 로 올리지 않는다. 사람이 보는 마지막 자리가 PR 리뷰다.
 
-## 7. 사슬로 되돌려 적기
+## 7. 산출물 세트에 PR 링크 기록
 
-사슬이 있으면 PR 링크를 plan 에 남긴다. 생성 시점에 이미 `mark` 된 작업은 실행 이력에 `PR 없음`
-(`lang: en` 이면 `no PR`) 으로 적혀 있으므로, `<사슬>/plan.md` §실행 기록에서 **이번 PR 의 작업 줄에 있는 그 자리만** 링크로 바꾼다.
+산출물 세트가 있으면 PR 링크를 plan 에 남긴다. 생성 시점에 이미 `mark` 된 작업은 실행 이력에 `PR 없음`
+(`lang: en` 이면 `no PR`) 으로 적혀 있으므로, `<산출물 디렉터리>/plan.md` §실행 기록에서 **이번 PR 의 작업 줄에 있는 그 자리만** 링크로 바꾼다.
 같은 사건의 기록을 채우는 것이라 새 주장이 아니다. 아직 안 끝난 작업은 `plan-check.mjs mark <WP>
 --pr <링크>` 가 처음부터 링크와 함께 적는다.
 
@@ -153,4 +153,4 @@ SYNC=${CLAUDE_PLUGIN_ROOT}/skills/sdlc/create-pr/scripts/pr-sync-body.sh
 "$SYNC" <pr> --apply <file>   # 린트를 통과해야 반영된다
 ```
 
-스코프가 spec 을 벗어나게 커졌으면 본문만 고치지 말고 `/iterate-spec` 으로 사슬을 먼저 맞춘다.
+스코프가 spec 을 벗어나게 커졌으면 본문만 고치지 말고 `/iterate-spec` 으로 산출물 세트의 추적 관계를 먼저 갱신한다.

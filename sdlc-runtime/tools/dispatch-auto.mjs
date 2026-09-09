@@ -29,7 +29,7 @@ const SPEC_DIR = yml('spec_dir') || '.sdlc/specs'
 /** .claude 아래 쓰기는 사용자 확인이 필요하므로 비대화형 산출물 경로로 허용하지 않는다. */
 if (SPEC_DIR === '.claude' || SPEC_DIR.startsWith('.claude/')) {
   die(`\`spec_dir: ${SPEC_DIR}\` 는 자율 경로가 쓸 수 없다 — \`.claude/\` 아래 쓰기는 Claude Code 가 언제나 사람에게 묻는다.\n` +
-      '프로필의 `spec_dir` 를 `.claude/` 밖(기본 `.sdlc/specs`)으로 옮기고 사슬 폴더를 그리로 이동한다.')
+      '프로필의 `spec_dir` 를 `.claude/` 밖(기본 `.sdlc/specs`)으로 옮기고 산출물 디렉터리를 그리로 이동한다.')
 }
 let RUNTIME = yml('sdlc_runtime') || join(HERE, '..')
 if (RUNTIME.startsWith('~/')) RUNTIME = join(process.env.HOME ?? '', RUNTIME.slice(2))
@@ -89,7 +89,7 @@ const prompt = `자율 실행이다. 사람이 지금 이 자리에 없다 — *
 이 실행에 적용되는 위임(\`${pol.rel}\` 의 \`${ROUTE_ID}\`):
 - 발화 종류: ${route.trigger}
 - 최대 티어: ${route.max_tier} — 이보다 위험하다고 판단되면 **문서를 쓰되 승인하지 말고** 그 사실을 보고한다
-- 사슬의 끝: ${route.advance_to}
+- 산출물 흐름의 마지막 단계: ${route.advance_to}
 - 위임 책임자: ${pol.owner}
 - 만료: ${route.expires}
 
@@ -108,7 +108,7 @@ ${CHAIN[route.advance_to]}
    \`generated_by\` 는 너 자신이다. **이 경로 id 만 쓸 수 있다** — 다른 경로를 적으면 자기보다
    넓은 위임을 빌려오는 것이라 가드가 막는다.
 2. 티어가 \`${route.max_tier}\` 이하인 문서는 그 정책 승인으로 \`status: accepted\` 까지 올린다.
-   **사슬은 위에서부터 순서대로다** — 상위가 \`accepted\` 여야 하위가 \`accepted\` 로 갈 수 있다.
+   **산출물 흐름은 위에서부터 순서대로 진행한다** — 상위가 \`accepted\`여야 하위가 \`accepted\`로 갈 수 있다.
 3. 티어가 \`${route.max_tier}\` 를 넘으면 그 문서는 승인 대상이 아니다 — \`approved_by\` 를 비우고
    \`status\` 는 \`in_review\` 로 두고, 무엇이 위임을 넘었는지 적는다.
    **여기서 멈추는 것이 이 위임이 실제로 작동했다는 증거다.** 넘겨서 통과시키면 위임이 아니다.
@@ -188,7 +188,7 @@ const staged = spawnSync('git', ['-C', ROOT, 'diff', '--cached', '--name-only', 
 const indexClean = staged.status === 0 && !staged.stdout
 if (agentOk && checkOk && status.status === 0 && changed && indexClean) {
   const subject = `docs(sdlc): ${ROUTE_ID} — ${SIGNAL.slice(0, 60)}`
-  const body = `자율 실행이 ${route.advance_to} 까지 세운 사슬. 위임: ${pol.rel} 의 ${ROUTE_ID} (≤${route.max_tier}, ${pol.owner}).\n\nSDLC-Route: ${ROUTE_ID}`
+  const body = `자율 실행이 ${route.advance_to} 까지 작성한 산출물 세트. 위임: ${pol.rel} 의 ${ROUTE_ID} (≤${route.max_tier}, ${pol.owner}).\n\nSDLC-Route: ${ROUTE_ID}`
   const added = spawnSync('git', ['-C', ROOT, 'add', '--', SPEC_DIR], { encoding: 'utf8' })
   const c = added.status === 0 ? spawnSync('git', ['-C', ROOT, 'commit', '-q', '-m', subject, '-m', body], { encoding: 'utf8' }) : added
   if (c.status === 0) commit = spawnSync('git', ['-C', ROOT, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).stdout.trim()
@@ -219,5 +219,5 @@ if (!changed) {
   process.exit(1)
 }
 if (!commit) die('커밋을 완료하지 못했다. 인덱스와 Git 오류를 확인한다.', 1)
-console.log(`\n사슬이 \`${route.advance_to}\` 까지 섰다 (커밋 ${commit ?? '실패'}). 위임 안의 문서는 \`policy:${ROUTE_ID}\` 로 승인됐다.`)
+console.log(`\n산출물 세트를 \`${route.advance_to}\`까지 작성했다 (커밋 ${commit ?? '실패'}). 위임 범위의 문서는 \`policy:${ROUTE_ID}\`로 승인됐다.`)
 console.log('위임을 넘은 것은 `in_review` 로 남아 사람을 기다린다 — 무엇이 남았는지는 finding.md 의 §하지 않은 것 에 있다.')

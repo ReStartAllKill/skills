@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PostToolUse(Edit|Write) — 산출물 사슬 게이트. 쓴 문서가 맞물리는지 그 자리에서 본다.
+# PostToolUse(Edit|Write) — artifact traceability gate for newly written documents.
 #
 # **로직은 여기 없다.** 이 파일은 <sdlc_runtime>/tools/gate-artifacts.sh 을 부르는 포인터이고,
 # 그래서 훅을 고칠 때 레포를 돌지 않아도 된다. 벤더한 런타임이 있으면 그것을 먼저 쓴다 —

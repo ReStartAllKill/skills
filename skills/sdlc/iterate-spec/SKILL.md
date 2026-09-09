@@ -26,7 +26,7 @@ description: '기존 의도·명세·계획에 피드백, 리뷰 결과, 요구�
 
 폴더에 `upstream.lock.json`이 있으면 `intent.md`·`spec.md`는 **벤더한 사본**이다. 여기서 고치지
 않는다 — 상류 문서 레포에서 `/iterate-spec`으로 고치고, 소비 레포에서
-`node <sdlc_runtime>/tools/pull-spec.mjs <사슬 폴더>`로 다시 끌어온 뒤 `plan`과
+`node <sdlc_runtime>/tools/pull-spec.mjs <산출물 디렉터리>`로 다시 끌어온 뒤 `plan`과
 `spec_version`을 맞춘다. 사본을 직접 고치면 해시가 어긋나 게이트가 막는다.
 
 의미가 바뀐 문서와 영향을 받는 하위 문서는 `in_review`로 되돌린다. 위험 등급(`tier`)이
