@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-/** 스키마 변경 영향을 미리 검사한다. --profile은 프로필만, --chains는 통과한 문서를 갱신한다. --force는 검사 실패도 허용한다. */
+/** Preview the effect of a schema change. --profile raises the profile only; --artifact-sets
+ *  (--chains, kept for existing scripts) raises artifact sets that pass the new checks, and
+ *  --force raises the ones that fail too. */
 import { readFileSync, writeFileSync, existsSync, readdirSync, mkdtempSync, mkdirSync, cpSync } from 'node:fs'
 import { resolve, join, relative, dirname, basename } from 'node:path'
 import { execFileSync } from 'node:child_process'

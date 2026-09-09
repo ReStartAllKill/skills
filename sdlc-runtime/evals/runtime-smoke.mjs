@@ -483,7 +483,7 @@ generated_by: "claude-opus-5"
   assert(r.code === 0, r.out)
   assert(readFileSync(join(d, '.claude/spec-profile.yml'), 'utf8').includes(`sdlc_version: ${cur}`), r.out)
 
-  // --chains는 새 스키마 검사를 통과하지 못한 문서를 제외한다.
+  // --artifact-sets는 새 스키마 검사를 통과하지 못한 문서를 제외한다.
   r = run('node', [tool('migrate-schema.mjs'), d, '--artifact-sets'])
   assert(r.code === 0, r.out)
   assert(r.out.includes('건너뜀'), r.out)
