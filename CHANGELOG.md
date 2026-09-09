@@ -30,6 +30,8 @@
 - **Runtime sources and tests use English prose.** Reference documents, prompt templates,
   JavaScript comments, and test names now use English consistently. Redundant comments were
   removed while preserving compatibility fixtures for bilingual artifact contracts.
+- **Generated hook comments use English.** The approval and artifact-gate shims now explain
+  runtime discovery and their responsibilities in English, and the README title is `Skills`.
 - **Artifact language is repository-owned.** The profile's `lang` selects artifact templates,
   prose rules, and pull request body rules. Progress reports follow the conversation language
   because they are not committed to the repository.

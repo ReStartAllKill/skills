@@ -1,4 +1,4 @@
-# restart-harness
+# Skills
 
 *[한국어](README.ko.md)*
 
@@ -19,8 +19,8 @@ intent, spec, plan, implementation — and validates traceability **as you write
 > `sdlc-runtime/locales/`. The Korean budgets were measured from 42 Korean artifacts in
 > this repository. **The English budgets are derived** by multiplying them by 2.2, based
 > on nine matching sections in this README pair. The locale file records both that basis
-> and what evidence should eventually replace it. The skills and reference documents
-> remain in Korean; they are read by the model, not by you.
+> and what evidence should eventually replace it. Skills may give the model Korean
+> instructions, while the runtime reference documents use English.
 >
 > A document written in a language other than the one selected by `lang` still receives
 > `lang-unsupported`, because a style check that matches nothing is indistinguishable
