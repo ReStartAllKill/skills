@@ -1,0 +1,28 @@
+# restart-harness 자신의 SDLC 프로필.
+sdlc_version: 5
+
+# 이 레포가 런타임을 들고 있다 — 설치된 사본이 아니라 여기 것으로 검사한다.
+# 아니면 하네스의 문서가 하네스의 옛 버전에 검사받는다.
+sdlc_runtime: "sdlc-runtime"
+
+spec_dir: ".sdlc/specs"
+
+# owner 는 적지 않는다 — approved_by 의 기본값이라 적어 두면 남이 승인한 문서에도
+# 이 이름이 적힌다. 비우면 각자의 git config user.name 이 들어간다.
+
+# 이 레포의 산출물은 영어로 쓴다 — 공개 플러그인이고 README 도 영문이 정본 자리다.
+# 스킬과 참조 문서는 여전히 한국어다. 그건 사람이 아니라 모델이 읽는 글이라 다른 판단이다.
+lang: en
+
+# .github/workflows/ci.yml 이 정본이다.
+verify: "bash scripts/list-skills.sh && node --test sdlc-runtime/evals/runner.test.mjs skills/sdlc/create-pr/evals/tools.test.mjs && python3 -m unittest discover -s skills/eval/agent-eval/scripts -p 'test_*.py' && node sdlc-runtime/evals/run.mjs"
+
+source_roots: ["sdlc-runtime", "skills", "scripts"]
+
+# adr_dir 은 적지 않는다 — 이 레포는 결정 기록을 커밋하지 않기로 했고, 키가 없으면
+# ADR 관련 검사가 전부 꺼진다. 가리킬 폴더가 없는 채로 적어 두면 신규 클론에서 CI 가
+# «adr_dir 이 가리키는 폴더가 없다» 로 멈춘다.
+#
+# 이것은 다른 레포에 권하는 것과 반대다. references/profile.md 는 ADR 을 gitignore 하지
+# 말라고 적는다 — 사슬은 이번 변경의 계약이라 지워도 되지만 ADR 은 시스템이 지고 있는
+# 제약이라, 사라지면 기각한 대안이 함께 사라진다.

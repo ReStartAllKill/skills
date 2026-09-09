@@ -35,3 +35,9 @@ jobs:
         run: python3 -m unittest discover -s skills/eval/agent-eval/scripts -p 'test_*.py'
       - name: Test artifacts and runtime
         run: node sdlc-runtime/evals/run.mjs
+
+      # 프로필·ADR·밴드·정책을 이 레포의 런타임으로 검사한다. 사슬은 gitignore 라 CI 에는
+      # 없다 — 그래서 `--required` 를 쓰지 않는다. 산출물 0개를 실패로 보는 모드라 여기서는
+      # 언제나 빨갛고, 늘 빨간 검사는 아무도 안 본다.
+      - name: Check this repository's own configuration
+        run: node sdlc-runtime/tools/check-all.mjs .

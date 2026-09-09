@@ -1,5 +1,17 @@
 .DS_Store
 __pycache__/
 *.pyc
-.claude/
-.sdlc/
+
+# SDLC 설정은 커밋한다 — 프로필이 이 레포의 사슬이 어떤 규칙으로 검사받는가이고,
+# CI 는 그것 말고 읽을 것이 없다. 사람·기계마다 갈리는 것만 무시한다.
+.claude/settings.local.json
+.claude/worktrees/
+.claude/autonomy-runs.jsonl
+
+# 사슬은 각자 로컬로 둔다 — 이 레포의 산출물은 하네스를 만드는 과정이지 하네스가 아니다.
+# spec_dir 자리만 남긴다. 없으면 신규 클론에서 check-all 이 «디렉터리가 없다» 로 멈춘다.
+.sdlc/*
+!.sdlc/specs/
+.sdlc/specs/*
+!.sdlc/specs/.gitkeep
+docs/

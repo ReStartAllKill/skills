@@ -11,7 +11,7 @@
 | `sdlc_runtime` | 규약·검사기가 있는 경로 | `runtime.md`의 발견 순서 |
 | `lang` | **산출물 언어** — `ko` · `en`. 문체 번들(낱말 목록·글자 한도)을 고른다. 계약 낱말은 이 키와 무관하게 양쪽을 다 받는다 | `ko` |
 | `spec_dir` | 문서 위치. **`.claude/` 아래에 두지 않는다** — 그 폴더의 편집은 Claude Code가 언제나 묻는다 | `.sdlc/specs` |
-| `owner` | 승인 다이얼로그에서 승인하는 사람의 이름 — `approved_by` 기본값 | `git config user.name` |
+| `owner` | 승인 다이얼로그에서 승인하는 사람의 이름 — `approved_by` 기본값. **여럿이 쓰는 레포에서는 비운다** | `git config user.name` |
 | `verify` · `verify_scoped` · `scope_hint` | 전체·작업별 검증 | CI와 빌드 설정에서 조사 |
 | `bootstrap` | 새 워크트리 의존성 준비 | 없으면 병렬 대신 순차 |
 | `source_roots` · `worktree_dir` | 소스·워크트리 경로 | 레포 루트 · `.claude/worktrees` |
@@ -30,6 +30,30 @@
 | `pr_workspace_dirs` | 영역을 두 단계로 묶을 최상위 디렉터리(`apps packages`) | 최상위 디렉터리 이름만 |
 | `pr_split_dir` · `pr_split_hint` | 이 접두 아래가 둘 이상이면 분할 여부를 먼저 묻는다 | 없음 — 묻지 않는다 |
 | `pr_review_focus` | `<정규식> => <이름>` 목록. 걸리면 diff 를 직접 읽히고 Risks 섹션을 강제한다 | 없음 — 경로 기반 검사를 건너뛴다 |
+
+## 커밋과 사람
+
+**프로필은 커밋한다.** 여기 적힌 값이 곧 이 레포의 사슬이 어떤 규칙으로 검사받는가이고,
+CI 는 프로필 말고는 읽을 것이 없다. Git 밖에 두면 내 사슬은 이 규칙으로, 남의 사슬은 저마다의
+규칙으로 통과하고 CI 는 아무것도 안 본다 — 셋 다 화면에서는 «통과» 로 보인다.
+`check-all.mjs` 가 추적 여부를 보고 말한다. gitignore 뿐 아니라 «아직 add 안 함» 도 같은 결과다.
+
+키는 두 종류다.
+
+- **레포의 계약** — `sdlc_version`·`sdlc_runtime`·`lang`·`spec_dir`·`verify`·`source_roots`·
+  `extra_gates`·`bands`·`adr_dir`·`repo`·`upstream_repo`·`spec_consumers`·`pr_*`.
+  올린다. 사람마다 다르면 그것이 곧 사람마다 다른 규칙이다.
+- **사람과 기계** — `owner`·`writer_agent`·`pattern_agent`·`prior_work_agent`·`audit_agent`·
+  `worktree_dir`·`bootstrap`. 값이 갈리면 그 키만 빼고 올린다. 없으면 각자의 기본값으로 돈다.
+
+`owner` 는 «기본값» 이지 «권한» 이 아니다. `approved_by` 의 기본값이고 승인은 사람이 하는 일이라,
+`owner: alice` 를 커밋해 두면 bob 이 승인한 문서에도 alice 가 적히거나 bob 이 매번 덮어써야 한다.
+**여럿이 쓰는 레포에서는 이 키를 적지 않는다** — 비우면 `git config user.name` 이라 각자 제 이름이
+들어간다. 혼자 쓰는 레포에서만 편의로 적는다.
+
+아무나 승인하면 안 되는 레포라면 그것은 다른 물건이다. `owner` 를 그 용도로 겹쳐 쓰지 말고 승인자
+목록을 따로 두고 가드가 소속을 보게 한다 — 기본값을 채우는 일과 자격을 가르는 일을 한 키에 얹으면
+둘 다 애매해진다.
 
 ## 생성 원칙
 
@@ -85,7 +109,7 @@ adr_dir: "docs/adr"        # 결정은 여기 모은다. 코드 레포는 adr_re
 - 스코프는 workspace 설정에서 찾는다. 단일 패키지면 비운다.
 - 에이전트는 `.claude/agents/*.md`의 description을 읽고 고른다.
 - 근거를 못 찾은 항목은 지어내지 않고 비운 뒤 사용자에게 묻는다.
-- `spec_dir`가 gitignore되면 SHA 기반 버전 고정이 약해진다는 점을 알린다.
+- `spec_dir`가 gitignore되면 SHA 기반 버전 고정이 약해진다는 점을 알린다. 프로필 자체는 «커밋과 사람»의 이유로 언제나 올린다.
 - `adr_dir`는 **gitignore하지 않는다.** 사슬은 이번 변경의 계약이라 지워도 되지만 ADR은 시스템이
   지고 있는 제약이고, 사라지면 기각한 대안이 사라진다. 결정을 다른 레포에 모으기로 했으면
   `adr_dir` 대신 `adr_repo`를 적는다.

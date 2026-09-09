@@ -21,7 +21,11 @@ description: '저장소에 SDLC 프로필·승인 가드·산출물 검사·CI �
    `lang`은 산출물 언어이며 레포 설정이다(기본 `ko`). 대화 언어를 따르지 않는다 —
    기존 문서의 언어를 보고 정한다. 문체 번들(`<sdlc_runtime>/locales/<lang>.mjs`)과 템플릿
    (`assets/<lang>/`)이 둘 다 있는 언어만 적는다. 지금은 `ko`와 `en`이다.
-   초안을 보여주고 사용자 확인 후 `.claude/spec-profile.yml`에 저장한다.
+   초안을 보여주고 사용자 확인 후 `.claude/spec-profile.yml`에 저장하고 **커밋 대상으로 안내한다** —
+   프로필이 Git 밖에 있으면 사람마다 다른 규칙으로 검사받고 CI는 아무것도 보지 않는다.
+   `owner`는 여럿이 쓰는 레포에서는 비운다. 비우면 각자의 `git config user.name`이 들어가지만,
+   적어 두면 남이 승인한 문서에도 그 이름이 적힌다. 자세한 것은 `references/profile.md`의
+   「커밋과 사람」이다.
    PR 키(`pr_base`·`pr_workspace_dirs`·`pr_split_dir`·`pr_split_hint`·`pr_review_focus`)는
    `/create-pr`을 쓸 때만 필요하다. 워크스페이스 설정과 CI의 라벨·경로 규칙에서 근거를 찾고,
    찾지 못하면 비운다 — 없으면 해당 신호를 내지 않을 뿐 스킬은 돈다.

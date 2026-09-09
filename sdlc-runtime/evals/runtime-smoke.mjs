@@ -1261,6 +1261,35 @@ status: in_progress
 })
 
 
+test('커밋되지 않은 프로필과 ADR 은 «나만 보는 검사» 라고 말한다', () => {
+  /** 프로필이 Git 밖에 있으면 내 사슬은 이 규칙으로, 남의 사슬은 저마다의 규칙으로 통과하고 CI 는
+   *  아무것도 안 본다. 셋 다 화면에서는 «통과» 로 보인다 — 이 하네스가 가장 싫어하는 모양이다. */
+  const d = temp('sdlc-tracked')
+  const profile = join(d, '.claude/spec-profile.yml')
+  put(profile, 'sdlc_version: 5\nspec_dir: ".sdlc/specs"\nadr_dir: "docs/adr"\n')
+  mkdirSync(join(d, '.sdlc/specs'), { recursive: true })
+  mkdirSync(join(d, 'docs/adr'), { recursive: true })
+  put(join(d, 'docs/adr/index.md'), '# 결정 기록\n\n| ID | 제목 | 상태 |\n|---|---|---|\n')
+  put(join(d, '.gitignore'), '.claude/\n')
+  git(d, 'init', '-q'); git(d, 'config', 'user.email', 'eval@local'); git(d, 'config', 'user.name', 'eval')
+
+  const check = (...a) => run(process.execPath, [tool('check-all.mjs'), d, ...a])
+  let r = check()
+  assert(/프로필이 Git 에 없다/.test(r.out), `gitignore 된 프로필을 조용히 통과시켰다:\n${r.out}`)
+  assert(/결정 기록이 Git 에 없다/.test(r.out), `커밋되지 않은 ADR 을 조용히 통과시켰다:\n${r.out}`)
+  assert(/owner/.test(r.out), `사람마다 다른 키를 어떻게 하라는 말이 없다:\n${r.out}`)
+  assert(r.code !== 2, `기본 모드에서 프로필 부재로 오해했다 (${r.code})`)
+
+  // CI 모드에서는 실패다 — 경고로 두면 아무도 안 고친다.
+  assert(check('--required').code === 1, 'CI 모드에서 통과시켰다')
+
+  // 커밋하면 조용해진다. gitignore 에 남아 있어도 추적되면 남과 CI 가 같은 것을 본다.
+  git(d, 'add', '-f', '.claude/spec-profile.yml', 'docs/adr'); git(d, 'commit', '-qm', 'chore: profile')
+  r = check()
+  assert(!/Git 에 없다/.test(r.out), `추적되는 설정을 여전히 문제로 봤다:\n${r.out}`)
+})
+
+
 console.log('\n런타임 스모크 평가\n')
 for (const r of results) {
   console.log(`  ${r.ok ? '통과' : '✗ 실패'}  ${r.name}`)
