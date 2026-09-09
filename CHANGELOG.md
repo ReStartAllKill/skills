@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.4.0 — 2026-09-09
+
+### Added
+
+- **A length limit on execution-log notes.** `plan-check mark` refuses a `--note` longer than the
+  profile language's limit (`limits.logNote`: ko 120, en 260), and `lint-prose.mjs` reports
+  `long-log` for an entry that got there by hand. Execution-log entries are not entities, so none
+  of the item limits reached them: a single 800-character note passed as long as the section total
+  fit. Only the note after the deviation label is measured; the date, task IDs and result in front
+  of it are written by the tool. `/implement-spec` and the plan template now ask for one sentence,
+  saying what differed and how.
+- **`test-drift-lang`.** Where a repository writes its acceptance criteria in the profile language
+  and its test names as code identifiers, the word overlap `test-drift` measures is structurally
+  zero and the rule fires on every task. The linter now says once per document that the comparison
+  cannot be made, and leaves it to a person.
+
+### Fixed
+
+- Vendored intent and spec documents are read again for cross-reference instead of being deleted.
+  Skipping their prose also removed the tier that sizes every budget and the acceptance criteria
+  `test-drift` compares against, so in a consumer repository a `full` plan was measured against
+  `standard` budgets and `test-drift` never ran at all. A plan's own `tier` is now the last resort
+  behind the intent's, for an artifact directory that holds no intent or finding.
+
+### Upgrading
+
+Existing plans can newly fail. `check-all` runs the prose linter in strict mode, so a long
+execution-log entry fails CI as a warning, and an entry over twice the limit is an error in every
+mode. Both are fixed by shortening the note: the cause, the attempts and the log excerpts it
+usually carries are already in the commit message and the verify log. Consumer repositories that
+vendor their upstream documents will also see budgets recomputed at the intent's tier, which is
+usually more generous than the `standard` they were being measured against.
+
 ## 0.3.0 — 2026-09-09
 
 ### Added
