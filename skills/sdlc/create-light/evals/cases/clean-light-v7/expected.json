@@ -1,0 +1,6 @@
+{
+  "kind": "negative-control · light 한 번 통과",
+  "why": "/create-light 가 내놓는 모양 그대로의 세트다 — intent·spec·plan 세 장이 한 폴더에, tier light, 표기 없는 절, standard+ 절은 지운 채, 핀은 둘 다 body: 해시. 이 세트가 오류나 경고를 하나라도 내면 스킬이 쓰라는 대로 쓴 문서가 검사기에 걸리는 것이고, 그러면 스킬과 검사기 중 하나가 틀렸다. 케이스 셋을 따로 검사하는 create-spec/body-pin-v7 과 달리 여기서는 plan 까지 한 벌이다.",
+  "check": { "errors": 0, "warns": 0 },
+  "lint": { "errors": 0, "warns": 0 }
+}
