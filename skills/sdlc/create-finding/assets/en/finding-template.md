@@ -1,13 +1,11 @@
 ---
 artifact: finding
-schema_version: 4
+schema_version: 7
 id: "FND-YYYY-NNN"
 title: "<what was observed, in one sentence>"
 status: draft # draft | in_review(being triaged) | accepted(route settled) | rejected | superseded
 tier: light # light by default — this document gets written where nobody is watching
 owner: "<the service owner or whoever is on call>"
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
 detected_at: "YYYY-MM-DDTHH:MM:SSZ" # when the signal fired, not when it was noticed
 trigger: band_breach # band_breach | scheduled_scan | ticket | channel | manual
 band: null # required when trigger is band_breach — the band id in .claude/bands.yml
@@ -16,10 +14,7 @@ routed_to: null # required once accepted: "patch:<PR>" | "intent:<path>" | "dism
                 # the intent path is **relative to this file's folder**, while the intent's own
                 # from_finding is relative to its folder. Both are «relative to my own folder».
                 # e.g. "intent:../../2026-09-04-search-exclude-archived/intent.md"
-superseded_by: null
 generated_by: null
-generated_from: null
-skills_in_force: []
 ---
 
 # Finding: <title>
@@ -27,11 +22,11 @@ skills_in_force: []
 <!-- Three ways out: patch, intent, dismiss. How to fix it is not settled here. Keep §Observations
      (what was measured) apart from §Diagnosis (what is guessed). -->
 
-## Summary `[required · all tiers]`
+## Summary
 
 <What, when, where. Three sentences at most.>
 
-## Trigger `[required · all tiers]`
+## Trigger
 
 <!-- Who or what started this. -->
 
@@ -40,7 +35,7 @@ band: <the same id as `band` in the frontmatter> — <the registry's metric, win
 autonomy tier: <log / diagnose / propose>
 what it permitted: <concretely — read-only tools / up to opening a PR / up to calling runbook <name>>
 
-## Observations `[required · all tiers]`
+## Observations
 
 <!-- Only what was measured. Reproduce with a query or a command. What was not measured is «unmeasured». -->
 
@@ -56,7 +51,7 @@ at: <ISO>
 reproduce: `<query or command>`
 at: <ISO>
 
-## Diagnosis `[required · all tiers]`
+## Diagnosis
 
 <!-- The model's reading. A hypothesis points at EV ids and carries a way to disprove it. -->
 
@@ -73,7 +68,7 @@ disproved by: <what, if true, would mean this was not it>
 
 - <e.g. application logs for the 30 minutes around the deploy were past retention and could not be read.>
 
-## Actions taken `[required · all tiers]`
+## Actions taken
 
 <!-- What was actually done, and what was not. The second matters more in an audit. -->
 
@@ -83,7 +78,7 @@ disproved by: <what, if true, would mean this was not it>
 
 - <e.g. no revert PR was opened — the autonomy tier is diagnose, so the propose path is closed.>
 
-## Route `[required · all tiers]`
+## Route
 
 <!-- Choose by size. When unsure, intent. When dismissing, say whether the band moves. -->
 
@@ -95,13 +90,13 @@ If dismissed — band adjustment: <what changes how, or «no adjustment — <bas
 
 <!-- If the band moved, record it under `revised:` in bands.yml too — the checker reads both directions. -->
 
-## Preventing a repeat `[required · all tiers]`
+## Preventing a repeat
 
 <!-- An eval case, a test, a hook or a band adjustment for this class. Needed on the patch route too. -->
 
 - class: <the defect class this belongs to> → <eval case / test / hook / band adjustment> · <path> · <when>
 
-## Open questions `[required · all tiers]`
+## Open questions
 
 <!-- A question that stops the route from being settled is `blocked`. If none, write `N/A — <basis>`. -->
 

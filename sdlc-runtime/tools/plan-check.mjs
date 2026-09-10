@@ -99,8 +99,17 @@ if (CMD === 'mark') {
   if (!box.test(planText)) die(`${TASK} 의 미체크 항목을 못 찾았다 — plan.md 의 작업 줄 형식을 확인한다.`)
   let next = planText.replace(box, '$1[x]$2')
 
-  const secStart = sectionHeading(SECTION.executionLog).exec(next)
-  if (!secStart) die('§실행 기록 절이 없다 — plan 템플릿의 필수 절이다.')
+  // v7 템플릿은 §실행 기록을 싣지 않는다. 실어 봐야 도구가 채울 때까지 «해당 없음 — 아직 실행 전» 한
+  // 줄이 서 있을 뿐이었고, 그 자리를 사람이 미리 만들어 두게 하면 절을 지운 계획서에서 mark 가 죽는다.
+  // 절이 없으면 오류가 아니라 여기서 만든다 — 이 절의 주인은 도구다.
+  // 제목은 프로필 언어의 written 번들에서 온다. SECTION.executionLog 의 별칭이라야 check-artifacts
+  // 의 `completed` 규칙과 lint-prose 의 long-log 가 방금 만든 절을 읽는다. 손으로 쓴 절이 이미 있으면
+  // 제목이 어느 별칭이든 그대로 쓰고 새로 만들지 않는다.
+  let secStart = sectionHeading(SECTION.executionLog).exec(next)
+  if (!secStart) {
+    next = next.replace(/\s*$/, '') + `\n\n## ${W.executionLog}\n\n`
+    secStart = sectionHeading(SECTION.executionLog).exec(next)
+  }
   const bodyFrom = secStart.index + secStart[0].length
   const after = next.slice(bodyFrom)
   const stop = (() => {

@@ -1,13 +1,11 @@
 ---
 artifact: finding
-schema_version: 4
+schema_version: 7
 id: "FND-YYYY-NNN"
 title: "<무엇이 관측되었는지 한 문장으로>"
 status: draft # draft | in_review(분류 중) | accepted(경로 확정) | rejected(기각) | superseded
 tier: light # 기본은 light — 사람 없는 자리에서 쓰이는 문서다
 owner: "<서비스 소유자 또는 온콜>"
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
 detected_at: "YYYY-MM-DDTHH:MM:SSZ" # 신호가 난 시각(발견한 시각이 아니다)
 trigger: band_breach # band_breach | scheduled_scan | ticket | channel | manual
 band: null # trigger 가 band_breach 면 필수 — .claude/bands.yml 의 밴드 id
@@ -16,10 +14,7 @@ routed_to: null # accepted 면 필수: "patch:<PR>" | "intent:<경로>" | "dismi
                 # Resolve the intent path from this file's directory. The intent's from_finding
                 # resolves from its own directory, so each link uses its document as the base.
                 # Example: "intent:../../2026-09-04-search-exclude-archived/intent.md"
-superseded_by: null
 generated_by: null
-generated_from: null
-skills_in_force: []
 ---
 
 # Finding: <제목>
@@ -27,11 +22,11 @@ skills_in_force: []
 <!-- Three ways out: patch, intent, dismiss. How to fix it is not settled here. Keep §Observations
      (what was measured) apart from §Diagnosis (what is guessed). -->
 
-## 요약 `[필수 · 모든 티어]`
+## 요약
 
 <무엇이 · 언제 · 어디서. 3문장을 넘기지 않는다.>
 
-## 발화 `[필수 · 모든 티어]`
+## 발화
 
 <!-- Who or what started this. -->
 
@@ -40,7 +35,7 @@ skills_in_force: []
 자율 티어: <log / diagnose / propose>
 그것이 허용한 것: <구체적으로 — 읽기 도구만 / PR 열기까지 / 런북 <이름> 호출까지>
 
-## 관측 `[필수 · 모든 티어]`
+## 관측
 
 <!-- Only what was measured. Reproduce with a query or a command. What was not measured is «unmeasured». -->
 
@@ -56,7 +51,7 @@ skills_in_force: []
 재현: `<질의 또는 명령>`
 시각: <ISO>
 
-## 진단 `[필수 · 모든 티어]`
+## 진단
 
 <!-- The model's reading. A hypothesis points at EV ids and carries a way to disprove it. -->
 
@@ -73,7 +68,7 @@ skills_in_force: []
 
 - <예: 배포 전후 30분의 애플리케이션 로그는 보존 기간이 지나 조회하지 못했다.>
 
-## 취한 조치 `[필수 · 모든 티어]`
+## 취한 조치
 
 <!-- What was actually done, and what was not. The second matters more in an audit. -->
 
@@ -83,7 +78,7 @@ skills_in_force: []
 
 - <예: revert PR 을 열지 않았다 — 자율 티어가 diagnose 라 propose 경로가 닫혀 있다.>
 
-## 경로 판정 `[필수 · 모든 티어]`
+## 경로 판정
 
 <!-- Choose by size. When unsure, intent. When dismissing, say whether the band moves. -->
 
@@ -95,13 +90,13 @@ skills_in_force: []
 
 <!-- If the band moved, record it under `revised:` in bands.yml too — the checker reads both directions. -->
 
-## 재발 방지 `[필수 · 모든 티어]`
+## 재발 방지
 
 <!-- An eval case, a test, a hook or a band adjustment for this class. Needed on the patch route too. -->
 
 - 부류: <이 발견이 속한 결함 부류> → <eval 케이스 / 테스트 / 훅 / 밴드 조정> · <경로> · <언제>
 
-## 열린 질문 `[필수 · 모든 티어]`
+## 열린 질문
 
 <!-- A question that stops the route from being settled is `blocked`. If none, write `N/A — <basis>`. -->
 

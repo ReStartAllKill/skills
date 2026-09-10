@@ -75,4 +75,8 @@ export const written = {
   divergence: '계획과의 차이',
   none: '없음',
   noPr: 'PR 없음',
+  // The title `plan-check mark` writes when the plan has no execution-log section yet. It must
+  // stay one of SECTION.executionLog's aliases, or the section the tool creates would be invisible
+  // to the `completed` rule and to the long-log linter — a section nobody but its author can read.
+  executionLog: '실행 기록',
 }

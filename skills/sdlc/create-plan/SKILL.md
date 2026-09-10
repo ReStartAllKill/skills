@@ -26,9 +26,11 @@ description: '승인된 spec.md를 바탕으로 구현 계획과 작업 목록�
 4. 작업을 나누고 `files`, `depends`, `covers`, `tests`, `verify`를 채운다.
    의존 관계를 기준으로 순서를 정하고 저장소의 아키텍처 계층 경계를 지킨다.
    UI 자동 검증이 어려우면 분리 가능한 판정 로직을 테스트하고 나머지는 수동 검증에 명시한다.
-5. `spec_version`을 기록한다. `upstream.lock.json`이 있으면 락의 `files["spec.md"].sha`를 쓰고,
-   없으면 명세 디렉터리에서 `git log -1 --format=%h -- spec.md`를 실행한다.
-   커밋이 없으면 버전 값을 만들지 말고 상위 문서를 먼저 커밋한다.
+5. `spec_version`을 기록한다. `upstream.lock.json`이 있으면 락의 `files["spec.md"].sha`를 쓴다
+   (그 자리에서 `body:`는 거부된다). 락이 없고 스키마 v7 이상이면
+   `node <sdlc_runtime>/tools/pin.mjs spec.md`의 출력을 그대로 쓴다 — 본문 핀이라 상위가 아직
+   커밋되지 않아도 된다. v7 미만이면 명세 디렉터리에서 `git log -1 --format=%h -- spec.md`를
+   실행하고, 커밋이 없으면 버전 값을 만들지 말고 상위 문서를 먼저 커밋한다.
 6. `TD-*`에는 이번 변경의 구현 방법을 기록한다. 변경 이후에도 유지할 아키텍처 결정은
    `<sdlc_runtime>/references/adr.md`의 「판정」 기준에 따라 `/create-adr`로 작성한다.
    버전을 고정해 참조한 ADR은 `task-brief`가 구현 에이전트에게 전달한다.

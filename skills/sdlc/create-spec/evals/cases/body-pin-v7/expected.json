@@ -1,0 +1,6 @@
+{
+  "kind": "negative-control · 본문 해시 핀",
+  "why": "intent 와 spec 이 한 커밋에서 태어난 v7 산출물 세트. `intent_version` 이 커밋 SHA 가 아니라 `body:` 본문 해시라 상위 커밋을 기다리지 않는다. 이 값이 오류로 읽히면 v7 의 두 규칙 중 하나가 통째로 못 쓰는 것이 되고, 반대로 아무 값이나 통과하면 핀이 아니다 — 어긋난 핀을 무는 형제가 `create-plan/body-pin-stale-v7` 이다.",
+  "check": { "errors": 0, "warns": 0 },
+  "lint": { "errors": 0, "warns": 0 }
+}

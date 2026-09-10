@@ -1,20 +1,14 @@
 ---
 artifact: intent
-schema_version: 4
+schema_version: 7
 id: "CHG-YYYY-NNN"
 title: "<the change you intend, in one sentence>"
 status: draft # draft | in_review | accepted | rejected | superseded
 tier: standard # light | standard | full — this sets the weight of the entire artifact set
 owner: "<the person or team who decides>"
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
-superseded_by: null # required once status is superseded
-from_finding: null # path to the finding.md this came from — **relative to this file's folder**
-                   # e.g. "../findings/FND-2026-007-ci-failure-rate/finding.md"
+from_finding: null # path to the finding.md this came from — **relative to this file's folder**. e.g. "../findings/FND-2026-007-ci/finding.md"
 approved_by: null # required from status accepted on — the **person** who approved. Cannot equal generated_by
 generated_by: null # e.g. "claude-opus-5" — fill in when an agent wrote this
-generated_from: null # the prompt or slash command of that session
-skills_in_force: [] # e.g. ["brand@a3f2c1"]
 ---
 
 # Intent: <title>
@@ -22,7 +16,7 @@ skills_in_force: [] # e.g. ["brand@a3f2c1"]
 <!-- Written for the product owner and the person proposing the change. If a way to build it
      appears here, it belongs in the spec or the plan. -->
 
-## Problem `[required · all tiers]`
+## Problem
 
 <!-- The problem, not the solution. Keep observation separate from reading. Two to four sentences. -->
 
@@ -32,7 +26,7 @@ skills_in_force: [] # e.g. ["brand@a3f2c1"]
 
 - <e.g. support tickets — 42 of the same kind in the last 30 days. [dashboard link]>
 
-## Outcomes `[required · all tiers]`
+## Outcomes
 
 <!-- Observable results. Every Must has to be covered by a requirement in the spec. -->
 
@@ -48,27 +42,17 @@ check: <how it is observed or measured.>
 
 check: <how it is observed or measured.>
 
-## Non-goals `[required · all tiers]`
+## Non-goals
 
 - <e.g. reworking the admin screens is not part of this.>
 
-## Constraints `[required · all tiers]`
+## Constraints
 
 <!-- Boundaries to hold. Do not prescribe an implementation. If none, write `N/A — <basis>`. -->
 
 ### CON-001 — <one line>
 
 <What must hold. Why. What happens if it does not.>
-
-## Open questions `[required · all tiers]`
-
-<!-- An Open question marked `blocked` keeps this out of accepted. If none, write `N/A — <basis>`. -->
-
-### Q-001 — <what has to be decided or confirmed>
-
-impact: <blocked / high / low>
-owner: <name>
-state: Open
 
 ## Reach and measures `[required · standard+]`
 
@@ -89,10 +73,11 @@ verify: <how it gets checked> · if wrong: <what changes> · owner/by: <name / d
 
 - <option> — <expected effect> / rejected because: <reason>
 
-## Approvals and history `[required · standard+]`
+## Approvals `[required · standard+]`
 
 - <role> <name> — <approved/conditional/rejected>, YYYY-MM-DD. <comment>
 
-### History
-
-- YYYY-MM-DD <name> — first draft. <background>
+<!-- Open questions: when there are any, add a `## Open questions` heading and one `### Q-NNN`
+     item per question. When there are none, leave no heading — a section that is present must
+     have content, and a standing `N/A — nothing to ask` is a sentence written for the checker
+     rather than for a reader. The change history is git's; do not keep a copy here. -->

@@ -1,0 +1,6 @@
+{
+  "kind": "negative-control · v7",
+  "why": "표기를 뗀 v7 템플릿으로 쓴 정상 intent. 무표기 `##` 를 필수로 읽는 규칙이 «표기가 없으면 지적한다» 로 뒤집히면 v7 로 쓴 모든 문서가 첫 칸부터 빨개진다. 빈 절을 무는 형제(`unmarked-empty-v7`)와 같은 배치에서 돌아야 규칙이 켜져 있다는 뜻이 된다.",
+  "check": { "errors": 0, "warns": 0 },
+  "lint": { "errors": 0, "warns": 0 }
+}

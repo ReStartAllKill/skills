@@ -98,6 +98,7 @@ if (profileStale) {
   const missing = []
   if (profileVer < 3) missing.push('v3 승인 분리')
   if (profileVer < 4) missing.push('v4 작업 귀속·완료 증거')
+  if (profileVer < 7) missing.push('v7 무표기 절 필수')
   console.log(`  지금은 새 산출물 세트가 v${profileVer} 로 만들어져 ${missing.join(' · ')} 규칙이 걸리지 않는다.`)
   console.log('  안 걸리는 것은 통과와 구분되지 않으므로, 그대로 두는 것도 선택이 아니라 결정이다.')
 } else {

@@ -1,20 +1,15 @@
 ---
 artifact: spec
-schema_version: 4
+schema_version: 7
 id: "SPEC-YYYY-NNN"
 title: "<명세 제목>"
 status: draft # draft | in_review | accepted | rejected | superseded
 tier: standard # intent 의 tier 와 같아야 한다
 owner: "<명세 책임자 또는 팀>"
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
 intent: "./intent.md"
 intent_version: "<intent.md 를 마지막으로 바꾼 커밋 SHA>"
-superseded_by: null
 approved_by: null # status 가 accepted 이상이면 필수 — 승인한 **사람**. generated_by 와 같을 수 없다
 generated_by: null
-generated_from: null
-skills_in_force: []
 ---
 
 # Spec: <명세 제목>
@@ -22,15 +17,7 @@ skills_in_force: []
 <!-- Internal structure, libraries and ordering belong in the plan. Field and event names on an
      external interface are a contract, so they belong here. Background stays in the intent, cited by ID. -->
 
-## 범위 `[필수 · 모든 티어]`
-
-상위 intent: [<CHG-YYYY-NNN>](./intent.md)
-충족하는 결과: OUT-001, OUT-002
-적용하는 제약: CON-001
-
-제외: intent 의 비목표를 정본으로 따른다.
-
-## 시나리오 `[필수 · 모든 티어]`
+## 시나리오 `[필수 · standard+]`
 
 <!-- One nominal flow and at least one error or edge flow. Observable interaction only. -->
 
@@ -46,7 +33,7 @@ skills_in_force: []
 - **When** <같은 행동이 반복되거나 의존성이 실패>
 - **Then** <안전하고 예측 가능한 결과>
 
-## 요구사항 `[필수 · 모든 티어]`
+## 요구사항
 
 <!-- One behaviour per requirement. `basis:` is required. Every Must needs acceptance criteria. -->
 
@@ -71,7 +58,7 @@ skills_in_force: []
 
 - [ ] AC-003 — <언제>이면 시스템은 <무엇을> 한다
 
-## 오류와 경계 `[필수 · 모든 티어]`
+## 오류와 경계
 
 ### EDGE-001 — <조건>
 
@@ -112,23 +99,12 @@ skills_in_force: []
 - 정합성: <중복·순서·일관성·시간대 규칙>
 - 이동 제한: <지역·시스템 경계 또는 해당 없음 — 근거>
 
-## 열린 질문과 결정 `[필수 · 모든 티어]`
-
-<!-- A question that stops the plan from starting is `blocked`. If none, write `N/A — <basis>`. -->
-
-### SQ-001 — <질문>
-
-영향 받는 요구사항: FR-002
-담당: <이름> · 상태: Open
-
-### SD-001 — <외부 동작에 대한 결정>
-
-<무엇을 어떻게 정했고 왜.> 결정: <이름> / YYYY-MM-DD
-
-## 승인과 변경 이력 `[필수 · standard+]`
+## 승인 `[필수 · standard+]`
 
 - <역할> <이름> — <승인/조건부/반려>, YYYY-MM-DD. <의견>
 
-### 변경 이력
-
-- YYYY-MM-DD <이름> — 초안 작성. 영향: FR-001, AC-001
+<!-- Open questions and decisions: when there are any, add a `## 열린 질문과 결정`
+     heading with one `### SQ-NNN` per question and one `### SD-NNN` per settled decision. When
+     there are none, leave no heading — a section that is present must have content, and a
+     standing `해당 없음 — 열린 것이 없다` is a sentence written for the checker rather than for a
+     reader. The change history is git's; do not keep a copy here. -->

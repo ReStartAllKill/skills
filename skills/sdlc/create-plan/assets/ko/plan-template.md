@@ -1,40 +1,22 @@
 ---
 artifact: plan
-schema_version: 4
+schema_version: 7
 id: "PLAN-YYYY-NNN"
 title: "<구현 계획 제목>"
 status: draft # draft | in_review | accepted | in_progress | completed | rejected | superseded
 tier: standard # intent 의 tier 와 같아야 한다
 owner: "<구현 책임자 또는 팀>"
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
 intent: "./intent.md"
 spec: "./spec.md"
 spec_version: "<spec.md 를 마지막으로 바꾼 커밋 SHA>"
-superseded_by: null
 approved_by: null # status 가 accepted 이상이면 필수 — 승인한 **사람**. generated_by 와 같을 수 없다
 generated_by: null
-generated_from: null
-skills_in_force: []
 ---
 
 # Plan: <계획 제목>
 
 <!-- The input to `/implement-spec`. Cite requirements by ID. If external behaviour changes,
      the spec changes first. -->
-
-## 입력과 범위 `[필수 · 모든 티어]`
-
-상위 spec: [<SPEC-YYYY-NNN>](./spec.md) · 상위 intent: [<CHG-YYYY-NNN>](./intent.md)
-구현 대상: FR-001, FR-002, NFR-001
-구현하지 않는 것: <Could/Won't ID 또는 해당 없음 — 근거>
-기준 코드: <브랜치·태그·커밋>
-
-시작 전 전제:
-
-- [ ] intent 와 spec 이 `accepted` 다
-- [ ] 막는 열린 질문이 없다
-- [ ] 필요한 환경·권한·테스트 데이터가 있다
 
 ## 코드 실태 `[필수 · standard+]`
 
@@ -43,7 +25,7 @@ skills_in_force: []
 
 - `<경로>:<줄>` — <현재 책임> / <왜 건드리는가>
 
-## 도달 상태와 변경 지점 `[필수 · 모든 티어]`
+## 도달 상태와 변경 지점
 
 <!-- The flow after this lands, and which file changes how. This is the body of a light plan. -->
 
@@ -52,7 +34,7 @@ skills_in_force: []
 - `<경로>` — <추가/수정할 책임> (FR-001)
 - `<테스트 경로>` — <검증 추가> (AC-001)
 
-## 릴리스 영향 `[필수 · 모든 티어]`
+## 릴리스 영향
 
 <!-- `/implement-spec` reads these. Do not leave them blank. -->
 
@@ -82,7 +64,7 @@ covers: FR-001
 - 계약 호환성: <버전/확장/어댑터> · 소비자 전환: <순서와 기한>
 - 순서: <1) 호환 가능한 기반 배포 → 2) 점진 전환 → 3) 옛 경로 제거>
 
-## 작업 `[필수 · 모든 티어]`
+## 작업
 
 <!-- Format and rules live in references/tasks.md. All five fields are required, and tasks on the
      same level must not share a file. -->
@@ -91,7 +73,7 @@ covers: FR-001
 
 ```
 레벨 1:  WP-001  WP-002      ← 병렬
-        ── 전체 verify ──
+        ── scoped verify ──
 레벨 2:  WP-003
 ```
 
@@ -116,7 +98,7 @@ covers: FR-001
   - tests: <covers 의 AC 문장 전부 — 여러 개면 ` · `로 구분>
   - verify: <명령>
 
-## 위험 `[필수 · 모든 티어]`
+## 위험
 
 ### RISK-001 — <위험>
 
@@ -138,32 +120,8 @@ covers: FR-001
 
 기능 플래그: <이름, 기본값, 소유자 또는 해당 없음 — 근거>
 
-## 열린 질문 `[필수 · 모든 티어]`
-
-### PQ-001 — <기술적 질문>
-
-영향 작업: WP-002 · 담당: <이름> · 상태: Open
-
-## 완료 정의 `[필수 · 모든 티어]`
-
-- [ ] 모든 Must 요구사항과 수용 기준이 통과했다
-- [ ] 전체 verify 가 통과했다 (걸리는 게이트 포함)
-- [ ] (standard+) 보안·개인정보·접근성 검토가 끝났다
-- [ ] 되돌리기 경로가 준비돼 있다
-- [ ] 구현 결과와 검증 증거가 PR 에 연결됐다
-- [ ] 상위 문서와 어긋난 것이 없거나, 어긋난 것이 상위에 반영됐다
-
-## 실행 기록 `[필수 · 모든 티어]`
-
-<!-- Where the plan and reality differ. Before execution starts, write `N/A — not started`. Do not
-     write commit SHAs or verify log names — plan-progress finds both from the trailers and the log
-     directory. Tasks that went as planned are folded onto one line by `plan-check mark`.
-     Keep each note to one sentence: what differed and how. Cause, attempts and log excerpts are
-     already in the commit message and the verify log — `plan-check mark` refuses a longer note. -->
-
-- YYYY-MM-DD WP-001 — <부분/실패> · <PR 링크> · 계획과의 차이: <무엇이 어떻게 달랐는가>
-- YYYY-MM-DD WP-002 WP-003 — 완료 · PR 없음 · 계획과의 차이: 없음
-
-### 변경 기록
-
-- YYYY-MM-DD <이름> — 초안 작성. 영향: WP-001, TD-001
+<!-- Open questions: when there are any, add a `## 열린 질문` heading and one `### PQ-NNN`
+     item per question. When there are none, leave no heading — a section that is present must
+     have content. The execution-log section is written by `plan-check mark`, which creates it on
+     the first entry; do not add it by hand and do not leave it standing empty. The change history
+     is git's; do not keep a copy here. -->

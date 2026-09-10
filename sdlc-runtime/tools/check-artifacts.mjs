@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process'
 import {
   PREFIXES, FILES, WP_FIELDS, P_ALT, idsIn, stripComments, isNull, frontmatter,
   loadDir, isTemplate, report, SDLC_VERSION,
-  SUPPORTED_SCHEMA_VERSIONS, schemaVersion,
+  SUPPORTED_SCHEMA_VERSIONS, schemaVersion, BODY_PIN, bodyHash, bodyPin,
   levelsOf, wpFiles, ADR_FILENAME, loadAdrDir, CHAIN_FILES, scopeOf } from './artifact-parse.mjs'
 import { adrSeam, checkAdr, checkPins } from './adr-check.mjs'
 import { LOCK_FILE, upstreamSeam, loadLock, verifyLock, findUpstream, headOf, sameRepo } from './upstream.mjs'
@@ -40,7 +40,11 @@ const STATUS = {
   finding: ['draft', 'in_review', 'accepted', 'rejected', 'superseded'],
 }
 const RANK = { draft: 0, in_review: 1, accepted: 2, in_progress: 3, completed: 4, rejected: -1, superseded: -2 }
-const BASE_FM = ['artifact', 'id', 'title', 'status', 'tier', 'owner', 'created', 'updated']
+// `created` 와 `updated` 는 여기 없다 — git 이 이미 쥔 사실을 손으로 옮겨 적은 칸이었고, 손으로 적는
+// 순간 틀리기 시작한다(고쳐 놓고 `updated` 를 안 올린 문서가 «안 바뀐 문서» 로 읽힌다). 파생 가능한
+// 사실은 적지 않는다는 이 저장소의 규칙이 프런트매터에도 걸린 자리다. 모든 버전에서 푸는 완화라
+// 옛 산출물 세트는 그대로 통과하고, 이미 적힌 두 줄도 오류가 되지 않는다.
+const BASE_FM = ['artifact', 'id', 'title', 'status', 'tier', 'owner']
 const REQUIRED_FM = {
   intent: BASE_FM,
   spec: [...BASE_FM, 'intent', 'intent_version'],
@@ -245,7 +249,7 @@ if (!TEMPLATE) {
   for (const d of Object.values(docs)) {
     if (!isNull(d.fm.generated_by)) continue
     warn(d.name, '`generated_by` 가 비었다',
-      'Agent 가 썼으면 `generated_by` · `generated_from` · `skills_in_force` 를 채운다. 사람이 손으로 썼으면 그대로 두고 이 경고를 남긴다 — 그것도 기록이다.')
+      'Agent 가 썼으면 `generated_by` 를 채운다(`generated_from` · `skills_in_force` 는 선택). 사람이 손으로 썼으면 그대로 두고 이 경고를 남긴다 — 그것도 기록이다.')
   }
 }
 
@@ -341,19 +345,42 @@ const lastCommit = (f) => {
   try { return execFileSync('git', ['-C', DIR, 'log', '-1', '--format=%H', '--', f], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null }
   catch { return null }
 }
-if (!inGit && !LOCK?.files) notes.push('git 저장소가 아니다 — 버전 고정 검사만 건너뛴다.')
-else if (!TEMPLATE) {
-  for (const [d, key, up] of [[docs.spec, 'intent_version', 'intent.md'], [docs.plan, 'spec_version', 'spec.md']]) {
+const BODY_PIN_SCHEMA = 7
+if (!inGit && !LOCK?.files) notes.push('git 저장소가 아니다 — 커밋 SHA 고정 검사만 건너뛴다.')
+if (!TEMPLATE) {
+  for (const [d, key, up, upDoc] of [[docs.spec, 'intent_version', 'intent.md', docs.intent],
+                                     [docs.plan, 'spec_version', 'spec.md', docs.spec]]) {
     if (!d || isNull(d.fm[key])) continue
     const decl = String(d.fm[key])
+    const locked = LOCK?.files?.[up]?.sha ?? null
+    if (/^body:/i.test(decl)) {
+      // 본문 해시는 git 도 락도 없이 이 자리에서 대조된다 — 아래의 커밋 SHA 검사와 달리 건너뛸 조건이 없다.
+      const hex = BODY_PIN.exec(decl)?.[1]
+      if ((schemaVersion(d.fm) ?? 0) < BODY_PIN_SCHEMA) {
+        err(d.name, `\`${key}: ${decl}\` 는 커밋 SHA 도 날짜도 아니다`,
+          `본문 해시 고정은 schema ${BODY_PIN_SCHEMA} 부터다. 프런트매터의 schema_version 을 올리거나 ${up} 의 커밋 SHA 를 적는다 — 낮은 버전을 읽는 런타임은 이 값을 조용히 잘못 읽는다.`)
+      } else if (locked) {
+        err(d.name, `\`${key}\` 가 본문 해시인데 이 산출물 세트는 \`${LOCK_FILE}\` 으로 고정돼 있다`,
+          `상류 사본은 락이 적은 커밋(${String(locked).slice(0, 7)})을 적는다. 본문 해시는 상류가 앞서간 것을 못 본다.`)
+      } else if (!hex) {
+        err(d.name, `\`${key}: ${decl}\` 의 본문 해시를 읽을 수 없다`,
+          `16진수 12자 이상이어야 한다. \`node <sdlc_runtime>/tools/pin.mjs ${up}\` 가 찍어 준다.`)
+      } else if (!upDoc) {
+        warn(d.name, `${up} 이 없어 \`${key}\` 를 대조하지 못했다`, '상위 문서를 먼저 놓는다.')
+      } else if (!bodyHash(upDoc.text).startsWith(hex.toLowerCase())) {
+        err(d.name, `\`${key}\` 가 ${up} 의 현재 본문과 다르다 (선언 ${decl} != 실제 ${bodyPin(upDoc.text)})`,
+          `${up} 의 본문이 이 문서를 쓴 뒤에 바뀌었다. 바뀐 내용을 읽고 이 문서를 갱신한 다음 \`node <sdlc_runtime>/tools/pin.mjs ${up}\` 로 다시 찍는다.`)
+      }
+      continue
+    }
+    if (!inGit && !LOCK?.files) continue
     if (/^\d{4}-\d{2}-\d{2}$/.test(decl)) { warn(d.name, `\`${key}\` 가 날짜다`, '커밋 SHA 를 쓰면 기계가 대조할 수 있다.'); continue }
     if (!/^[0-9a-f]{7,40}$/i.test(decl)) { err(d.name, `\`${key}: ${decl}\` 는 커밋 SHA 도 날짜도 아니다`, `${up} 을 마지막으로 바꾼 커밋의 SHA 를 적는다.`); continue }
-    const pinned = LOCK?.files?.[up]?.sha ?? null
-    const actual = pinned ?? (inGit ? lastCommit(up) : null)
+    const actual = locked ?? (inGit ? lastCommit(up) : null)
     if (!actual) { warn(d.name, `${up} 의 커밋 이력을 못 읽었다`, '아직 커밋되지 않았을 수 있다.'); continue }
     if (actual.startsWith(decl.toLowerCase())) continue
-    err(d.name, `\`${key}\` 가 ${pinned ? `${LOCK.repo} 의 ${up}` : up} 의 현재 커밋과 다르다 (선언 ${decl} != 실제 ${actual.slice(0, 7)})`,
-      pinned
+    err(d.name, `\`${key}\` 가 ${locked ? `${LOCK.repo} 의 ${up}` : up} 의 현재 커밋과 다르다 (선언 ${decl} != 실제 ${actual.slice(0, 7)})`,
+      locked
         ? '락이 가리키는 상류 커밋을 적는다. 상류가 바뀌었으면 `pull-spec.mjs` 로 다시 끌어온 뒤 찍는다.'
         : `${up} 이 이 문서를 쓴 뒤에 바뀌었다. 바뀐 내용을 읽고 이 문서를 갱신한 다음 ${key} 를 다시 찍는다.`)
   }
@@ -365,11 +392,16 @@ const tierOf = (m) => !m ? null
   : hasAlias(m, MARKER.allTiers) ? 'light' : /standard\+/.test(m) ? 'standard'
   : /\bfull\b/.test(m) ? 'full' : 'unknown'
 const required = (n) => n === 'light' || (n === 'standard' && TIER !== 'light') || (n === 'full' && TIER === 'full')
+const UNMARKED_SECTION_SCHEMA = 7
 
 for (const d of Object.values(docs)) {
+  // v7 부터 표기 없는 `##` 는 «모든 티어 필수» 다. 표기를 붙여야만 검사받던 규칙은 모든 제목에
+  // 작성용 비계를 남겼고, 그 비계를 읽는 것은 기계뿐이었다. `###` 는 그대로 표기가 있을 때만 본다 —
+  // 항목 제목까지 필수로 만들면 «해당 없음» 을 항목마다 적게 된다.
+  const unmarkedRequired = (schemaVersion(d.fm) ?? 0) >= UNMARKED_SECTION_SCHEMA
   for (const h of d.hs) {
-    const need = tierOf(h.marker)
-    if (need === 'unknown') { warn(d.name, `«${h.title}» 의 표기 \`[${h.marker}]\` 를 못 읽었다`, 'conventions.md 의 표기 다섯 중 하나여야 한다.'); continue }
+    const need = tierOf(h.marker) ?? (unmarkedRequired && h.depth === 2 ? 'light' : null)
+    if (need === 'unknown') { warn(d.name, `«${h.title}» 의 표기 \`[${h.marker}]\` 를 못 읽었다`, 'conventions.md 의 표기 넷 중 하나여야 한다 — 모든 티어 필수는 표기 없이 쓴다.'); continue }
     if (!need || !required(need) || h.hasMarkedChild || TEMPLATE) continue
 
     const body = (from, to) => stripComments(d.lines.slice(from, to).join('\n')).split('\n')
@@ -396,6 +428,19 @@ for (const d of Object.values(docs)) {
     const ph = content.filter((l) => /<[^<>\n]{1,120}>/.test(l))
     if (ph.length === content.length) err(d.name, `${where} 이 placeholder 뿐이다 (미작성)`, `\`${TIER}\` 티어에서 필수다. 채우거나 티어를 낮춘다.`)
     else if (ph.length > 0) warn(d.name, `${where} 에 placeholder ${ph.length}줄이 남았다`, `첫 줄: ${ph[0].trim().slice(0, 60)}`)
+  }
+}
+
+// v7 템플릿으로 쓴 문서를 낮은 버전으로 커밋하면 위의 절 검사가 통째로 꺼진 채 초록으로 통과한다 —
+// 꺼진 검사가 통과한 검사처럼 보이는 자리다. 손으로 쓴 옛 문서도 여기 걸리므로 막지 않고 경고만 세운다.
+if (!TEMPLATE) {
+  for (const d of Object.values(docs)) {
+    const schema = schemaVersion(d.fm)
+    if (schema == null || schema >= UNMARKED_SECTION_SCHEMA) continue
+    const sections = d.hs.filter((h) => h.depth <= 3)
+    if (!sections.some((h) => h.depth === 2) || sections.some((h) => h.marker)) continue
+    warn(d.name, `절 표기가 하나도 없다 — schema ${schema} 에서는 표기 없는 절을 검사하지 않는다`,
+      `\`schema_version\` 을 ${UNMARKED_SECTION_SCHEMA} 로 올리고(프로필의 \`sdlc_version\` 도 함께), 아니면 이 문서 버전의 템플릿을 쓴다.`)
   }
 }
 

@@ -1,0 +1,9 @@
+{
+  "kind": "seeded · 낡은 본문 핀",
+  "why": "plan 의 `spec_version` 이 spec 본문에 AC-004 가 붙기 전에 찍힌 값이다. 본문 해시 핀은 커밋 없이도 대조되므로, 이것을 못 잡으면 `body:` 는 커밋 SHA 보다 헐거운 «아무 값이나 되는» 칸이 된다. 지적은 다시 찍는 명령(`pin.mjs`)까지 말해야 하고, 맞는 핀이 통과하는 것은 형제 `create-spec/body-pin-v7` 이 지킨다.",
+  "check": {
+    "errors": 1, "warns": 0,
+    "matches": ["pin.mjs", "spec.md 의 현재 본문과 다르다"]
+  },
+  "lint": { "errors": 0, "warns": 0 }
+}

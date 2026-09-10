@@ -1,20 +1,15 @@
 ---
 artifact: spec
-schema_version: 4
+schema_version: 7
 id: "SPEC-YYYY-NNN"
 title: "<spec title>"
 status: draft # draft | in_review | accepted | rejected | superseded
 tier: standard # must match the intent's tier
 owner: "<the person or team who owns the spec>"
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
 intent: "./intent.md"
 intent_version: "<SHA of the commit that last changed intent.md>"
-superseded_by: null
 approved_by: null # required from status accepted on — the **person** who approved. Cannot equal generated_by
 generated_by: null
-generated_from: null
-skills_in_force: []
 ---
 
 # Spec: <spec title>
@@ -22,15 +17,7 @@ skills_in_force: []
 <!-- Internal structure, libraries and ordering belong in the plan. Field and event names on an
      external interface are a contract, so they belong here. Background stays in the intent, cited by ID. -->
 
-## Scope `[required · all tiers]`
-
-Upstream intent: [<CHG-YYYY-NNN>](./intent.md)
-Outcomes covered: OUT-001, OUT-002
-Constraints applied: CON-001
-
-Excluded: the intent's non-goals govern.
-
-## Scenarios `[required · all tiers]`
+## Scenarios `[required · standard+]`
 
 <!-- One nominal flow and at least one error or edge flow. Observable interaction only. -->
 
@@ -46,7 +33,7 @@ Excluded: the intent's non-goals govern.
 - **When** <the same action repeats, or a dependency fails>
 - **Then** <a safe and predictable result>
 
-## Requirements `[required · all tiers]`
+## Requirements
 
 <!-- One behaviour per requirement. `basis:` is required. Every Must needs acceptance criteria. -->
 
@@ -71,7 +58,7 @@ acceptance:
 
 - [ ] AC-003 — When <trigger>, the system does <what>.
 
-## Errors and edges `[required · all tiers]`
+## Errors and edges
 
 ### EDGE-001 — <condition>
 
@@ -112,23 +99,12 @@ basis: CON-001
 - Integrity: <duplication, ordering, consistency, time zone rules>
 - Movement limits: <region or system boundary, or N/A — basis>
 
-## Open questions and decisions `[required · all tiers]`
-
-<!-- A question that stops the plan from starting is `blocked`. If none, write `N/A — <basis>`. -->
-
-### SQ-001 — <question>
-
-affects: FR-002
-owner: <name> · state: Open
-
-### SD-001 — <a decision about external behaviour>
-
-<What was settled, how, and why.> decided by: <name> / YYYY-MM-DD
-
-## Approvals and history `[required · standard+]`
+## Approvals `[required · standard+]`
 
 - <role> <name> — <approved/conditional/rejected>, YYYY-MM-DD. <comment>
 
-### History
-
-- YYYY-MM-DD <name> — first draft. affects: FR-001, AC-001
+<!-- Open questions and decisions: when there are any, add a `## Open questions and decisions`
+     heading with one `### SQ-NNN` per question and one `### SD-NNN` per settled decision. When
+     there are none, leave no heading — a section that is present must have content, and a
+     standing `N/A — nothing open` is a sentence written for the checker rather than for a
+     reader. The change history is git's; do not keep a copy here. -->

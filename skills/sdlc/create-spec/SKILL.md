@@ -29,10 +29,13 @@ description: '승인된 intent.md를 바탕으로 동작 명세와 수용 기준
 5. `assets/<lang>/spec-template.md`로 작성한다. FR/NFR의 `근거:`에 OUT/CON을 연결하고,
    정상·오류·경계 동작을 검증 가능한 수용 기준으로 쓴다.
    외부 인터페이스의 필드·이벤트는 spec에, 내부 구조·함수·파일·라이브러리는 plan에 둔다.
-6. 명세 디렉터리에서 `git log -1 --format=%h -- intent.md`를 실행해 `intent_version`에 기록한다.
-   커밋이 없으면 버전 값을 만들지 말고 상위 문서를 먼저 커밋한다.
-   폴더에 `upstream.lock.json`이 있으면 이 문서는 벤더한 사본이다 — 여기서 고치지 않고
-   상류에서 고친 뒤 `pull-spec.mjs`로 다시 끌어온다.
+6. `intent_version`을 기록한다. 스키마 v7 이상이면 `node <sdlc_runtime>/tools/pin.mjs intent.md`를
+   실행해 나온 값을 그대로 쓴다 — 본문 핀이라 상위가 아직 커밋되지 않아도 된다.
+   v7 미만이면 명세 디렉터리에서 `git log -1 --format=%h -- intent.md`를 실행한다. 커밋이 없으면
+   버전 값을 만들지 말고 상위 문서를 먼저 커밋한다.
+   폴더에 `upstream.lock.json`이 있으면 락의 `files["intent.md"].sha`를 쓴다(그 자리에서 `body:`는
+   거부된다). 이 문서는 벤더한 사본이므로 여기서 고치지 않고 상류에서 고친 뒤 `pull-spec.mjs`로
+   다시 끌어온다.
 7. `SD-*`에는 이번 변경의 외부 동작에 관한 결정을 기록한다. `<sdlc_runtime>/references/adr.md`의
    「판정」 기준에 해당하는 결정은 `/create-adr`로 작성하고 `decisions:`에 버전을 고정해 참조한다.
 8. 공통 절차에 따라 검사하고 승인을 처리한다. 다음 단계는 `/create-plan <경로>`다.

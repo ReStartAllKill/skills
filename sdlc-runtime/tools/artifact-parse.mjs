@@ -1,4 +1,5 @@
 import { readFileSync, existsSync, readdirSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { join, dirname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -68,6 +69,20 @@ export function frontmatter(text) {
   }
   return out
 }
+
+/** A pin over the upstream body rather than over the commit that carried it (schema 7).
+ *  The commit form cannot be written when intent, spec and plan are born in one commit, and a
+ *  frontmatter-only edit upstream — an approval — invalidates it for a body nobody touched.
+ *  HTML comments are deliberately kept: every writer of a pin must agree on the bytes byte for
+ *  byte, and «everything after the frontmatter» is the only definition that needs no parser. */
+export const BODY_PIN = /^body:([0-9a-f]{12,64})$/i
+export const bodyOf = (text) => {
+  const s = String(text).replace(/\r\n/g, '\n')
+  const fm = /^---\n[\s\S]*?\n---[ \t]*(?:\n|$)/.exec(s)
+  return (fm ? s.slice(fm[0].length) : s).trim()
+}
+export const bodyHash = (text) => createHash('sha256').update(bodyOf(text), 'utf8').digest('hex')
+export const bodyPin = (text) => `body:${bodyHash(text).slice(0, 12)}`
 
 export function outsideFence(lines) {
   const ok = new Array(lines.length).fill(true)

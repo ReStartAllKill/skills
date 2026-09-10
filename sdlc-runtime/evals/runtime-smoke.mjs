@@ -2,7 +2,7 @@
 /** Verify task attribution, completion evidence, approval guards, hook installation, and runtime integration in temporary repositories. */
 import { appendFileSync, chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 
@@ -926,7 +926,9 @@ await test('locale bundles have matching shapes so a missing key cannot silently
       assert(m.budget[kind]?.doc > 0, `${name}: budget.${kind} 이 없다`)
     }
     assert(m.limits.sentences > 0 && m.limits.title > 0 && m.limits.ac > 0 && m.limits.logNote > 0, `${name}: limits 가 비었다`)
-    for (const k of ['divergence', 'none', 'noPr']) assert(typeof m.written[k] === 'string' && m.written[k], `${name}: written.${k} 이 없다`)
+    // executionLog 은 `plan-check mark` 가 절을 새로 만들 때 쓰는 제목이다. 한쪽 번들에만 있으면
+    // 그 언어의 계획서에 `## undefined` 가 박히고, 그 절은 검사기도 린터도 못 읽는다.
+    for (const k of ['divergence', 'none', 'noPr', 'executionLog']) assert(typeof m.written[k] === 'string' && m.written[k], `${name}: written.${k} 이 없다`)
     for (const k of ['done', 'partial', 'failed']) assert(typeof m.written.result[k] === 'string' && m.written.result[k], `${name}: written.result.${k} 이 없다`)
     for (const w of m.vague) assert(!(w instanceof RegExp) || !w.flags.includes('g'), `${name}: vague 에 /g 정규식이 있다 — ${w}`)
     for (const [w] of m.translationese) assert(!(w instanceof RegExp) || !w.flags.includes('g'), `${name}: translationese 에 /g 정규식이 있다 — ${w}`)
@@ -1427,6 +1429,390 @@ await test('Machine diagnostics and gate warning counts do not depend on prose',
   put(join(runtime, 'tools/lint-prose.mjs'), `console.log('not JSON')`)
   assert(gate().code === 2, 'unreadable diagnostics silently passed')
 })
+
+const V7_INTENT = (schema, body) => `---
+artifact: intent
+schema_version: ${schema}
+id: "CHG-2026-070"
+title: "표기를 뗀다"
+status: draft
+tier: light
+owner: "팀"
+created: 2026-09-09
+updated: 2026-09-09
+generated_by: "claude-opus-5"
+---
+
+# Intent: 표기를 뗀다
+
+## 문제
+
+제목마다 붙은 표기를 사람이 읽는다.
+
+## 목표 결과
+
+### OUT-001 — 표기 없이도 검사된다 \`Should\`
+
+표기를 떼도 빈 절은 걸린다.
+
+## 비목표
+${body}`
+
+await test('an unmarked section is required at v7 while the same document keeps passing at v6', () => {
+  const d = temp('sdlc-unmarked')
+  const chain = join(d, 'docs')
+  const check = () => run(process.execPath, [tool('check-artifacts.mjs'), chain])
+  const intent = (schema, body) => put(join(chain, 'intent.md'), V7_INTENT(schema, body))
+
+  intent(6, '')
+  assert(check().code === 0, `v6 에서 표기 없는 빈 절이 오류가 됐다 — 새 규칙이 옛 산출물 세트에 소급했다:\n${check().out}`)
+
+  intent(7, '')
+  let r = check()
+  assert(r.code !== 0 && r.out.includes('«비목표» 이 비어 있다'),
+    `v7 에서 표기 없는 빈 절을 통과시켰다 — 표기가 없으면 안 보는 검사는 꺼진 것과 같다:\n${r.out}`)
+
+  intent(7, '\n<여기에 안 하는 일을 적는다>\n')
+  r = check()
+  assert(r.code !== 0 && r.out.includes('placeholder 뿐이다'), `표기 없는 절의 미작성을 통과시켰다:\n${r.out}`)
+
+  intent(7, '\n해당 없음 — 범위를 좁히지 않는다.\n')
+  assert(check().code === 0, `v7 에서 근거 있는 «해당 없음» 이 막혔다:\n${check().out}`)
+
+  intent(7, '\n해당 없음\n')
+  r = check()
+  assert(r.code !== 0 && r.out.includes('근거가 없다'), `표기 없는 절의 근거 없는 «해당 없음» 을 통과시켰다:\n${r.out}`)
+})
+
+await test('a marker-free document below v7 says its section checks are off instead of passing quietly', () => {
+  const d = temp('sdlc-marker-gap')
+  const chain = join(d, 'docs')
+  const check = () => run(process.execPath, [tool('check-artifacts.mjs'), chain])
+  const NA = '\n해당 없음 — 범위를 좁히지 않는다.\n'
+  const GAP = '절 표기가 하나도 없다'
+
+  put(join(chain, 'intent.md'), V7_INTENT(6, NA))
+  let r = check()
+  assert(r.code === 0, `표기가 없다는 이유로 옛 문서를 막았다 — 손으로 쓴 문서는 경고 대상이지 차단 대상이 아니다:\n${r.out}`)
+  assert(r.out.includes(GAP), `v7 템플릿으로 쓰고 v6 로 커밋한 문서가 조용히 통과했다 — 절 검사가 통째로 꺼져 있다:\n${r.out}`)
+  assert(/sdlc_version/.test(r.out), `무엇을 올려야 하는지 말하지 않았다:\n${r.out}`)
+
+  put(join(chain, 'intent.md'), V7_INTENT(7, NA))
+  assert(!check().out.includes(GAP), `v7 에서도 경고가 남았다 — 검사가 켜진 문서를 꺼진 것처럼 말한다:\n${check().out}`)
+
+  // 표기를 단 v6 문서는 그대로 검사받는다. 여기까지 경고가 번지면 옛 산출물 세트가 매번 시끄러워진다.
+  put(join(chain, 'intent.md'), V7_INTENT(6, NA).replace(/^## (.+)$/gm, '## $1 `[필수 · 모든 티어]`'))
+  r = check()
+  assert(r.code === 0 && !r.out.includes(GAP), `표기가 있는 v6 문서까지 경고했다:\n${r.out}`)
+})
+
+await test('a body pin survives an approval, breaks on a body change, and is refused below v7', async () => {
+  const { bodyPin } = await import('../tools/artifact-parse.mjs')
+  const d = temp('sdlc-bodypin')
+  const chain = join(d, 'docs')
+  const intentPath = join(chain, 'intent.md')
+  const check = () => run(process.execPath, [tool('check-artifacts.mjs'), chain])
+  const spec = (schema, pin) => put(join(chain, 'spec.md'), `---
+artifact: spec
+schema_version: ${schema}
+id: "SPEC-2026-070"
+title: "표기를 뗀다"
+status: draft
+tier: light
+owner: "팀"
+created: 2026-09-09
+updated: 2026-09-09
+intent: "./intent.md"
+intent_version: "${pin}"
+generated_by: "claude-opus-5"
+---
+
+# Spec: 표기를 뗀다
+
+## 범위
+
+상위 intent: [CHG-2026-070](./intent.md)
+
+## 요구사항
+
+### FR-001 — 표기 없이도 검사된다 \`Should\`
+
+근거: OUT-001
+
+빈 절은 표기 없이도 걸린다.
+`)
+
+  put(intentPath, V7_INTENT(7, '\n해당 없음 — 범위를 좁히지 않는다.\n'))
+  const pin = bodyPin(readFileSync(intentPath, 'utf8'))
+  assert(/^body:[0-9a-f]{12}$/.test(pin), pin)
+  spec(7, pin)
+  assert(check().code === 0, `한 커밋에서 태어난 산출물 세트가 본문 해시로도 실패한다:\n${check().out}`)
+
+  // 승인은 프런트매터만 바꾼다 — 상류 본문이 그대로인데 핀이 깨지면 아무도 핀을 안 쓴다.
+  put(intentPath, readFileSync(intentPath, 'utf8')
+    .replace('status: draft', 'status: accepted')
+    .replace('generated_by:', 'approved_by: "한지우"\ngenerated_by:'))
+  assert(check().code === 0, `상류 승인이 본문 해시 핀을 깨뜨렸다:\n${check().out}`)
+
+  put(intentPath, readFileSync(intentPath, 'utf8')
+    .replace('제목마다 붙은 표기를 사람이 읽는다.', '제목마다 붙은 표기를 기계만 읽는다.'))
+  const drifted = check()
+  assert(drifted.code !== 0 && drifted.out.includes('현재 본문과 다르다'), `상류 본문 변경을 놓쳤다:\n${drifted.out}`)
+  assert(drifted.out.includes('pin.mjs'), `고치는 명령을 말하지 않았다:\n${drifted.out}`)
+
+  put(intentPath, V7_INTENT(6, '\n해당 없음 — 범위를 좁히지 않는다.\n'))
+  spec(6, pin)
+  const old = check()
+  assert(old.code !== 0 && old.out.includes('커밋 SHA 도 날짜도 아니다'),
+    `v6 에서 본문 해시를 받아들였다 — 옛 런타임은 이 값을 조용히 잘못 읽는다:\n${old.out}`)
+  assert(/schema 7/.test(old.out), `무엇이 모자란지 말하지 않았다:\n${old.out}`)
+})
+
+await test('pin.mjs prints the value the checker compares and refuses a file without frontmatter', async () => {
+  const { bodyPin } = await import('../tools/artifact-parse.mjs')
+  const d = temp('sdlc-pin')
+  const doc = join(d, 'intent.md')
+  put(doc, '---\nartifact: intent\nid: "CHG-2026-070"\n---\n\n본문.\n')
+  const r = run(process.execPath, [tool('pin.mjs'), doc])
+  assert(r.code === 0 && r.out.trim() === bodyPin(readFileSync(doc, 'utf8')),
+    `검사기가 대조하는 값과 다른 값을 찍었다: ${r.out.trim()} != ${bodyPin(readFileSync(doc, 'utf8'))}`)
+
+  put(join(d, 'plain.md'), '프런트매터가 없다.\n')
+  const bad = run(process.execPath, [tool('pin.mjs'), join(d, 'plain.md')])
+  assert(bad.code === 2 && bad.out.trim().split('\n').length === 1, `산출물이 아닌 파일에 핀을 찍어 줬다:\n${bad.out}`)
+  assert(run(process.execPath, [tool('pin.mjs'), join(d, 'missing.md')]).code === 2, '없는 파일에 핀을 찍어 줬다')
+})
+
+await test('bilingual documents keep the same heading shape so a section cannot vanish in translation', () => {
+  const shape = (file) => {
+    const out = []
+    let fence = false
+    for (const line of readFileSync(file, 'utf8').split('\n')) {
+      if (/^\s*```/.test(line)) { fence = !fence; continue }
+      if (fence) continue
+      const m = /^(#{2,3})\s/.exec(line)
+      if (m) out.push(m[1])
+    }
+    return out
+  }
+  const REPO = resolve(ROOT, '..')
+  for (const [a, b] of [[join(REPO, 'README.md'), join(REPO, 'README.ko.md')],
+                        [join(ROOT, 'conventions.md'), join(ROOT, 'conventions.ko.md')]]) {
+    const left = shape(a), right = shape(b)
+    assert(left.length === right.length && left.every((v, i) => v === right[i]),
+      `${basename(a)} 와 ${basename(b)} 의 절 구성이 어긋난다 (${left.length}개 vs ${right.length}개):\n  ${basename(a)}  ${left.join(' ')}\n  ${basename(b)}  ${right.join(' ')}`)
+  }
+})
+
+
+// v7 의 트림된 템플릿이 남긴 절만 가진 산출물 세트. §범위·§입력과 범위·§완료 정의·§열린 질문·§실행
+// 기록이 모두 빠져 있고, 아래 세 케이스가 같은 문서를 쓴다 — 템플릿에서 뺀 절 하나가 사실은 필수였다면
+// 셋이 함께 빨개진다. 계약 낱말은 두 언어를 다 받으므로 프로필 lang 과 무관하게 이 한 벌을 쓴다.
+const TRIM_INTENT = `---
+artifact: intent
+schema_version: 7
+id: "CHG-2026-071"
+title: "검색에서 보관 문서를 뺀다"
+status: accepted
+tier: light
+owner: "검색팀"
+approved_by: "한지우"
+generated_by: "claude-opus-5"
+---
+
+# Intent: 검색에서 보관 문서를 뺀다
+
+## 문제
+
+운영자가 이미 보관 처리한 문서를 검색 결과에서 계속 만난다. 눈으로 걸러내느라 검색이 느려진다.
+
+## 목표 결과
+
+### OUT-001 — 기본 검색에 보관 문서가 안 뜬다 \`Must\`
+
+운영자가 검색하면 보관되지 않은 문서만 결과에 선다.
+
+확인: 보관 문서와 일반 문서를 하나씩 만들고 둘 다 걸리는 낱말로 검색한다.
+
+## 비목표
+
+- 보관 정책 자체는 바꾸지 않는다.
+
+## 제약
+
+### CON-001 — 검색 API 응답 형태를 바꾸지 않는다
+
+다른 소비자가 이미 붙어 있다. 형태를 바꾸면 그쪽이 조용히 깨진다.
+`
+
+const TRIM_SPEC = (pin) => `---
+artifact: spec
+schema_version: 7
+id: "SPEC-2026-071"
+title: "보관 문서 검색 제외"
+status: accepted
+tier: light
+owner: "검색팀"
+intent: "./intent.md"
+intent_version: "${pin}"
+approved_by: "한지우"
+generated_by: "claude-opus-5"
+---
+
+# Spec: 보관 문서 검색 제외
+
+## 요구사항
+
+### FR-001 — 기본 검색은 보관 문서를 뺀다 \`Must\`
+
+근거: OUT-001
+
+검색 질의는 별도 지시가 없으면 보관된 문서를 결과에서 제외한다.
+
+수용 기준:
+
+- [ ] AC-001 — 보관 문서와 일반 문서가 함께 걸리는 질의에서 일반 문서만 반환된다
+
+## 오류와 경계
+
+### EDGE-001 — 결과가 전부 보관 문서라 빈 결과가 된다
+
+빈 결과를 그대로 낸다. 사용자에게: 보관 포함을 켜 볼 수 있다고 알린다. 복구: 자동
+`
+
+const TRIM_PLAN = (pin, status) => `---
+artifact: plan
+schema_version: 7
+id: "PLAN-2026-071"
+title: "보관 문서 검색 제외 구현"
+status: ${status}
+tier: light
+owner: "검색팀"
+intent: "./intent.md"
+spec: "./spec.md"
+spec_version: "${pin}"
+approved_by: "한지우"
+generated_by: "claude-opus-5"
+---
+
+# Plan: 보관 문서 검색 제외 구현
+
+## 도달 상태와 변경 지점
+
+검색 질의 조립부가 기본 필터에 «보관 아님» 을 더한다. 응답 형태는 그대로다.
+
+- \`search/query.ts\` — 기본 필터에 보관 제외를 더한다 (FR-001)
+
+## 릴리스 영향
+
+target_branch: main
+pr_strategy: 단일 PR
+되돌리기: revert PR 한 장 — 데이터를 쓰지 않는다
+마지막 롤백 리허설: 미실시 — 되돌리기가 순수 코드 revert 라 리허설 대상이 아니다
+걸리는 게이트: 없음
+
+## 작업
+
+- [ ] **WP-001 — 기본 필터에 보관 제외를 더한다**
+  - files: \`search/query.ts\`
+  - depends: 없음
+  - covers: FR-001 (AC-001)
+  - tests: 보관 문서와 일반 문서가 함께 걸리는 질의에서 일반 문서만 반환된다
+  - verify: echo ok
+
+## 위험
+
+### RISK-001 — 보관 필드가 빈 옛 문서가 함께 걸러진다
+
+가능성 중 · 영향 중
+조기 신호: 검색 결과 건수가 배포 직후 급감
+대응: 필드가 없으면 «보관 아님» 으로 읽는다.
+`
+
+/** Write the trimmed v7 chain into a temporary repository, pinning each document to its upstream body. */
+async function trimmedChain(prefix, { lang = 'ko', status = 'accepted' } = {}) {
+  const { bodyPin } = await import('../tools/artifact-parse.mjs')
+  const d = temp(prefix)
+  put(join(d, '.claude/spec-profile.yml'), `sdlc_version: 7\nspec_dir: .sdlc/specs\nlang: ${lang}\nverify: echo ok\n`)
+  const dir = join(d, '.sdlc/specs/2026-09-10-log')
+  put(join(dir, 'intent.md'), TRIM_INTENT)
+  const spec = TRIM_SPEC(bodyPin(TRIM_INTENT))
+  put(join(dir, 'spec.md'), spec)
+  put(join(dir, 'plan.md'), TRIM_PLAN(bodyPin(spec), status))
+  put(join(d, 'search/query.ts'), 'export const archived = false\n')
+  return { d, dir, plan: join(dir, 'plan.md') }
+}
+const checked = (dir) => JSON.parse(run(process.execPath, [tool('check-artifacts.mjs'), dir, '--json']).out)
+
+await test('a v7 plan from the trimmed template needs no boilerplate sections to pass', async () => {
+  // 템플릿에서 뺀 절이 사실은 검사기가 요구하던 절이었다면, 새 템플릿으로 쓴 첫 문서가 첫 검사에서
+  // 빨개진다 — 그 자리를 여기서 먼저 밟는다. 경고까지 0 이어야 한다: 새 템플릿이 경고를 기본값으로
+  // 만들면 아무도 경고를 안 읽는다.
+  const { dir } = await trimmedChain('sdlc-trimmed')
+  const got = checked(dir)
+  assert(got.counts.errors === 0 && got.counts.warnings === 0,
+    `트림된 템플릿으로 쓴 산출물 세트가 깨끗하지 않다:\n${JSON.stringify(got.problems, null, 2)}`)
+})
+
+await test('mark creates the execution log section when the plan has none', async () => {
+  // v7 템플릿은 §실행 기록을 싣지 않는다 — 실행 전에는 «해당 없음» 한 줄뿐인, 도구가 채울 때까지 빈
+  // 절이었다. 절이 없으면 mark 가 죽던 자리이므로 도구가 절을 만드는지 보고, 만든 절을 검사기가 읽는지도
+  // 같이 본다. 제목이 SECTION.executionLog 의 별칭에서 벗어나면 `completed` 규칙과 long-log 린터가 이
+  // 절을 못 찾고, 꺼진 검사는 통과한 검사와 구별되지 않는다.
+  const start = async (lang) => {
+    const c = await trimmedChain(`sdlc-mklog-${lang}`, { lang, status: 'in_progress' })
+    assert(!/^##\s*(?:실행 기록|Execution log)/mi.test(readFileSync(c.plan, 'utf8')),
+      '준비한 계획서에 이미 §실행 기록이 있다 — 이 케이스가 볼 것이 없다')
+    git(c.d, 'init', '-q'); git(c.d, 'config', 'user.email', 'eval@local'); git(c.d, 'config', 'user.name', 'eval')
+    git(c.d, 'add', '.claude', '.sdlc'); git(c.d, 'commit', '-qm', 'chain born')
+    git(c.d, 'add', 'search/query.ts')
+    git(c.d, 'commit', '-qm', 'feat: 보관 제외', '-m', 'SDLC-Task: WP-001\nSDLC-Plan: .sdlc/specs/2026-09-10-log/plan.md')
+    const v = run(process.execPath, [tool('verify-run.mjs'), c.dir, '--level', '1', '--tasks', 'WP-001', '--', 'echo ok'])
+    assert(v.code === 0, v.out)
+    return c
+  }
+
+  const ko = await start('ko')
+  let r = run(process.execPath, [tool('plan-check.mjs'), ko.dir, 'mark', 'WP-001', '--note', '없음'])
+  assert(r.code === 0, `§실행 기록이 없는 계획서에서 mark 가 죽었다:\n${r.out}`)
+  let text = readFileSync(ko.plan, 'utf8')
+  assert(/^## 실행 기록$/m.test(text), `절을 안 만들었다:\n${text.slice(-400)}`)
+  assert(/^- \d{4}-\d{2}-\d{2} WP-001 — 완료 · PR 없음 · 계획과의 차이: 없음$/m.test(text),
+    `만든 절에 항목이 없다:\n${text.slice(-400)}`)
+
+  // 검사기가 방금 만든 절을 읽는지는 `completed` 규칙이 답한다 — 못 읽으면 «실행 기록이 없는 작업» 이 된다.
+  put(ko.plan, text.replace('status: in_progress', 'status: completed'))
+  const got = checked(ko.dir)
+  assert(got.counts.errors === 0,
+    `도구가 만든 절을 검사기가 못 읽었다:\n${JSON.stringify(got.problems, null, 2)}`)
+
+  const en = await start('en')
+  r = run(process.execPath, [tool('plan-check.mjs'), en.dir, 'mark', 'WP-001', '--note', 'none'])
+  assert(r.code === 0, r.out)
+  text = readFileSync(en.plan, 'utf8')
+  assert(/^## Execution log$/m.test(text), `프로필 언어의 제목을 안 썼다:\n${text.slice(-400)}`)
+  assert(/^- \d{4}-\d{2}-\d{2} WP-001 — done · no PR · differs from plan: none$/m.test(text),
+    `영문 프로필에서 항목이 어긋났다:\n${text.slice(-400)}`)
+})
+
+await test('frontmatter without created and updated passes at every version', () => {
+  // git 이 이미 쥔 두 날짜를 손으로 옮겨 적던 칸이라 뺐다. 모든 버전에서 푸는 완화여야 한다 — v7 에서만
+  // 통과하면 옛 산출물 세트를 건드릴 때마다 두 줄을 도로 적어 넣게 된다.
+  const bare = (schema) => {
+    const doc = V7_INTENT(schema, '\n해당 없음 — 범위를 좁히지 않는다.\n')
+      .replace(/^created:.*\nupdated:.*\n/m, '')
+    return schema >= 7 ? doc : doc.replace(/^## (.+)$/gm, '## $1 `[필수 · 모든 티어]`')
+  }
+  for (const schema of [5, 7]) {
+    const chain = join(temp(`sdlc-nodate-${schema}`), 'docs')
+    put(join(chain, 'intent.md'), bare(schema))
+    const got = checked(chain)
+    const shown = JSON.stringify(got.problems, null, 2)
+    assert(got.counts.errors === 0, `v${schema} 에서 created·updated 없는 프런트매터를 막았다:\n${shown}`)
+    assert(!/created|updated/.test(shown), `없앤 키를 여전히 요구한다:\n${shown}`)
+  }
+})
+
 
 console.log('\n런타임 스모크 평가\n')
 for (const r of results) {

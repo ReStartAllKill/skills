@@ -1,40 +1,22 @@
 ---
 artifact: plan
-schema_version: 4
+schema_version: 7
 id: "PLAN-YYYY-NNN"
 title: "<implementation plan title>"
 status: draft # draft | in_review | accepted | in_progress | completed | rejected | superseded
 tier: standard # must match the intent's tier
 owner: "<the person or team who implements>"
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
 intent: "./intent.md"
 spec: "./spec.md"
 spec_version: "<SHA of the commit that last changed spec.md>"
-superseded_by: null
 approved_by: null # required from status accepted on — the **person** who approved. Cannot equal generated_by
 generated_by: null
-generated_from: null
-skills_in_force: []
 ---
 
 # Plan: <plan title>
 
 <!-- The input to `/implement-spec`. Cite requirements by ID. If external behaviour changes,
      the spec changes first. -->
-
-## Input and scope `[required · all tiers]`
-
-Upstream spec: [<SPEC-YYYY-NNN>](./spec.md) · upstream intent: [<CHG-YYYY-NNN>](./intent.md)
-Building: FR-001, FR-002, NFR-001
-Not building: <Could/Won't IDs, or N/A — basis>
-Base: <branch, tag, commit>
-
-Before starting:
-
-- [ ] the intent and the spec are `accepted`
-- [ ] no blocking question is open
-- [ ] the environments, access and test data exist
 
 ## Code as it stands `[required · standard+]`
 
@@ -43,7 +25,7 @@ Before starting:
 
 - `<path>:<line>` — <what it does now> / <why it is touched>
 
-## Target state and change points `[required · all tiers]`
+## Target state and change points
 
 <!-- The flow after this lands, and which file changes how. This is the body of a light plan. -->
 
@@ -52,7 +34,7 @@ Before starting:
 - `<path>` — <what is added or changed there> (FR-001)
 - `<test path>` — <what it verifies> (AC-001)
 
-## Release impact `[required · all tiers]`
+## Release impact
 
 <!-- `/implement-spec` reads these. Do not leave them blank. -->
 
@@ -82,7 +64,7 @@ rejected: <what was considered and dropped, and why.>
 - Contract compatibility: <version/extension/adapter> · consumer cutover: <order and deadline>
 - Order: <1) ship the compatible base → 2) migrate gradually → 3) remove the old path>
 
-## Tasks `[required · all tiers]`
+## Tasks
 
 <!-- Format and rules live in references/tasks.md. All five fields are required, and tasks on the
      same level must not share a file. -->
@@ -91,7 +73,7 @@ Execution order:
 
 ```
 level 1:  WP-001  WP-002      ← in parallel
-         ── full verify ──
+         ── scoped verify ──
 level 2:  WP-003
 ```
 
@@ -116,7 +98,7 @@ level 2:  WP-003
   - tests: <every AC sentence in covers — separate several with ` · `>
   - verify: <command>
 
-## Risks `[required · all tiers]`
+## Risks
 
 ### RISK-001 — <risk>
 
@@ -138,32 +120,8 @@ response: <prevention, mitigation>
 
 Feature flag: <name, default, owner, or N/A — basis>
 
-## Open questions `[required · all tiers]`
-
-### PQ-001 — <a technical question>
-
-affects: WP-002 · owner: <name> · state: Open
-
-## Definition of done `[required · all tiers]`
-
-- [ ] every Must requirement and its acceptance criteria pass
-- [ ] the full verify passes, including the gates that apply
-- [ ] (standard+) security, privacy and accessibility review is done
-- [ ] the rollback path is ready
-- [ ] the result and its verification evidence are linked from the PR
-- [ ] nothing contradicts the upstream documents, or what does has been carried upstream
-
-## Execution log `[required · all tiers]`
-
-<!-- Where the plan and reality differ. Before execution starts, write `N/A — not started`. Do not
-     write commit SHAs or verify log names — plan-progress finds both from the trailers and the log
-     directory. Tasks that went as planned are folded onto one line by `plan-check mark`.
-     Keep each note to one sentence: what differed and how. Cause, attempts and log excerpts are
-     already in the commit message and the verify log — `plan-check mark` refuses a longer note. -->
-
-- YYYY-MM-DD WP-001 — <partial/failed> · <PR link> · differs from plan: <what differed, and how>
-- YYYY-MM-DD WP-002 WP-003 — done · no PR · differs from plan: none
-
-### History
-
-- YYYY-MM-DD <name> — first draft. affects: WP-001, TD-001
+<!-- Open questions: when there are any, add a `## Open questions` heading and one `### PQ-NNN`
+     item per question. When there are none, leave no heading — a section that is present must
+     have content. The execution-log section is written by `plan-check mark`, which creates it on
+     the first entry; do not add it by hand and do not leave it standing empty. The change history
+     is git's; do not keep a copy here. -->
