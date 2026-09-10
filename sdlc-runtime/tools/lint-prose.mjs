@@ -17,7 +17,9 @@ if (argv.includes('--version')) {
 const STRICT = argv.includes('--strict')
 const DIR = resolve(argv.find((a) => !a.startsWith('--')) ?? '.')
 
-const MEASURED = /^(OUT|FR|NFR|AC)-/
+// REC-* 도 재는 자리다. 사실·추론·가정을 가르는 것은 기계가 볼 수 없지만, «더 빠르다» 로 끝난 판단은
+// 무엇을 근거로 그렇게 말했는지 어차피 아무도 못 되짚는다.
+const MEASURED = /^(OUT|FR|NFR|AC|REC)-/
 
 const TIER_MULT = { light: 1, standard: 1.6, full: 2.4 }
 
@@ -60,8 +62,8 @@ if (Object.keys(LINTED).length === 0 && vendored.length) {
   process.exit(report({ title: `산문 린트 — ${basename(DIR)}`, notes, problems, json: argv.includes('--json') }))
 }
 if (Object.keys(docs).length === 0) {
-  if (argv.includes('--json')) process.exit(report({ title: '', problems: [{ level: 'error', doc: DIR, rule: 'artifacts-missing', msg: `산출물이 없다 — ${DIR} 에 intent.md / spec.md / plan.md / finding.md / ADR-*.md 가 하나도 없다.` }], json: true }))
-  console.error(`산출물이 없다 — ${DIR} 에 intent.md / spec.md / plan.md / finding.md / ADR-*.md 가 하나도 없다.`)
+  if (argv.includes('--json')) process.exit(report({ title: '', problems: [{ level: 'error', doc: DIR, rule: 'artifacts-missing', msg: `산출물이 없다 — ${DIR} 에 intent.md / spec.md / plan.md / finding.md / research.md / ADR-*.md 가 하나도 없다.` }], json: true }))
+  console.error(`산출물이 없다 — ${DIR} 에 intent.md / spec.md / plan.md / finding.md / research.md / ADR-*.md 가 하나도 없다.`)
   process.exit(1)
 }
 const schema = schemaVersion((docs.intent ?? docs.finding ?? docs.spec ?? docs.plan ?? Object.values(docs)[0])?.fm)
@@ -75,10 +77,13 @@ const tokens = (s) => new Set(String(s).toLowerCase().match(/[가-힣a-z0-9]{2,}
 const sentences = (s) => (stripComments(s).replace(/\.(?=\S)/g, '').match(/[^.!?\n]*(?:다\.|[.!?])/g) ?? []).filter((x) => x.trim().length > 4).length
 
 const ADR_ONLY = Object.values(LINTED).every((d) => d.kind === 'adr')
+// ADR 과 조사에는 티어가 없다. 남의 티어 배수를 빌려 재면 같은 문서가 옆에 선 산출물 세트에 따라
+// 길어졌다 짧아졌다 한다.
+const UNTIERED = new Set(['adr', 'research'])
 // The plan's own tier is the last resort, not the first: the intent is where the tier is decided,
 // and a plan whose frontmatter drifted from it should be measured by the decision, not the drift.
 const TIER = docs.intent?.fm?.tier ?? docs.finding?.fm?.tier ?? docs.plan?.fm?.tier ?? (ADR_ONLY ? '—' : 'standard')
-const mult = ADR_ONLY ? 1 : (TIER_MULT[TIER] ?? 1.6)
+const multOf = (d) => (ADR_ONLY || UNTIERED.has(d.kind) ? 1 : (TIER_MULT[TIER] ?? 1.6))
 const chars = (s) => stripComments(String(s)).replace(/\s+/g, '').length
 
 for (const d of Object.values(LINTED)) {
@@ -105,7 +110,12 @@ for (const d of Object.values(LINTED)) {
       const first = (d.lines[j].trim().replace(/^\||\|$/g, '').split('|')[0] ?? '').replace(/`/g, '').trim()
       if (new RegExp(`^(${P_ALT})-\\d{1,4}$`).test(first)) rowIds++
     }
-    if (rowIds > 0) {
+    // 조사의 비교표만 예외다 — 머리행이 OPT-* 면 이 표는 기준 × 선택지의 진짜 2차원 자료이고, 행을
+    // 펴면 같은 값을 선택지 수만큼 되풀이하게 된다. 이 규칙이 막는 것은 목록을 표로 접는 일이지
+    // 표 자체가 아니다.
+    const comparison = d.kind === 'research' &&
+      line.trim().replace(/^\||\|$/g, '').split('|').some((c) => /\bOPT-\d{1,4}\b/.test(c))
+    if (rowIds > 0 && !comparison) {
       add('error', d.name, i + 1, 'entity-table', `항목 ${rowIds}개를 표의 행으로 접었다`,
         '`### ID — 제목` 헤딩과 그 밑 단락으로 편다. 셀은 짧아야 해서 결론만 남고 «왜» 가 빠진다 — 그것이 제약이나 요구사항의 절반이다.')
       return
@@ -163,7 +173,7 @@ for (const d of Object.values(LINTED)) {
             : '재는 자리다. «얼마나»를 수치나 조건으로 적는다.')
       }
     }
-    const cap = e.kind === 'ac' ? MAX_AC : Math.round((BUDGET[d.kind]?.entity ?? 400) * mult)
+    const cap = e.kind === 'ac' ? MAX_AC : Math.round((BUDGET[d.kind]?.entity ?? 400) * multOf(d))
     const size = e.kind === 'ac' ? e.title.length : chars(prose.join('') + e.title)
     if (size > cap) {
       add(size > cap * 2 ? 'error' : 'warn', d.name, e.line + 1, 'too-long',
@@ -180,14 +190,14 @@ for (const d of Object.values(LINTED)) {
   const budget = BUDGET[d.kind]
   if (budget) {
     for (const h of d.hs.filter((x) => x.depth === 2)) {
-      const cap = Math.round(budget.section * mult)
+      const cap = Math.round(budget.section * multOf(d))
       const n = chars(d.lines.slice(h.line + 1, h.allEnd).filter((_, k) => d.live[h.line + 1 + k]).join(''))
       if (n <= cap) continue
       add(n > cap * 2 ? 'error' : 'warn', d.name, h.line + 1, 'too-long',
         `«${h.title}» 이 ${n}자다 (한도 ${cap})`,
         '이 섹션이 담을 것보다 많이 담았다. 항목으로 갈라 쓰거나 아래 층으로 내린다.')
     }
-    const capDoc = Math.round(budget.doc * mult)
+    const capDoc = Math.round(budget.doc * multOf(d))
     const total = chars(d.lines.filter((_, i) => d.live[i]).join('').replace(/^---[\s\S]*?---/, ''))
     if (total > capDoc) {
       add(total > capDoc * 2 ? 'error' : 'warn', d.name, null, 'too-long',

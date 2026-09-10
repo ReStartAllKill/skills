@@ -1199,11 +1199,11 @@ ${wp('WP-003')}
 await test('localized templates have matching structures so sections cannot disappear silently', () => {
   const shape = (file) => readFileSync(file, 'utf8').split('\n')
     .filter((l) => /^#{2,3} /.test(l))
-    .map((l) => `${l.match(/^#+/)[0]} ${(l.match(/\b(OUT|CON|Q|SCN|FR|NFR|EDGE|SQ|SD|TD|WP|RISK|PQ|EV|HYP|FQ|ALT|RV|ASM)-\d+/) ?? ['prose'])[0]}`)
+    .map((l) => `${l.match(/^#+/)[0]} ${(l.match(/\b(OUT|CON|Q|SCN|FR|NFR|EDGE|SQ|SD|TD|WP|RISK|PQ|EV|HYP|FQ|ALT|RV|ASM|CRIT|SRC|OPT|REC|RQ)-\d+/) ?? ['prose'])[0]}`)
 
   for (const [skill, file] of [['create-intent', 'intent-template.md'], ['create-spec', 'spec-template.md'],
                                ['create-plan', 'plan-template.md'], ['create-adr', 'adr-template.md'],
-                               ['create-finding', 'finding-template.md'],
+                               ['create-finding', 'finding-template.md'], ['create-research', 'research-template.md'],
                                ['implement-spec', 'report-templates.md'], ['create-pr', 'pr-body-template.md']]) {
     const dir = join(findSkill(skill, HERE), 'assets')
     const langs = readdirSync(dir).filter((l) => existsSync(join(dir, l, file)))
@@ -1811,6 +1811,218 @@ await test('frontmatter without created and updated passes at every version', ()
     assert(got.counts.errors === 0, `v${schema} 에서 created·updated 없는 프런트매터를 막았다:\n${shown}`)
     assert(!/created|updated/.test(shown), `없앤 키를 여전히 요구한다:\n${shown}`)
   }
+})
+
+
+// 조사(research)는 산출물 세트 밖에 살고 승인도 티어도 없다. 그래서 이 문서가 지키는 것은 «인용할 수
+// 있는가» 뿐이고, 아래 케이스들은 전부 그 한 줄을 밟는다 — 출처가 어디를 가리키는지, 선택지가 어느
+// 출처에 걸렸는지, 표가 기준과 선택지를 모두 덮는지, 그리고 다른 문서의 인용이 실제로 대조되는지.
+const RESEARCH_MD = `---
+artifact: research
+schema_version: 7
+id: "RSH-2026-001"
+title: "작업 큐 라이브러리 비교"
+status: reviewed
+question: "작업 큐를 무엇으로 세울지 정하려고 두 라이브러리를 비교한다"
+owner: "검색팀"
+generated_by: "claude-opus-5"
+reviewed_by: "박검토"
+---
+
+# Research: 작업 큐 라이브러리 비교
+
+## 질문
+
+작업 큐를 무엇으로 세울지 정한다. 이 문서를 읽는 것은 그 결정을 적을 ADR 이다.
+
+## 기준
+
+### CRIT-001 — 재시도 정책이 코드에 남는다
+
+실패한 작업을 몇 번 어떻게 다시 세우는지가 설정이 아니라 코드에 있어야 한다.
+
+### CRIT-002 — 새로 세울 서버가 없다
+
+당직이 늘면 이 변경의 값이 달라진다.
+
+## 출처
+
+### SRC-001 — A 라이브러리 재시도 문서
+
+- at: https://example.com/a/retry
+- retrieved: 2026-09-01
+
+지수 백오프가 기본이고 재시도 횟수를 코드에서 정한다고 적혀 있다.
+
+### SRC-002 — B 라이브러리 배포 안내
+
+- at: https://example.com/b/deploy
+- retrieved: 2026-09-02
+
+브로커 한 대를 따로 세워야 한다고 적혀 있다.
+
+## 선택지
+
+### OPT-001 — A 라이브러리를 쓴다
+
+- 근거: SRC-001
+
+프로세스 안에서 돌고 저장소는 이미 쓰는 것을 그대로 쓴다.
+
+### OPT-002 — B 라이브러리를 쓴다
+
+- 근거: SRC-002
+
+브로커를 따로 세우고 그 위에서 큐를 굴린다.
+
+## 비교
+
+| 기준 | OPT-001 | OPT-002 |
+|---|---|---|
+| CRIT-001 | 코드에서 정한다 (SRC-001) | 설정 파일에서 정한다 (SRC-002) |
+| CRIT-002 | 없다 | 브로커 한 대 (SRC-002) |
+
+## 판단
+
+### REC-001 — 지금 규모에서는 A 라이브러리다
+
+- 근거: OPT-001
+
+사실은 SRC-001 이 적은 재시도 방식이고, 추론은 당직이 늘지 않는다는 것이며, 가정은 하루 작업량이 지금보다 열 배 늘지 않는다는 것이다.
+`
+
+/** 프로필 하나와 조사 하나가 있는 레포를 세운다. 조사는 언제나 `<spec_dir>/research/` 밑이다. */
+function researchRepo(prefix, body = RESEARCH_MD) {
+  const d = temp(prefix)
+  put(join(d, '.claude/spec-profile.yml'), 'sdlc_version: 7\nspec_dir: ".sdlc/specs"\n')
+  const dir = join(d, '.sdlc/specs/research/RSH-2026-001-queue')
+  put(join(dir, 'research.md'), body)
+  return { d, dir }
+}
+const linted = (dir) => JSON.parse(run(process.execPath, [tool('lint-prose.mjs'), dir, '--json']).out)
+
+await test('a research document with sourced options, a full comparison and a cited judgement passes', () => {
+  const { dir } = researchRepo('sdlc-research')
+  const got = checked(dir)
+  assert(got.counts.errors === 0 && got.counts.warnings === 0,
+    `근거를 갖춘 조사 문서가 깨끗하지 않다:\n${JSON.stringify(got.problems, null, 2)}`)
+  const prose = linted(dir)
+  assert(prose.counts.errors === 0 && prose.counts.warnings === 0,
+    `린터가 조사 문서를 걸었다:\n${JSON.stringify(prose.problems, null, 2)}`)
+})
+
+await test('an unsourced option, an undated source and a comparison missing a criterion are each an error', () => {
+  const cases = [
+    ['근거 없는 선택지', (s) => s.replace('- 근거: SRC-002\n\n', ''), 'OPT-002'],
+    ['조회 날짜 없는 출처', (s) => s.replace('- retrieved: 2026-09-02\n', ''), 'SRC-002'],
+    ['비교표가 빠뜨린 기준', (s) => s.replace(/\| CRIT-002 \|[^\n]*\n/, ''), 'CRIT-002'],
+  ]
+  for (const [label, seed, id] of cases) {
+    const { dir } = researchRepo('sdlc-research-bad', seed(RESEARCH_MD))
+    const got = checked(dir)
+    const shown = JSON.stringify(got.problems, null, 2)
+    assert(got.counts.errors === 1, `${label}: 오류가 ${got.counts.errors}건이다 (기대 1건):\n${shown}`)
+    assert(got.problems[0].msg.includes(id), `${label}: 어느 항목인지 말하지 않는다:\n${shown}`)
+  }
+})
+
+await test('a chain document may cite research by id and item, and a dangling citation is an error', () => {
+  const { d } = researchRepo('sdlc-research-cite')
+  const chain = join(d, '.sdlc/specs/2026-09-10-queue')
+  const cite = (text) => {
+    put(join(chain, 'intent.md'), V7_INTENT(7, `\n해당 없음 — ${text}\n`))
+    return checked(chain)
+  }
+
+  let got = cite('재시도 정책은 RSH-2026-001/SRC-002 가 적은 대로 따른다.')
+  assert(got.counts.errors === 0, `있는 조사와 항목을 부르는 인용을 막았다:\n${JSON.stringify(got.problems, null, 2)}`)
+
+  got = cite('재시도 정책은 RSH-2026-001/SRC-009 가 적은 대로 따른다.')
+  assert(got.counts.errors === 1 && got.problems[0].msg.includes('SRC-009'),
+    `없는 항목을 가리키는 인용을 통과시켰다:\n${JSON.stringify(got.problems, null, 2)}`)
+
+  got = cite('재시도 정책은 RSH-2026-009 가 적은 대로 따른다.')
+  assert(got.counts.errors === 1 && got.problems[0].msg.includes('RSH-2026-009'),
+    `없는 조사 문서를 부르는 인용을 통과시켰다:\n${JSON.stringify(got.problems, null, 2)}`)
+
+  // 프로필이 없으면 조사 문서가 어디 사는지 모른다. 조용히 넘기면 «대조했고 맞았다» 와 구분되지 않는다.
+  const lone = join(temp('sdlc-research-noprofile'), 'docs')
+  put(join(lone, 'intent.md'), V7_INTENT(7, '\n해당 없음 — RSH-2026-001/SRC-002 가 적은 범위만 본다.\n'))
+  got = checked(lone)
+  assert(got.counts.errors === 0, `프로필이 없다고 인용을 오류로 만들었다:\n${JSON.stringify(got.problems, null, 2)}`)
+  assert(got.notes.some((n) => n.includes('RSH-*') && n.includes('대조하지 못했다')),
+    `대조하지 못했다는 사실을 말하지 않았다 — 안 본 인용이 통과한 인용처럼 보인다:\n${JSON.stringify(got.notes)}`)
+})
+
+await test('the comparison table in a research document is not an entity table', () => {
+  const { dir } = researchRepo('sdlc-research-table')
+  const prose = linted(dir)
+  assert(!prose.problems.some((p) => p.rule === 'entity-table'),
+    `기준 × 선택지 표를 «항목을 행으로 접었다» 로 걸었다 — 이 규칙이 막는 것은 목록을 표로 접는 일이다:\n${JSON.stringify(prose.problems, null, 2)}`)
+
+  // 예외가 조사 문서에만 걸리는지 본다. 규칙 자체가 꺼졌으면 이 대조군이 통과해 버린다.
+  const chain = join(temp('sdlc-research-table-control'), 'docs')
+  put(join(chain, 'intent.md'), V7_INTENT(7, '\n| 항목 | 내용 |\n|---|---|\n| OUT-002 | 표로 접은 항목 |\n'))
+  assert(linted(chain).problems.some((p) => p.rule === 'entity-table'),
+    'intent 의 ID 첫 열 표를 더는 걸지 않는다 — 예외가 규칙을 통째로 껐다')
+})
+
+await test('research is evidence, not a decision: the guard does not ask on reviewed', () => {
+  const d = temp('sdlc-research-guard')
+  put(join(d, '.claude/spec-profile.yml'), `sdlc_version: 7\nsdlc_runtime: "${ROOT}"\nspec_dir: ".sdlc/specs"\n`)
+  const research = join(d, '.sdlc/specs/research/RSH-2026-001-queue/research.md')
+  put(research, RESEARCH_MD.replace('status: reviewed', 'status: in_review').replace('reviewed_by: "박검토"', 'reviewed_by: null'))
+  const env = { ...process.env, CLAUDE_PROJECT_DIR: d }
+  const invoke = (payload) => run(tool('guard-approval.sh'), [], { env, input: JSON.stringify(payload) })
+  const asks = (r) => (r.out ?? '').includes('"permissionDecision":"ask"')
+
+  const r = invoke({ tool_name: 'Edit', tool_input: {
+    file_path: research,
+    old_string: 'status: in_review\n',
+    new_string: 'status: reviewed\n',
+  } })
+  assert(r.code === 0 && !asks(r), `조사의 \`reviewed\` 를 승인 전이로 물었다 — 읽었다는 기록은 승인이 아니다:\n${r.out}`)
+
+  const r2 = invoke({ tool_name: 'Write', tool_input: {
+    file_path: research, content: 'status: reviewed\nreviewed_by: "박검토"\n',
+  } })
+  assert(r2.code === 0 && !asks(r2), `\`reviewed_by\` 를 적었다고 승인으로 읽었다:\n${r2.out}`)
+
+  // 이 레포에서 가드가 켜져 있는지 대조군으로 확인한다 — 안 그러면 위 두 줄은 «가드가 안 도는 레포» 를
+  // 증명한 것이 된다.
+  const intent = join(d, '.sdlc/specs/2026-09-10-queue/intent.md')
+  put(intent, '---\nartifact: intent\nstatus: in_review\napproved_by: null\n---\n\n초안\n')
+  assert(asks(invoke({ tool_name: 'Write', tool_input: { file_path: intent, content: 'status: accepted\napproved_by: "agent"' } })),
+    '대조군인 intent 승인도 안 물었다 — 이 레포에서는 가드가 아예 돌지 않는다')
+})
+
+await test('the gate checks a research document as it is saved', () => {
+  // CI 에서만 걸리는 종류가 하나라도 있으면 «쓰는 동안 검증한다» 가 그 종류에서만 조용히 꺼진다.
+  const { d, dir } = researchRepo('sdlc-research-gate')
+  const gate = (name) => spawnSync(tool('gate-artifacts.sh'), [], {
+    encoding: 'utf8',
+    input: JSON.stringify({ tool_input: { file_path: join(dir, name) } }),
+    env: { ...process.env, CLAUDE_PROJECT_DIR: d, SDLC_RUNTIME: ROOT, XDG_CACHE_HOME: join(d, 'cache') },
+  })
+
+  let r = gate('research.md')
+  assert(r.status === 0, `깨끗한 조사 문서에서 게이트가 실패했다 (code ${r.status})\n${r.stdout}\n${r.stderr}`)
+
+  put(join(dir, 'research.md'), RESEARCH_MD.replace('- retrieved: 2026-09-02\n', ''))
+  r = gate('research.md')
+  assert(r.status === 2 && (r.stderr ?? '').includes('SRC-002'),
+    `조사 문서를 저장하는 자리에서 결함을 안 잡았다 — 이 종류만 CI 에서야 걸린다 (code ${r.status}):\n${r.stdout}\n${r.stderr}`)
+})
+
+await test('check-all walks research directories', () => {
+  const { d, dir } = researchRepo('sdlc-research-all')
+  let r = run(process.execPath, [tool('check-all.mjs'), d])
+  assert(r.code === 0, `조사 폴더만 있는 레포에서 실패했다:\n${r.out}`)
+  assert(/통과\s+.*RSH-2026-001-queue/.test(r.out), `조사 폴더를 걷지 않았다 — 아무도 안 보는 문서를 다른 문서가 인용한다:\n${r.out}`)
+
+  put(join(dir, 'research.md'), RESEARCH_MD.replace('- retrieved: 2026-09-02\n', ''))
+  r = run(process.execPath, [tool('check-all.mjs'), d])
+  assert(r.code !== 0 && r.out.includes('SRC-002'), `조사의 결함을 check-all 이 흘려보냈다:\n${r.out}`)
 })
 
 

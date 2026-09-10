@@ -16,6 +16,10 @@ const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 export const FIELD = {
   basis: ['basis', '근거'],
   acceptance: ['acceptance', '수용 기준'],
+  /** Where a research source is: a URL or a repository path. */
+  at: ['at', '위치'],
+  /** The date a research source was read. A source without one cannot be reread. */
+  retrieved: ['retrieved', '조회'],
 }
 
 /** Markers for required sections and applicable tiers. */

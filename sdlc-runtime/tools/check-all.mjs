@@ -13,7 +13,9 @@ const args = process.argv.slice(2)
 const REQUIRED = args.includes('--required')
 const ROOT = resolve(args.find((a) => !a.startsWith('--')) ?? process.cwd())
 useLocale(ROOT)   // 문체 번들을 프로필의 lang 으로 고른다
-const DOCS = ['intent.md', 'spec.md', 'plan.md', 'finding.md']
+// research.md 도 걷는다 — 산출물 세트 밖에 살지만 검사는 똑같이 받는다. 여기서 빠지면 인용되는
+// 문서만 아무도 안 보게 되고, 그러면 인용은 확인되지 않은 말을 가리킨다.
+const DOCS = ['intent.md', 'spec.md', 'plan.md', 'finding.md', 'research.md']
 
 const yml = (key, file) => {
   if (!existsSync(file)) return ''

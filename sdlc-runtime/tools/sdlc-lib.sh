@@ -108,9 +108,13 @@ sdlc_resolve() {
   # 믿을 수 있게 만드는 유일한 근거라, 여기서 빠지면 accepted 를 아무도 안 지킨다.
   # adr_dir 이 없는 레포는 ADR 을 안 쓰므로 그대로 통과시킨다.
   ADR_DIR="$(sdlc_yml adr_dir "$profile")"
+  # research.md 도 여기 든다. 산출물 세트 밖에 살지만 쓰는 도구는 같고, 한 종류만 CI 에서야 검사받으면
+  # «쓰는 동안 검증한다» 는 약속이 그 종류에서만 조용히 꺼진다. 승인 가드는 조사 문서를 그대로
+  # 통과시킨다 — 조사에는 승인 전이가 없다.
   case "$file" in
     "$TREE/$SPEC_DIR"/*/intent.md|"$TREE/$SPEC_DIR"/*/spec.md|\
-    "$TREE/$SPEC_DIR"/*/plan.md|"$TREE/$SPEC_DIR"/*/finding.md) ;;
+    "$TREE/$SPEC_DIR"/*/plan.md|"$TREE/$SPEC_DIR"/*/finding.md|\
+    "$TREE/$SPEC_DIR"/*/research.md) ;;
     *)
       [ -n "$ADR_DIR" ] || return 1
       case "$file" in

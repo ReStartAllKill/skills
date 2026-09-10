@@ -49,6 +49,9 @@ export const budget = {
   finding: { doc: 2000, section: 600, entity: 250 },
   /** Do not apply risk-tier multipliers to ADRs. */
   adr: { doc: 2600, section: 900, entity: 400 },
+  /** Research takes no tier multiplier either: evidence carries no risk tier. The item budget is
+   *  the intent's — a source that needs a long paragraph is being summarized, not cited. */
+  research: { doc: 2500, section: 800, entity: 250 },
 }
 
 /** Limits for titles, fields, and sentence counts based on Korean text density.

@@ -35,12 +35,31 @@ export const PREFIXES = {
   FQ: { doc: 'finding', label: '열린 질문(발견 층)' },
   ALT: { doc: 'adr', label: '대안' },
   RV: { doc: 'adr', label: '재검토 조건' },
+  CRIT: { doc: 'research', label: '기준' },
+  SRC: { doc: 'research', label: '출처' },
+  OPT: { doc: 'research', label: '선택지' },
+  REC: { doc: 'research', label: '판단' },
+  RQ: { doc: 'research', label: '열린 질문(조사 층)' },
 }
 PREFIXES.ASM.also = ['adr']
 
-export const P_ALT = 'RISK|EDGE|HYP|NFR|OUT|CON|ASM|SCN|ALT|FR|AC|EV|FQ|SQ|SD|TD|WP|PQ|RV|Q'
+// 긴 접두를 앞에 둔다. 정규식 교체는 왼쪽부터 고르므로 짧은 것이 앞에 서면 긴 접두의 앞부분만 물고
+// 끊는다 — `RQ` 가 `Q` 보다 앞에 서야 하는 이유이고, `CRIT` 이 4글자 무리에 있는 이유다.
+export const P_ALT = 'RISK|EDGE|CRIT|HYP|NFR|OUT|CON|ASM|SCN|ALT|SRC|OPT|REC|FR|AC|EV|FQ|SQ|SD|TD|WP|PQ|RV|RQ|Q'
 export const CHAIN_FILES = { finding: 'finding.md', intent: 'intent.md', spec: 'spec.md', plan: 'plan.md' }
-export const FILES = { ...CHAIN_FILES, adr: 'ADR-*.md' }
+// research 는 산출물 세트 밖에 산다 — 조사는 intent 보다 먼저 서고 여러 문서가 인용하므로 어느 한
+// 세트에 매달 수 없다. 같은 폴더 로더가 읽되 CHAIN_FILES 에는 넣지 않는다: 사슬 규칙(intent 우선,
+// 티어 상속, 상위 핀)이 조사 문서에 닿으면 승인도 티어도 없는 문서에 승인과 티어를 묻게 된다.
+export const RESEARCH_FILE = 'research.md'
+export const RESEARCH_DIR = 'research'
+export const RESEARCH_SCHEMA = 7
+export const DIR_FILES = { ...CHAIN_FILES, research: RESEARCH_FILE }
+export const FILES = { ...DIR_FILES, adr: 'ADR-*.md' }
+export const RESEARCH_PREFIXES = Object.keys(PREFIXES).filter((k) => PREFIXES[k].doc === 'research')
+/** 다른 문서가 조사를 부르는 형태. `RSH-2026-001` 이나 `RSH-2026-001/SRC-002` 다. 프런트매터 키를
+ *  따로 두지 않는다 — 인용은 문장 안에 서야 «무엇을 근거로 그렇게 말했나» 가 그 자리에서 읽힌다. */
+export const RE_RESEARCH_CITE = new RegExp(
+  `\\bRSH-(\\d{4})-(\\d{3,4})(?:\\/((?:${RESEARCH_PREFIXES.join('|')})-\\d{1,4}))?\\b`, 'g')
 export const ADR_FILENAME = /^ADR-(\d{3,4})-([a-z0-9]+(?:-[a-z0-9]+)*)\.md$/
 export const WP_FIELDS = ['files', 'depends', 'covers', 'tests', 'verify']
 
@@ -200,7 +219,7 @@ export function loadAdrDir(dir, onDup) {
 
 export function loadDir(dir, onDup) {
   const docs = {}
-  for (const [kind, name] of Object.entries(CHAIN_FILES)) {
+  for (const [kind, name] of Object.entries(DIR_FILES)) {
     const path = join(dir, name)
     if (!existsSync(path)) continue
     const text = readFileSync(path, 'utf8')
@@ -212,6 +231,21 @@ export function loadDir(dir, onDup) {
   }
   for (const d of Object.values(docs)) d.ents = entities(d, onDup ? (a, b) => onDup(d, a, b) : undefined)
   return docs
+}
+
+/** `<spec_dir>/research/<RSH-…>/research.md` 를 id 로 찾을 수 있게 모은다. 폴더 이름이 아니라
+ *  프런트매터의 id 로 색인한다 — 이름은 사람이 고치고, 인용이 가리키는 것은 id 다. */
+export function loadResearchIndex(specDir) {
+  const out = new Map()
+  const root = specDir ? join(specDir, RESEARCH_DIR) : null
+  if (!root || !existsSync(root)) return out
+  for (const name of readdirSync(root).sort()) {
+    if (!existsSync(join(root, name, RESEARCH_FILE))) continue
+    const d = loadDir(join(root, name)).research
+    const id = String(d?.fm?.id ?? '').trim()
+    if (d && id && !out.has(id)) out.set(id, d)
+  }
+  return out
 }
 
 export const isTemplate = (docs) => Object.values(docs)

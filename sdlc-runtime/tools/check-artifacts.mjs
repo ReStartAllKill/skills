@@ -6,7 +6,8 @@ import {
   PREFIXES, FILES, WP_FIELDS, P_ALT, idsIn, stripComments, isNull, frontmatter,
   loadDir, isTemplate, report, SDLC_VERSION,
   SUPPORTED_SCHEMA_VERSIONS, schemaVersion, BODY_PIN, bodyHash, bodyPin,
-  levelsOf, wpFiles, ADR_FILENAME, loadAdrDir, CHAIN_FILES, scopeOf } from './artifact-parse.mjs'
+  levelsOf, wpFiles, ADR_FILENAME, loadAdrDir, CHAIN_FILES, scopeOf,
+  RESEARCH_SCHEMA, RE_RESEARCH_CITE, loadResearchIndex } from './artifact-parse.mjs'
 import { adrSeam, checkAdr, checkPins } from './adr-check.mjs'
 import { LOCK_FILE, upstreamSeam, loadLock, verifyLock, findUpstream, headOf, sameRepo } from './upstream.mjs'
 import { loadBands, revisedBy } from './bands.mjs'
@@ -30,7 +31,7 @@ useLocale(DIR)   // 문체 번들을 프로필의 lang 으로 고른다
 
 const NOT_OURS = new Set(['UTF', 'ISO', 'RFC', 'SHA', 'AES', 'TLS', 'SLA', 'RTO', 'RPO', 'WCAG',
   'HTTP', 'HTTPS', 'ADR', 'DORA', 'MDM', 'MCP', 'ACP', 'PII', 'API', 'SDK', 'CHG', 'SPEC',
-  'PLAN', 'FND', 'JSON', 'YAML', 'CSV', 'SQL', 'AWS', 'GCP', 'CPU', 'RAM'])
+  'PLAN', 'FND', 'RSH', 'JSON', 'YAML', 'CSV', 'SQL', 'AWS', 'GCP', 'CPU', 'RAM'])
 
 const TIERS = ['light', 'standard', 'full']
 const STATUS = {
@@ -38,6 +39,9 @@ const STATUS = {
   spec: ['draft', 'in_review', 'accepted', 'rejected', 'superseded'],
   plan: ['draft', 'in_review', 'accepted', 'in_progress', 'completed', 'rejected', 'superseded'],
   finding: ['draft', 'in_review', 'accepted', 'rejected', 'superseded'],
+  // `reviewed` 는 사람이 읽었다는 뜻이지 승인이 아니다. 그래서 accepted 가 없고, 승인 가드도 이
+  // 전이를 승인으로 보지 않는다 — 증거는 받아들일 대상이 아니라 인용할 대상이다.
+  research: ['draft', 'in_review', 'reviewed'],
 }
 const RANK = { draft: 0, in_review: 1, accepted: 2, in_progress: 3, completed: 4, rejected: -1, superseded: -2 }
 // `created` 와 `updated` 는 여기 없다 — git 이 이미 쥔 사실을 손으로 옮겨 적은 칸이었고, 손으로 적는
@@ -50,6 +54,9 @@ const REQUIRED_FM = {
   spec: [...BASE_FM, 'intent', 'intent_version'],
   plan: [...BASE_FM, 'intent', 'spec', 'spec_version'],
   finding: [...BASE_FM, 'detected_at', 'trigger', 'autonomy_tier'],
+  // `question` 은 «이 조사가 어느 결정에 쓰이나» 다. 없으면 무엇이든 읽은 것을 다 담게 되고,
+  // 그러면 §기준 이 사후에 만들어진다. `tier` 는 없다 — 위험의 무게는 결정이 지고 증거는 안 진다.
+  research: ['artifact', 'id', 'title', 'status', 'question', 'owner'],
 }
 const TRIGGERS = ['band_breach', 'scheduled_scan', 'ticket', 'channel', 'manual']
 const AUTONOMY = ['log', 'diagnose', 'propose']
@@ -67,6 +74,52 @@ const REPO_ROOT = (() => {
 })()
 const SEAM = { ...adrSeam(REPO_ROOT), root: REPO_ROOT }
 const UP = upstreamSeam(REPO_ROOT)
+
+// 조사 문서는 산출물 세트 밖, `<spec_dir>/research/` 밑에 산다. 인용을 대조하려면 그 자리를 알아야
+// 하고, 그 자리를 아는 것은 프로필뿐이다.
+const SPEC_DIR = (() => {
+  if (!REPO_ROOT) return null
+  const raw = (/^spec_dir:[ \t]*(.*)$/m.exec(readFileSync(resolve(REPO_ROOT, '.claude/spec-profile.yml'), 'utf8'))?.[1] ?? '')
+    .replace(/\s+#.*$/, '').replace(/^["']|["']$/g, '').trim()
+  return resolve(REPO_ROOT, raw || '.sdlc/specs')
+})()
+
+/** 다른 문서가 `RSH-2026-001` 또는 `RSH-2026-001/SRC-002` 로 조사를 부르면 그 문서와 항목이 실제로
+ *  있어야 한다. 프런트매터 키를 따로 두지 않는 것은 인용이 문장 안에 서야 «무엇을 근거로 그렇게
+ *  말했나» 가 그 자리에서 읽히기 때문이다. 대조하지 못하면 조용히 넘기지 않고 남긴다 — 안 본 인용과
+ *  통과한 인용이 같은 글자로 보이면 인용은 장식이 된다. */
+function checkResearchCitations(list, push) {
+  const cites = []
+  for (const d of list) {
+    const own = String(d.fm?.id ?? '').trim()
+    d.lines.forEach((line, i) => {
+      if (!d.live[i]) return
+      for (const m of stripComments(line).matchAll(RE_RESEARCH_CITE)) {
+        const id = `RSH-${m[1]}-${m[2]}`
+        if (id === own) continue   // 자기 id 는 인용이 아니다.
+        cites.push({ doc: d, line: i, id, item: m[3] ?? null })
+      }
+    })
+  }
+  if (!cites.length) return
+  if (!SPEC_DIR) {
+    notes.push(`RSH-* 인용 ${cites.length}건을 대조하지 못했다 — 프로필(.claude/spec-profile.yml)을 못 찾아 조사 문서가 어디 사는지 모른다`)
+    return
+  }
+  const index = loadResearchIndex(SPEC_DIR)
+  for (const c of cites) {
+    const target = index.get(c.id)
+    if (!target) {
+      push(c.doc.name, `${c.id} 을 인용하는데 그 조사 문서가 없다`,
+        `${join(SPEC_DIR, 'research')} 밑에서 \`id: ${c.id}\` 인 research.md 를 못 찾았다. 오타이거나, 조사를 아직 커밋하지 않았다. 위치: ${c.doc.name}:${c.line + 1}`)
+      continue
+    }
+    if (c.item && !target.ents.has(c.item)) {
+      push(c.doc.name, `${c.id} 에 ${c.item} 이 없다`,
+        `${target.path} 에 \`### ${c.item} — 제목\` 이 없다. 항목 번호는 재사용하지 않으므로 지워진 항목을 가리키는 인용은 그대로 두면 다른 것을 가리키게 된다. 위치: ${c.doc.name}:${c.line + 1}`)
+    }
+  }
+}
 
 
 const ADR_TARGETS = (() => {
@@ -93,6 +146,7 @@ if (ADR_TARGETS) {
     checkAdr(d, { seam: SEAM, siblings: all }, (level, msg, hint) =>
       level === 'info' ? notes.push(`${d.name} — ${msg}`) : problems.push({ level, doc: d.name, msg, hint }))
   }
+  checkResearchCitations(targets, err)
   if (!SEAM.configured) notes.push('프로필에 `adr_dir` 이 없다 — 등재하면 산출물 세트의 `decisions:` 핀 검사도 실행한다')
   process.exit(report({
     json: argv.includes('--json'),
@@ -107,8 +161,8 @@ const docs = loadDir(DIR, (d, dup, first) =>
 const TEMPLATE = isTemplate(docs)
 
 if (Object.keys(docs).length === 0) {
-  if (argv.includes('--json')) process.exit(report({ title: '', problems: [{ level: 'error', doc: DIR, rule: 'artifacts-missing', msg: `산출물이 없다 — ${DIR} 에 intent.md / spec.md / plan.md / finding.md 가 하나도 없다.` }], json: true }))
-  console.error(`산출물이 없다 — ${DIR} 에 intent.md / spec.md / plan.md / finding.md 가 하나도 없다.`)
+  if (argv.includes('--json')) process.exit(report({ title: '', problems: [{ level: 'error', doc: DIR, rule: 'artifacts-missing', msg: `산출물이 없다 — ${DIR} 에 intent.md / spec.md / plan.md / finding.md / research.md 가 하나도 없다.` }], json: true }))
+  console.error(`산출물이 없다 — ${DIR} 에 intent.md / spec.md / plan.md / finding.md / research.md 가 하나도 없다.`)
   process.exit(1)
 }
 if (!TEMPLATE && !docs.intent && (docs.spec || docs.plan)) {
@@ -262,7 +316,8 @@ for (const d of chain.slice(1)) {
       '한 산출물 세트는 한 스키마 버전만 쓴다. 기존 산출물 세트는 통째로 마이그레이션하거나 현재 버전을 유지한다.')
   }
 }
-const shownSchema = chainSchema ?? (docs.finding ? schemaVersion(docs.finding.fm) : null)
+const loneDoc = docs.finding ?? docs.research
+const shownSchema = chainSchema ?? (loneDoc ? schemaVersion(loneDoc.fm) : null)
 if (shownSchema != null) notes.push(`산출물 schema v${shownSchema}${shownSchema === 1 ? ' (무버전 문서 호환)' : ''} · runtime ${SDLC_VERSION}`)
 
 const TIER = docs.intent?.fm?.tier ?? docs.finding?.fm?.tier ?? 'standard'
@@ -293,6 +348,86 @@ if (docs.finding) {
   if (kind === 'intent') {
     const t = route.slice(route.indexOf(':') + 1).trim()
     if (t && !existsSync(resolve(DIR, t))) err(f.name, `\`routed_to\` 가 가리키는 intent 가 없다: ${t}`, '경로를 고치거나, 아직 안 만들었으면 status 를 in_review 로 되돌린다.')
+  }
+}
+
+// 조사 문서가 지키는 것은 «인용할 수 있는가» 뿐이다. 무엇을 고를지는 이 문서가 정하지 않는다 —
+// 그 결정은 이것을 인용하는 ADR·intent 가 지고, 그래서 여기에는 승인도 티어도 없다.
+if (docs.research) {
+  const r = docs.research
+  const items = (p) => [...r.ents.values()].filter((e) => e.id.startsWith(p + '-'))
+  const crits = items('CRIT'), srcs = items('SRC'), opts = items('OPT'), recs = items('REC')
+
+  if (Number(r.fm.schema_version) !== RESEARCH_SCHEMA) {
+    err(r.name, `schema_version 이 ${r.fm.schema_version ?? '(없음)'} 다`,
+      `조사는 언제나 ${RESEARCH_SCHEMA} 다 — 산출물 세트의 버전과 별개다(references/schema.md).`)
+  }
+  for (const k of ['tier', 'approved_by']) {
+    if (isNull(r.fm[k])) continue
+    err(r.name, `조사 문서에 \`${k}\` 가 있다`,
+      '조사는 승인하지 않고 티어도 없다 — 증거는 결정이 아니다. 이 키를 지우고, 무엇을 정했는지는 이 문서를 인용하는 ADR·intent 에 적는다.')
+  }
+
+  if (!TEMPLATE) {
+    for (const [list, min, label, hint] of [
+      [crits, 1, '기준(CRIT-*)', '무엇으로 재는지 없으면 비교표의 행이 사후에 만들어진다.'],
+      [srcs, 1, '출처(SRC-*)', '읽은 자리를 적지 않으면 이 문서는 조사가 아니라 의견이다.'],
+      [opts, 2, '선택지(OPT-*)', '선택지가 하나면 비교가 아니다. 비교할 것이 없었으면 그것은 조사가 아니라 사실이고 spec 으로 간다.'],
+      [recs, 1, '판단(REC-*)', '읽기만 하고 무엇을 뜻하는지 적지 않으면 다음 사람이 같은 자료를 다시 읽는다.'],
+    ]) {
+      if (list.length >= min) continue
+      err(r.name, `${label} 이 ${list.length}개다 — ${min}개 이상이어야 한다`, hint)
+    }
+
+    for (const s of srcs) {
+      if (!field(s, ...FIELD.at).trim()) {
+        err(r.name, `${s.id} 에 \`at:\` 이 없다`,
+          'URL 이나 저장소 경로를 적는다. 어디서 읽었는지 없으면 다음 사람이 같은 것을 다시 찾지 못하고, 인용은 확인할 수 없는 말이 된다.')
+      }
+      const at = field(s, ...FIELD.retrieved).trim()
+      if (/^\d{4}-\d{2}-\d{2}$/.test(at)) continue
+      err(r.name, at ? `${s.id} 의 \`retrieved: ${at}\` 를 날짜로 읽을 수 없다` : `${s.id} 에 \`retrieved:\` 가 없다`,
+        '`YYYY-MM-DD` 로 적는다. 조사는 낡는다 — 언제 읽었는지 없으면 이 출처가 아직 그 말을 하는지 아무도 판정하지 못한다.')
+    }
+
+    for (const [list, prefix, what, hint] of [
+      [opts, 'SRC', '출처', '아무도 근거를 대지 않은 선택지는 의견이다. §출처 의 SRC-* 를 `근거:` 로 든다.'],
+      [recs, 'OPT', '선택지', '§선택지 의 OPT-* 를 `근거:` 로 든다. 비교하지 않은 것에 대한 판단은 이 문서가 하는 일이 아니다.'],
+    ]) {
+      for (const e of list) {
+        if (idsIn(field(e, ...FIELD.basis)).some((x) => x.startsWith(prefix + '-') && ALL.has(x))) continue
+        err(r.name, `${e.id} 이 이 문서의 어느 ${what}도 가리키지 않는다`, hint)
+      }
+    }
+
+    // 비교표는 이 문서에서 유일하게 2차원인 자리다 — 기준 × 선택지. 머리행의 OPT-* 로 찾는다:
+    // 제목이 계약이 아니라 ID 가 계약이라는 이 저장소의 규칙이 표에도 그대로 걸린다.
+    const cells = (line) => line.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.replace(/`/g, '').trim())
+    let table = null
+    r.lines.forEach((line, i) => {
+      if (table || !r.live[i] || !/^\s*\|/.test(line)) return
+      if (!/^\s*\|[\s:|-]+\|\s*$/.test(r.lines[i + 1] ?? '')) return
+      const header = cells(line)
+      if (!header.some((c) => idsIn(c).some((x) => x.startsWith('OPT-')))) return
+      const first = []
+      for (let j = i + 2; j < r.lines.length && /^\s*\|/.test(r.lines[j]); j++) first.push(cells(r.lines[j])[0] ?? '')
+      table = { line: i, header, first }
+    })
+    if (!table) {
+      err(r.name, '기준과 선택지를 함께 놓은 비교표가 없다',
+        '머리행에 `OPT-NNN`, 첫 열에 `CRIT-NNN` 을 둔 표 하나가 §비교 다. 표가 없으면 어느 기준에서 무엇이 갈렸는지가 문장 사이에 흩어져 아무도 다시 세우지 못한다.')
+    } else {
+      const inHead = new Set(table.header.flatMap((c) => idsIn(c)).filter((x) => x.startsWith('OPT-')))
+      const inCol = new Set(table.first.flatMap((c) => idsIn(c)).filter((x) => x.startsWith('CRIT-')))
+      for (const c of crits) {
+        if (inCol.has(c.id)) continue
+        err(r.name, `비교표의 첫 열에 ${c.id} 이 없다`, '기준을 세워 놓고 그 기준으로 재지 않았다. 행을 더하거나 기준을 뺀다.')
+      }
+      for (const o of opts) {
+        if (inHead.has(o.id)) continue
+        err(r.name, `비교표의 머리행에 ${o.id} 이 없다`, '재지 않은 선택지는 비교된 적이 없다. 열을 더하거나 선택지를 뺀다.')
+      }
+    }
   }
 }
 
@@ -452,8 +587,11 @@ for (const d of Object.values(docs)) {
       err(d.name, `${e.id} 이 ${FILES[home.doc]} 밖에서 정의됐다`, `${e.id.split('-')[0]}-* 는 ${FILES[home.doc]} 의 «${home.label}» 이 정의한다.`)
     }
   }
-  d.lines.forEach((line, i) => {
+  d.lines.forEach((raw, i) => {
     if (!d.live[i]) return
+    // 조사 인용은 이 그래프의 밖이다. `RSH-2026-001/SRC-002` 의 뒤쪽을 여기서 그대로 읽으면 이 폴더에
+    // 없는 ID 가 되어 «정의되지 않았다» 가 된다 — 인용은 checkResearchCitations 가 따로 대조한다.
+    const line = raw.replace(RE_RESEARCH_CITE, ' ')
     for (const id of idsIn(line)) {
       if (ALL.has(id)) continue
       if (TEMPLATE && /<[^<>]*-\d/.test(line)) continue
@@ -471,6 +609,9 @@ for (const d of Object.values(docs)) {
     }
   })
 }
+
+
+checkResearchCitations(Object.values(docs), err)
 
 
 const outs = of('intent', 'OUT')
@@ -640,6 +781,7 @@ if (!TEMPLATE) {
 
 process.exit(report({
     json: argv.includes('--json'),
-  title: `산출물 추적성 검사 — ${basename(DIR)}  (tier: ${TIER}, 문서 ${Object.keys(docs).length}개, ID ${ALL.size}개)`,
+  // 조사만 있는 폴더에 tier 를 적지 않는다 — 없는 값을 기본값으로 찍으면 «이 문서에도 티어가 있다» 로 읽힌다.
+  title: `산출물 추적성 검사 — ${basename(DIR)}  (tier: ${docs.research && Object.keys(docs).length === 1 ? '—' : TIER}, 문서 ${Object.keys(docs).length}개, ID ${ALL.size}개)`,
   notes, problems, strict: STRICT, ruleDoc: '`conventions.md` 의 «티어» · «ID 접두» · «상태와 승인» 절에 있다.',
 }))
