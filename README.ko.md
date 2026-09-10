@@ -154,10 +154,16 @@ claude plugin install restart-harness
 | `/create-intent` | 변경을 시작할 때 — «무엇» 보다 «왜» 를 먼저 확정한다 |
 | `/create-spec` | 승인된 의도를 검증 가능한 동작으로 옮길 때 |
 | `/create-plan` | 승인된 명세를 작업으로 쪼갤 때 |
+| `/create-light` | 되돌리기 쉬운 작은 변경 — 세 문서를 한 번에 쓸 때 |
 | `/implement-spec` | 계획을 레벨 단위로 실행할 때 |
 | `/iterate-spec` | 피드백 · 리뷰로 명세가 달라져야 할 때 |
 | `/create-adr` | 되돌리기 어려운 결정이라 변경보다 오래 살아야 할 때 |
 | `/create-pr` | 브랜치를 PR로 만들 때 — 본문의 근거를 diff가 아니라 승인된 산출물에서 가져온다 |
+
+외부 계약과 데이터가 바뀌지 않고 revert나 플래그로 되돌릴 수 있는 변경이면 `/create-light`를
+쓴다 — intent·spec·plan을 그대로 쓰고 같은 검사기·린터를 돌리고 같은 승인 세 번을 받되, 한 번에
+쓰고 한 커밋에 담는다. 그 밖의 변경은 `/create-intent` → `/create-spec` → `/create-plan`으로
+가며, 각 단계는 다음 문서를 쓰기 전에 검토에서 멈춘다. `sdlc_version`이 7 이상이어야 한다.
 
 `/implement-spec`은 같은 레벨의 작업을 별도의 Git 워크트리에서 병렬로 실행하고, 합류점마다
 전체 검증을 수행한다.
@@ -223,7 +229,7 @@ CI 러너에는 플러그인이나 홈 디렉터리가 없으므로, 검사기�
 claude plugin validate .
 claude plugin details restart-harness           # 컴포넌트와 토큰 비용
 node sdlc-runtime/evals/run.mjs                 # 검사기 · 런타임 스위트
-node --test sdlc-runtime/evals/runner.test.mjs \
+node --test sdlc-runtime/evals/*.test.mjs \
   skills/sdlc/create-pr/evals/tools.test.mjs      # 러너 + create-pr 스크립트 회귀
 python3 -m unittest discover -s skills/eval/agent-eval/scripts -p 'test_*.py'
 ```

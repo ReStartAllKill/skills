@@ -27,7 +27,8 @@ description: '변경의 목적·목표·범위를 intent.md로 작성한다. 구
 6. 공통 절차에 따라 검사하고 승인을 처리한다. 다음 단계는 `/create-spec <경로>`다.
 
 구현 구조·파일·라이브러리·작업 순서는 plan에 둔다. 외부 인터페이스의 동작은 spec에 둔다.
-글자 수 제한은 `<sdlc_runtime>/references/prose.md`를 따른다.
+글자 수 제한은 `check-set.mjs`가 잡는다 — `<sdlc_runtime>/references/prose.md`는 그 경고를
+해석해야 하거나 한도를 미리 계산해야 할 때만 읽는다.
 
 ## 보고
 

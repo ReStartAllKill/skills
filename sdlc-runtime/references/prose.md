@@ -55,7 +55,7 @@ A consumer repository vendors its intent and spec from upstream and records them
 
 The profile's `lang` selects the **artifact language** (default: `ko`). Both the prose lists (`translationese`, `meta`, and `vague`) and character budgets are defined in one place: `sdlc-runtime/locales/<lang>.mjs`.
 
-Contract keywords such as `basis:` and `근거:` do not depend on this setting; both languages are always accepted. See “Contract keywords accept both languages” in `conventions.md`.
+Contract keywords such as `basis:` and `근거:` do not depend on this setting; both languages are always accepted. See “Artifact syntax” in `conventions.md`.
 
 A document written in another language creates two failures at once: none of the three prose-list checks fire, and its length is measured with another language's budget. The silent prose-check failure is more dangerous because it is indistinguishable from a pass.
 

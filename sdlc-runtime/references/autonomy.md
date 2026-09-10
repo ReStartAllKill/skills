@@ -39,6 +39,17 @@ node <sdlc_runtime>/tools/dispatch-auto.mjs <repo> \
 
 `--dry-run` only displays the execution command. It does not invoke the agent or commit anything.
 
+## What the writing skills do under a route
+
+The dispatcher's prompt begins with “자율 실행이다” and sets `SDLC_AUTONOMY_ROUTE`. In such a run the shared skill procedure of `conventions.md` changes in three places.
+
+- Ask nothing. Record anything that would require asking as an open question and leave that
+  document in `in_review`.
+- Set approval edits to `approved_by: policy:<route-id>`. Do not approve a document beyond the
+  delegation's `max_tier` or after `advance_to`.
+- The dispatcher performs the commit and final validation. Do not attempt tools outside the
+  allowed set; record them as work that could not be done.
+
 ## Approval boundary
 
 The guard permits only the policy approval matching the run's `SDLC_AUTONOMY_ROUTE`.

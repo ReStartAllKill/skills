@@ -10,12 +10,16 @@ When the profile has no `sdlc_runtime`, discovery order is the repository's `.cl
 |---|---|
 | `check-artifacts.mjs` | Check one artifact set's structure and traceability |
 | `lint-prose.mjs` | Check artifact prose |
+| `check-set.mjs` | Run both of the above over one directory and print one report |
 | `check-all.mjs` | Check all artifact sets, bands, and policies |
 | `plan-progress.mjs` | Compare completion claims with commits, tests, and verification evidence |
 | `verify-run.mjs` | Run verification and record logs and fingerprints |
 | `task-evidence.mjs` | Calculate task-definition and file-content fingerprints |
+| `pin.mjs` | Print an upstream document's `body:<hex>` pin (v7 and later) |
+| `sdlc-metrics.mjs` | Report SDLC flow indicators from git history and the artifacts |
 | `plan-levels.mjs` | Calculate dependencies and execution levels |
 | `task-worktree.mjs` | Create worktrees and commit, merge, and clean up tasks |
+| `task-worktree.mjs finish` | Commit, merge, and remove one task in one call, stopping at the first failure |
 | `task-brief.mjs` | Generate a writer-agent prompt |
 | `guard-approval.sh` | Guard approval transitions and edits to approved documents |
 | `gate-artifacts.sh` | Check edited artifacts and summarize duplicate warnings |
@@ -31,6 +35,7 @@ When the profile has no `sdlc_runtime`, discovery order is the repository's `.cl
 Local hooks provide fast feedback. They may not run when the runtime is unavailable, so use direct checks and CI as well. The guard recognizes Edit, Write, and common Bash edits to approval fields; it is not a security boundary that can interpret every shell command.
 
 - Approval edits return `permissionDecision: "ask"`; in `dontAsk` mode they are denied with a reason.
+- An approval whose `approved_by` equals `generated_by` is refused outright, with no dialog: the checker rejects that value, so there is nothing a person could approve.
 - A person cannot answer during noninteractive execution. Follow `references/autonomy.md` for policy approval.
 - The gate checks edited artifact sets; CI checks every artifact set.
 
@@ -57,6 +62,6 @@ After pinning, set `sdlc_runtime` to `.claude/sdlc` in the profile and commit bo
 
 `adr-index.mjs` renders the index according to the profile's `lang`; `--check` compares against that same rendering. Regenerate the index after changing the language. For legacy ADRs without frontmatter, the header table accepts both `Status` and `상태` and maps known values to common status codes. Unknown statuses are errors and are never treated as effective decisions.
 
-The `--json` output of `check-artifacts.mjs` and `lint-prose.mjs` contains `version: 1`, `problems`, `counts.errors`, `counts.warnings`, `exitCode`, `title`, and `notes`. Use a problem's `level` for decisions; treat `msg` and `hint` as display text and never parse their wording. An environment failure can occur before JSON is emitted, so consumers must handle both nonzero exit codes and JSON parse failures. `--strict` makes warnings fail in JSON mode too. Hook warning aggregation and schema migration consume this machine output.
+The `--json` output of `check-artifacts.mjs`, `lint-prose.mjs`, and `check-set.mjs` contains `version: 1`, `problems`, `counts.errors`, `counts.warnings`, `exitCode`, `title`, and `notes`. Use a problem's `level` for decisions; treat `msg` and `hint` as display text and never parse their wording. An environment failure can occur before JSON is emitted, so consumers must handle both nonzero exit codes and JSON parse failures. `--strict` makes warnings fail in JSON mode too. `check-set.mjs` adds a `tool` field (`check` or `lint`) to every problem and exits 2 when either child produced no report. Hook warning aggregation and schema migration consume this machine output.
 
 CLI guidance may still contain Korean. It is not used as a checking criterion for English input.

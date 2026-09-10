@@ -164,10 +164,17 @@ filenames.
 | `/create-intent` | Starting a change — settling *why* before *what* |
 | `/create-spec` | Turning an approved intent into verifiable behaviour |
 | `/create-plan` | Turning an approved spec into tasks |
+| `/create-light` | A small revertible change — all three documents in one pass |
 | `/implement-spec` | Executing the plan, level by level |
 | `/iterate-spec` | Feedback or review changed what the spec should say |
 | `/create-adr` | A decision is hard to reverse and must outlive the change |
 | `/create-pr` | Turning the branch into a pull request — the body draws its rationale from approved artifacts rather than the diff |
+
+Use `/create-light` when the change touches no external contract and no data, and a revert
+or a flag takes it back — it writes the same intent, spec and plan, runs the same checker and
+linter, and asks for the same three approvals, but in one pass and one commit. Anything else
+goes through `/create-intent` → `/create-spec` → `/create-plan`, where each stage stops for
+review before the next one is written. It needs `sdlc_version: 7` or later.
 
 `/implement-spec` runs same-level tasks in parallel, each in its own git worktree,
 and runs full verification at every join point.
@@ -236,7 +243,7 @@ in the plugin cache, which does not move until `claude plugin update`.
 claude plugin validate .
 claude plugin details restart-harness           # components and token cost
 node sdlc-runtime/evals/run.mjs                 # checker + runtime suites
-node --test sdlc-runtime/evals/runner.test.mjs \
+node --test sdlc-runtime/evals/*.test.mjs \
   skills/sdlc/create-pr/evals/tools.test.mjs      # runner + create-pr script regressions
 python3 -m unittest discover -s skills/eval/agent-eval/scripts -p 'test_*.py'
 ```
