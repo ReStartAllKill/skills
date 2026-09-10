@@ -12,9 +12,20 @@ const positional = argv.filter((a, i) => !a.startsWith('-') && !(i > 0 && ['-m',
 const [dirArg, CMD, TASK] = positional
 const MAIN = argv.includes('--main')
 const FORCE = argv.includes('--force')
-const die = (msg, code = 2) => { console.error(msg); process.exit(code) }
-if (!dirArg || !['add', 'commit', 'merge', 'remove'].includes(CMD) || !TASK) {
-  die('사용법: task-worktree.mjs <스펙 폴더> add|commit|merge|remove <WP-id> [-m "<제목>"] [--main] [--force]')
+// finish 는 세 단계를 이어 부르므로 실패한 단계를 잡아야 «어디까지 끝났나» 를 말할 수 있다.
+// 그때만 die 가 던지고, 단독 실행에서는 지금까지처럼 그 자리에서 종료한다 — 단독 실행이
+// 스택을 뱉으면 사람이 읽을 것이 늘어난다.
+class StepFailed extends Error { constructor(code) { super('step failed'); this.code = code } }
+let CATCHING = false
+const die = (msg, code = 2) => {
+  console.error(msg)
+  if (CATCHING) throw new StepFailed(code)
+  process.exit(code)
+}
+const COMMANDS = ['add', 'commit', 'merge', 'remove', 'finish']
+if (!dirArg || !COMMANDS.includes(CMD) || !TASK) {
+  die('사용법: task-worktree.mjs <스펙 폴더> add|commit|merge|remove|finish <WP-id> [-m "<제목>"] [--main] [--force]\n'
+    + '  finish = commit → merge → remove. 먼저 실패한 단계에서 멈추고 이어 붙일 명령을 말한다.')
 }
 const DIR = resolve(dirArg)
 
@@ -36,7 +47,7 @@ const out = (r) => ((r.stdout ?? '') + (r.stderr ?? '')).trim()
 const stdout = (r) => (r.stdout ?? '').trim()
 const current = () => stdout(git(ROOT, 'branch', '--show-current'))
 
-if (CMD === 'add') {
+function doAdd() {
   if (existsSync(wt)) die(`워크트리가 이미 있다 — ${relative(ROOT, wt)}. 재개면 그대로 쓰고, 아니면 remove 부터.`)
   if (current() !== plan.target_branch) die(`메인 트리가 ${current() || '(분리된 HEAD)'} 에 있다 — target_branch ${plan.target_branch} 로 먼저 옮긴다.`)
   const r = git(ROOT, 'worktree', 'add', wt, '-b', branch, plan.target_branch)
@@ -51,7 +62,7 @@ if (CMD === 'add') {
   console.log(`\n에이전트 프롬프트: node ${relative(ROOT, join(HERE, 'task-brief.mjs'))} ${relative(ROOT, DIR)} ${TASK} --worktree ${relative(ROOT, wt)}`)
 }
 
-if (CMD === 'commit') {
+function doCommit() {
   const msg = flag('-m') ?? flag('--message')
   if (!msg) die('-m "<제목>" 이 없다 — 프로필의 commit 관례에 맞춘 제목을 준다.')
   const cwd = MAIN ? ROOT : wt
@@ -77,7 +88,7 @@ if (CMD === 'commit') {
   console.log(`커밋 ${out(git(cwd, 'rev-parse', '--short', 'HEAD'))}  ${TASK}  (${present.length}개 파일, trailer 포함)`)
 }
 
-if (CMD === 'merge') {
+function doMerge() {
   if (current() !== plan.target_branch) die(`메인 트리가 ${current()} 에 있다 — target_branch ${plan.target_branch} 로 먼저 옮긴다.`)
   if (stdout(git(ROOT, 'status', '--porcelain', '--untracked-files=no'))) die('메인 트리가 더럽다 — 합류 전에 정리한다. 무엇이 누구 변경인지 갈라낼 수 없다.')
   if (!ok(git(ROOT, 'rev-parse', '--verify', '--quiet', branch))) die(`작업 브랜치가 없다 — ${branch}`)
@@ -91,7 +102,7 @@ if (CMD === 'merge') {
   console.log(`합류 ${TASK} → ${plan.target_branch}  (${out(git(ROOT, 'rev-parse', '--short', 'HEAD'))})`)
 }
 
-if (CMD === 'remove') {
+function doRemove() {
   if (existsSync(wt)) {
     const left = stdout(git(wt, 'status', '--porcelain')).split('\n').filter(Boolean)
     if (left.length && !FORCE) {
@@ -108,3 +119,37 @@ if (CMD === 'remove') {
     console.log(`브랜치 삭제: ${branch}`)
   }
 }
+
+// 작업 하나를 합류시키는 세 호출(commit·merge·remove)은 언제나 붙어 다니고 가운데를 건너뛸
+// 이유가 없다. 하나로 접어 도구 호출 셋을 하나로 만든다. 로직은 위 함수들 그대로다 —
+// 여기서 다시 구현하면 단독 호출과 finish 의 판정이 갈린다.
+function doFinish() {
+  if (MAIN) {
+    die('finish 는 --main 을 받지 않는다 — 메인 모드 작업은 워크트리가 없어 합류도 정리도 할 것이 없다.\n'
+      + `메인 트리에서 커밋만 한다: node ${relative(ROOT, join(HERE, 'task-worktree.mjs'))} ${relative(ROOT, DIR)} commit ${TASK} -m "<제목>" --main`)
+  }
+  const self = `node ${relative(ROOT, join(HERE, 'task-worktree.mjs'))} ${relative(ROOT, DIR)}`
+  const msg = flag('-m') ?? flag('--message')
+  const steps = [
+    { name: 'commit', run: doCommit, resume: `${self} commit ${TASK} -m "${msg ?? '<제목>'}"` },
+    { name: 'merge', run: doMerge, resume: `${self} merge ${TASK}` },
+    { name: 'remove', run: doRemove, resume: `${self} remove ${TASK}` },
+  ]
+  const done = []
+  CATCHING = true
+  for (const [i, step] of steps.entries()) {
+    try { step.run() } catch (e) {
+      if (!(e instanceof StepFailed)) throw e
+      CATCHING = false
+      const rest = steps.slice(i)
+      console.error(`\nfinish 가 ${step.name} 에서 멈췄다. 끝난 단계: ${done.join(' → ') || '없음'}.`)
+      console.error(`이어서: ${rest.map((s) => s.resume).join('\n       그다음: ')}`)
+      process.exit(e.code)
+    }
+    done.push(step.name)
+  }
+  CATCHING = false
+  console.log(`finish ${TASK} — ${done.join(' → ')} 까지 끝났다.`)
+}
+
+;({ add: doAdd, commit: doCommit, merge: doMerge, remove: doRemove, finish: doFinish })[CMD]()

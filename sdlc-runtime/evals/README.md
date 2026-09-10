@@ -37,6 +37,7 @@ node ../tools/check-artifacts.mjs --supports-schema 4
 - 작업 레벨·프롬프트·워크트리·커밋 범위·정리.
 - 승인 가드의 반환값, 훅 설치, 정책 위임 경계.
 - 전체 검사 실패의 종료 코드, 런타임 드리프트, 스키마 마이그레이션.
+- v7 규칙의 버전 경계 — 무표기 `##` 절, `body:` 본문 해시 핀과 `pin.mjs`, 두 언어 문서의 절 구성 일치.
 
 가드 반환값 검사는 실제 Claude의 승인 UI 동작을 검증하지 않는다.
 자율 디스패처의 회귀 평가는 가짜 CLI와 임시 저장소를 사용한다.
@@ -51,6 +52,8 @@ node ../tools/check-artifacts.mjs --supports-schema 4
 
 `runner.test.mjs`는 임시 저장소와 가짜 검사기로 런타임 단독 실행, 알 수 없는 케이스,
 검사기 예외·시그널 종료·잘못된 종료 코드를 검사한다.
+`check-set.test.mjs`는 `check-set.mjs`의 병합 보고서와 종료 코드, 자기승인을 다이얼로그 전에
+막는 가드, `task-worktree.mjs finish`의 중단 지점 보고를 임시 저장소에서 검사한다.
 `test_scorecard.py`는 미채점 결과와 하네스 실행 오류의 집계 거부, 정상적인 미검출과 대조군,
 점수·리포트 CLI의 실패 처리를 검사한다.
 

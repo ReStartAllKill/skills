@@ -50,14 +50,14 @@ node <sdlc_runtime>/tools/adr-index.mjs <저장소 루트> --next
 사람의 판단이 필요한 운영 정책·파트너 합의·우선순위는 확인한다. 검토되지 않은 판단은
 확정된 사실로 쓰지 않고 `ASM-*`에 전제로 기록한다. 수치·기한·성능 주장은 출처를 확인한다.
 운영 정책상 금지와 기술적 불가능을 구분하고, 기각한 대안의 단점을 과장하지 않는다.
-문체와 글자 수 제한은 `<sdlc_runtime>/references/prose.md`를 따른다.
+문체와 글자 수 제한은 `check-set.mjs`가 잡는다 — `<sdlc_runtime>/references/prose.md`는 그 경고를
+해석해야 할 때만 읽는다.
 
 ## 3. 검사와 승인
 
 ```sh
-node <sdlc_runtime>/tools/check-artifacts.mjs <ADR 경로>
-node <sdlc_runtime>/tools/lint-prose.mjs     <ADR 경로>
-node <sdlc_runtime>/tools/adr-index.mjs      <저장소 루트>
+node <sdlc_runtime>/tools/check-set.mjs  <ADR 경로>
+node <sdlc_runtime>/tools/adr-index.mjs <저장소 루트>
 ```
 
 공통 절차에 따라 검토 상태를 보고하고 승인 편집을 시도한다. 승인 확인은 가드의 승인 대화상자를

@@ -146,6 +146,34 @@ EOF
   exit 2 ;;
 esac
 
+# 쓴 사람은 승인하지 못한다. 여기까지는 «물어본다» 였고 검사기가 뒤에서 거부했는데, 그러면 사람이
+# 다이얼로그에서 «승인» 을 누른 뒤에야 그 값이 통과하지 못한다는 것을 안다. 물어볼 것이 없는
+# 물음이라 다이얼로그를 띄우지 않고 여기서 막는다.
+# 파일의 generated_by 를 본다 — 이 편집이 승인자만 바꾸므로 작성자는 이미 적혀 있다.
+writer="$(sed -n 's/^generated_by:[[:space:]]*//p' "$file" 2>/dev/null | head -1 \
+  | sed -e 's/[[:space:]]\{1,\}#.*$//' -e 's/^["'\'']//' -e 's/["'\'']$//' -e 's/[[:space:]]*$//')"
+case "$writer" in ""|null|"~") writer="" ;; esac
+# 승인 전이일 때만 본다. 이미 승인된 문서의 본문 변경은 승인자가 누구든 다이얼로그로 가야 한다 —
+# 여기서 같이 막으면 «되돌릴 수 없는 값» 이 아니라 «되돌려 놓으라» 는 말이 필요한 자리에 엉뚱한
+# 이유가 나간다.
+if [ "$reason" = "자기승인" ] && [ -n "$writer" ] && [ -n "$approver" ] \
+   && [ "$(printf '%s' "$writer" | tr '[:upper:]' '[:lower:]')" \
+      = "$(printf '%s' "$approver" | tr '[:upper:]' '[:lower:]')" ]; then
+  cat >&2 <<EOF
+쓴 것이 승인할 수는 없다 — 이 편집을 막았다.
+
+  파일: ${file#"$TREE"/}
+  지금: ${current:-(없음)}  ->  쓰려던 값: ${target:-(본문 변경)}
+  작성자: $writer
+  적힌 승인자: $approver
+
+\`approved_by\` 가 \`generated_by\` 와 같으면 검사기가 거부한다. 승인하는 사람의 이름을 적고
+같은 편집을 다시 시도한다. 다이얼로그를 띄우지 않은 것은 여기에 사람이 승인할 만한 것이
+없기 때문이다 — 승인해도 그 값으로는 통과하지 못한다.
+EOF
+  exit 2
+fi
+
 if [ "$human" = false ]; then
   cat >&2 <<EOF
 승인 다이얼로그가 사람에게 가지 않는 권한 모드다 — 이 편집을 막았다.
@@ -162,5 +190,5 @@ EOF
 fi
 
 # 다이얼로그에 그대로 보이는 문장이다.
-printf '%s' "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"승인 전이입니다 — 사람의 판단이 필요합니다.  $(basename "$(dirname "$file")")/$(basename "$file"): ${current:-없음} -> ${target:-본문 변경} ($reason).  쓴 것이 승인할 수 없으므로 이 결정만은 모델이 대신 하지 않습니다. 내용을 확인하고 승인하거나 거절하세요. approved_by 는 generated_by 와 달라야 검사기를 통과합니다.\"}}"
+printf '%s' "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"승인 전이입니다 — 사람의 판단이 필요합니다.  $(basename "$(dirname "$file")")/$(basename "$file"): ${current:-없음} -> ${target:-본문 변경} ($reason).  쓴 것이 승인할 수 없으므로 이 결정만은 모델이 대신 하지 않습니다. 내용을 확인하고 승인하거나 거절하세요.\"}}"
 exit 0
