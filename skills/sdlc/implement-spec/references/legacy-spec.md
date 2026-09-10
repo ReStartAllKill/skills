@@ -11,7 +11,7 @@
 
 - 검사기 · `plan-levels` · `task-worktree` · `task-brief` · `plan-progress` 는 옛 형식을 읽지 않는다.
   레벨 계산과 워크트리 · 커밋 · 합류를 손으로 한다 — 규칙은 같다: 작업의 files 만 스테이징, 하나씩 머지,
-  레벨마다 전체 verify.
+  중간 레벨은 scoped verify, 마지막 레벨에서 전체 verify.
 - `SDLC-Task: T-<n>` trailer 는 붙인다. 진행 상태는 체크박스와 git log 를 눈으로 대조한다.
 - 합류점 verify 는 `verify-run.mjs` 로 돌릴 수 있다 — 스펙 폴더에 프로필 조상만 있으면 된다.
   `--tasks T-3,T-4` 처럼 옛 ID 를 그대로 쓴다.

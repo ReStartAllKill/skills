@@ -16,7 +16,8 @@ Starting level 2 (WP-003 and WP-004 in parallel).
 ## Level complete (Step 2f)
 
 ```
-level <N> complete — WP-003, WP-004, full verify passed (.sdlc/verify/<slug>/L<N>-….log)
+level <N> complete — WP-003, WP-004
+verification: <scoped — the profile's verify_scoped / full — the profile's verify> passed · .sdlc/verify/<slug>/L<N>-….log
 (if any) manual verification left: <item>
 
 Moving to level <N+1> (WP-005).
@@ -30,7 +31,8 @@ Implementation <complete / automated checks complete, manual verification pendin
 tasks: 6/6
 full verify: passed  (gates that applied: <list>) · records .sdlc/verify/<slug>/ <n> files
 plan-progress: 0 mismatches (tests sentences · verify records · attributed commits)
-independent audit: <agrees / diverges on AC-00x — unconfirmed / skipped — no audit_agent>
+independent audit: <run by <agent> / skipped — light tier / skipped — no audit agent>
+audit result: <agrees / diverges on AC-00x — unconfirmed / not applicable>
 
 requirement coverage:
 - FR-001 / AC-001 — <path>:<line> / test <path>:<line>

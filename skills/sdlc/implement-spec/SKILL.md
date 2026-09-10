@@ -98,30 +98,44 @@ node <sdlc_runtime>/tools/task-brief.mjs <명세 디렉터리> WP-003 --worktree
 ### 2c. 커밋과 병합
 
 ```sh
-node <sdlc_runtime>/tools/task-worktree.mjs <명세 디렉터리> commit WP-003 -m "<커밋 규칙에 맞는 제목>"
-node <sdlc_runtime>/tools/task-worktree.mjs <명세 디렉터리> merge WP-003
-node <sdlc_runtime>/tools/task-worktree.mjs <명세 디렉터리> remove WP-003
+node <sdlc_runtime>/tools/task-worktree.mjs <명세 디렉터리> finish WP-003 -m "<커밋 규칙에 맞는 제목>"
 ```
 
-`commit`은 작업의 `files`만 스테이징하고 `SDLC-Task` 트레일러를 추가한다.
-`main` 모드는 `commit … --main`을 사용한다. 커밋 제목은 프로필의 `commit` 규칙을 따른다.
-범위 밖 변경은 경고와 함께 보고한다. 해당 변경 때문에 `remove`가 거부되면 사용자에게 내용을
+`finish`는 커밋·병합·워크트리 제거를 그 순서로 수행한다. 커밋은 작업의 `files`만 스테이징하고
+`SDLC-Task` 트레일러를 추가하며, 커밋 제목은 프로필의 `commit` 규칙을 따른다. 먼저 실패한 단계에서
+멈추고 이어 붙일 단독 명령을 출력하므로, 원인을 고친 뒤에는 처음부터가 아니라 그 명령부터 다시 시작한다.
+`main` 모드는 워크트리가 없어 `finish`를 쓰지 않는다 — `commit … --main` 하나로 끝나고 병합도 제거도 없다.
+
+범위 밖 변경은 경고와 함께 보고한다. 해당 변경 때문에 제거가 거부되면 사용자에게 내용을
 보여주고 폐기 승인을 받은 뒤 `remove … --force`를 사용한다.
 
-병합은 순차적으로 수행한다. 충돌이 발생하면 병합을 취소하고 중단한다. 직접 충돌을 해결하지
-않고 작업의 `files` 선언과 실제 변경 범위를 확인해 사용자에게 보고한다.
+병합은 작업마다 순차적으로 수행한다. 충돌이 발생하면 도구가 병합을 취소하고 멈춘다. 직접 충돌을
+해결하지 않고 작업의 `files` 선언과 실제 변경 범위를 확인해 사용자에게 보고한다.
 
 ### 2d. 병합 후 검증
 
+중간 레벨은 작업 범위 검증만 실행한다.
+
 ```sh
-node <sdlc_runtime>/tools/verify-run.mjs <명세 디렉터리> --level <N> --tasks WP-003,WP-004 -- "<프로필 verify>"
-node <sdlc_runtime>/tools/verify-run.mjs <명세 디렉터리> --level <N> --tasks WP-003,WP-004 --label <게이트> -- "<게이트 명령>"
+node <sdlc_runtime>/tools/verify-run.mjs <명세 디렉터리> --level <N> --tasks WP-003,WP-004 --label scoped -- "<프로필 verify_scoped>"
 ```
 
-프로필의 전체 검증 명령 `verify`를 한 번 실행하고, 적용되는 `extra_gates`는 `--label`을 지정해
-각각 실행한다. 전체 검증의 `--tasks`에는 이번 레벨과 이전 레벨에서 완료한 모든 작업 ID를 넣는다.
-로그는 `<verify_log_dir>/<slug>/`에 저장되며 최신 전체 검증 로그가 해당 작업들을 증명해야 한다.
+프로필에 `verify_scoped`가 없으면 이 자리에서도 전체 `verify`를 라벨 없이 실행한다.
+
+마지막 레벨 — `plan-levels`가 나열한 마지막 레벨 — 에서만 전체 검증을 실행한다.
+
+```sh
+node <sdlc_runtime>/tools/verify-run.mjs <명세 디렉터리> --level <N> --tasks WP-001,…,WP-005 -- "<프로필 verify>"
+node <sdlc_runtime>/tools/verify-run.mjs <명세 디렉터리> --level <N> --tasks WP-001,…,WP-005 --label <게이트> -- "<게이트 명령>"
+```
+
+`--tasks`에는 plan의 모든 작업 ID를 넣고, 적용되는 `extra_gates`는 `--label`을 지정해 각각 실행한다.
+로그는 `<verify_log_dir>/<slug>/`에 저장된다. 완료 증거는 이 마지막 전체 검증 로그 하나뿐이다 —
+라벨이 붙은 로그는 자기가 이름 댄 작업을 스위트의 일부에 대해서만 통과시킨 것이라 증거가 되지 않는다.
 같은 작업 트리에서 검증을 동시에 실행하지 않는다.
+
+레벨 1에서 들어간 회귀가 마지막 전체 검증에서야 드러날 수 있다. 중간의 전체 검증이 사던 것은 더 이른
+발견뿐이었고 값은 레벨마다 스위트 전체를 다시 도는 시간이었다 — 늦은 발견을 받아들인 교환이다.
 
 이번 레벨의 변경 때문에 실패했다면 메인 작업 트리에서 수정하고 관련 작업의 트레일러를 붙여
 커밋한 뒤 재검증한다. 기존 실패·환경 문제·명세 충돌이면 범위를 확대하지 않고 보고 후 중단한다.
@@ -133,6 +147,10 @@ node <sdlc_runtime>/tools/verify-run.mjs <명세 디렉터리> --level <N> --tas
 node <sdlc_runtime>/tools/plan-check.mjs <명세 디렉터리> mark WP-003 --note "<계획과의 차이>" [--pr <링크>]
 node <sdlc_runtime>/tools/plan-check.mjs <명세 디렉터리> commit --level <N> [--gate <게이트 로그>]…
 ```
+
+`mark`는 마지막 전체 검증이 끝난 뒤 한 번에 실행한다. 그 검증의 `--tasks` 순서대로 plan의 모든 작업을
+기록한다. 중간 레벨에서는 체크박스도 계획 커밋도 건드리지 않는다 — 그때는 `mark`가 요구하는 증거가
+아직 없고, 손으로 체크해 두면 증거 없는 체크가 된다.
 
 수용 기준 충족 여부와 계획 대비 차이를 판단한 뒤 `mark`를 실행한다. 차이가 없으면
 `--note 없음`을 사용한다. 도구는 귀속 커밋과 검증 기록을 확인하고 체크박스와 「실행 기록」을
@@ -146,7 +164,10 @@ node <sdlc_runtime>/tools/plan-check.mjs <명세 디렉터리> commit --level <N
 상태가 `in_progress`가 아니어서 거부되면 상태를 먼저 수정한다. 체크박스를 직접 수정해
 검사를 우회하지 않는다.
 
-레벨의 작업을 모두 기록한 뒤 `commit`으로 계획서와 해당 레벨의 검증 로그만 커밋한다.
+작업을 모두 기록한 뒤 `commit`으로 계획서와 검증 로그를 커밋한다. `commit --level <N>`이 스테이징하는
+것은 계획서와 `L<N>-`로 시작하는 그 레벨의 로그뿐이므로, 무엇이 돌았는지의 증거인 중간 레벨의 scoped
+로그까지 남기려면 레벨 1부터 마지막 레벨까지 차례로 한 번씩 실행한다. 첫 호출이 계획서를 싣고 나머지는
+각 레벨의 로그를 싣는다. `--gate`는 그 이름 규칙 밖에 있는 로그를 함께 실을 때만 쓴다.
 `plan-progress`를 다시 실행해 기록이 일치하는지 확인한다. 스테이징은 위 도구에 맡기며
 `git add -A`와 `git add .`은 사용하지 않는다.
 
@@ -160,7 +181,7 @@ node <sdlc_runtime>/tools/plan-check.mjs <명세 디렉터리> commit --level <N
 
 ## 3. 독립 감사와 완료 보고
 
-프로필의 `audit_agent`가 있고 `writer_agent`와 다르면
+plan의 `tier`가 `standard`이거나 `full`이고 프로필의 `audit_agent`가 있으며 `writer_agent`와 다르면
 `<sdlc_runtime>/references/audit-prompt.md`에 다음 값을 채워 읽기 전용 감사를 실행한다.
 
 - `{spec_dir}`: 명세 디렉터리
@@ -168,6 +189,8 @@ node <sdlc_runtime>/tools/plan-check.mjs <명세 디렉터리> commit --level <N
 - `{verify_logs}`: 검증 로그
 - `{acceptance}`: spec의 FR/NFR과 AC 전문
 
+`light` 티어는 감사를 실행하지 않고 완료 보고에 건너뛴 사실을 한 줄로 적는다. 워크트리 하나와
+테스트 하나가 이미 덮는 변경에 또 한 번의 읽기 전용 통독을 붙일 값이 없다.
 감사 에이전트가 없거나 구현 에이전트와 같으면 감사를 생략하고 보고에 명시한다.
 감사 결과와 자체 대조 결과가 다른 AC는 미확인으로 보고한다. 미충족 기준이 있으면 완료 처리하지 않는다.
 

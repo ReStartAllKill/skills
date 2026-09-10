@@ -16,7 +16,8 @@
 ## 레벨 완료 (Step 2f)
 
 ```
-레벨 <N> 완료 — WP-003·WP-004, 전체 verify 통과 (.sdlc/verify/<slug>/L<N>-….log)
+레벨 <N> 완료 — WP-003·WP-004
+검증: <scoped — 프로필 verify_scoped / full — 프로필 verify> 통과 · .sdlc/verify/<slug>/L<N>-….log
 (있다면) 남은 수동 검증: <항목>
 
 레벨 <N+1> (WP-005)을 진행합니다.
@@ -30,7 +31,8 @@
 작업: 6/6
 전체 verify: 통과  (걸린 게이트: <목록> 포함) · 기록 .sdlc/verify/<slug>/ <n>개
 plan-progress: 어긋남 0건 (tests 문장 · verify 기록 · 귀속 커밋)
-독립 감사: <일치 / AC-00x 갈림 — 미확인 / 건너뜀 — audit_agent 없음>
+독립 감사: <실행 — <에이전트> / 건너뜀 — light 티어 / 건너뜀 — 감사 에이전트 없음>
+감사 결과: <일치 / AC-00x 갈림 — 미확인 / 해당 없음>
 
 요구사항 대조:
 - FR-001 / AC-001 — <경로>:<줄> / 테스트 <경로>:<줄>

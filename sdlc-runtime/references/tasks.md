@@ -34,7 +34,7 @@ A commit with the same task ID but a different plan path does not belong to the 
 
 ## Verification and completion
 
-Run the profile's complete `verify` command through `verify-run.mjs`. Run additional gates separately with `--label`. Logs go under `<verify_log_dir>/<slug>/` and are committed with the plan update.
+Run the profile's complete `verify` command through `verify-run.mjs` at the final level. Run additional gates, and intermediate task-scoped runs, separately with `--label`. Logs go under `<verify_log_dir>/<slug>/` and are committed with the plan update.
 
 The evidence is the header above `---`: it contains the fingerprints, repository hash, HEAD, and exit code, and the checker reads only that header. Output below `---` helps a person investigate failure, so a **passing run keeps only its final 40 lines**. A failed run keeps up to 2,000 lines; beyond that it retains the first 400 lines and the end. The header's `sha256` covers the complete output, preventing silent edits even when the stored log is truncated. Its `output` field describes what was retained.
 
@@ -52,4 +52,4 @@ Write that deviation as one sentence: what differed and how. `mark` refuses a `-
 
 An active plan is compared with current files. For a committed completed plan, the tool reads the files, tests, profile, and verification logs as of the final plan commit, so later artifact-set changes are not applied retroactively. Checkbox and Execution log edits do not affect a task fingerprint. A legacy log without task and repository fingerprints, or a task commit without `SDLC-Plan`, is not v4 completion evidence. Reverify or inspect the real task history instead of fabricating records.
 
-Full verification for each level passes every task ID from that level and earlier completed levels to `--tasks`. Git-ignored environment files and external-service state are outside the fingerprint, so reverify after those conditions change. Test-name presence is only a supporting check. Determine whether a test verifies its behavior by comparing code and tests against each AC and by independent audit. Check additional gates and required manual verification separately.
+The final full verification passes every task ID in the plan to `--tasks`, and its log is the completion evidence for all of them. An intermediate join point may instead run the profile's `verify_scoped` with `--label scoped`, which records what ran without claiming completion: a labelled log is never completion evidence, whatever command it ran. Git-ignored environment files and external-service state are outside the fingerprint, so reverify after those conditions change. Test-name presence is only a supporting check. Determine whether a test verifies its behavior by comparing code and tests against each AC and by independent audit. Check additional gates and required manual verification separately.

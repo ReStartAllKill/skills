@@ -11,7 +11,7 @@ Global skills define the method. Repository facts and the applicable SDLC versio
 | `lang` | **Artifact language**: `ko` or `en`; selects prose lists and budgets | `ko` |
 | `spec_dir` | Artifact location; keep it outside `.claude/` | `.sdlc/specs` |
 | `owner` | Default `approved_by` identity | `git config user.name` |
-| `verify`, `verify_scoped`, `scope_hint` | Full and task-scoped verification | Discover from CI and build configuration |
+| `verify`, `verify_scoped`, `scope_hint` | Full and task-scoped verification; `/implement-spec` runs `verify_scoped` at intermediate join points and `verify` once at the final level | Discover from CI and build configuration |
 | `bootstrap` | Dependency setup for a new worktree | Run tasks sequentially when absent |
 | `source_roots`, `worktree_dir` | Source and worktree paths | Repository root and `.claude/worktrees` |
 | `writer_agent`, `pattern_agent`, `prior_work_agent`, `audit_agent` | Agent for each role | `general-purpose` or `Explore` |
