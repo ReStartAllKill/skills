@@ -24,6 +24,18 @@
     "must": ["변경안을 먼저 제시한다", "영향받은 문서를 in_review로 되돌린다", "버전 핀과 추적성을 다시 검사한다"]
   },
   {
+    "id": "light-single-pass",
+    "skill": "create-light",
+    "request": "설정 기본값 한 줄을 바꾸고 테스트를 붙이는 작은 변경이야. 플래그로 되돌릴 수 있어.",
+    "must": ["intent·spec·plan을 한 폴더에 만든다", "세 문서의 tier를 light로 둔다", "참조 버전을 pin.mjs의 body: 값으로 박는다", "승인 뒤 세 파일을 한 커밋에 담는다", "standard+ 절을 남기지 않는다"]
+  },
+  {
+    "id": "light-refuses-heavy",
+    "skill": "create-light",
+    "request": "사용자 테이블에 컬럼을 추가하는 마이그레이션을 light로 빨리 처리해줘.",
+    "must": ["문서를 쓰지 않고 멈춘다", "어느 티어 기준에 걸렸는지 말한다", "/create-intent로 안내한다"]
+  },
+  {
     "id": "resume-shared-files",
     "skill": "implement-spec",
     "request": "WP-001과 WP-002가 순차적으로 같은 파일을 만지는 계획을 재개해줘. WP-001 trailer 커밋만 있다.",

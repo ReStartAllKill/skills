@@ -28,6 +28,7 @@
     "./skills/sdlc/create-intent",
     "./skills/sdlc/create-spec",
     "./skills/sdlc/create-plan",
+    "./skills/sdlc/create-light",
     "./skills/sdlc/create-pr",
     "./skills/sdlc/create-adr",
     "./skills/sdlc/create-finding",
