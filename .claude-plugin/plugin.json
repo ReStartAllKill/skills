@@ -32,6 +32,7 @@
     "./skills/sdlc/create-pr",
     "./skills/sdlc/create-adr",
     "./skills/sdlc/create-finding",
+    "./skills/sdlc/create-research",
     "./skills/sdlc/iterate-spec",
     "./skills/sdlc/implement-spec",
     "./skills/sdlc/sdlc-init",

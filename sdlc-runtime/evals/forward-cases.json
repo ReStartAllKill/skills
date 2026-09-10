@@ -18,6 +18,12 @@
     "must": ["spec을 만들지 않는다", "intent 승인이 필요하다고 설명한다"]
   },
   {
+    "id": "research-criteria-before-search",
+    "skill": "create-research",
+    "request": "작업 큐를 무엇으로 세울지 정하려고 해. 후보 라이브러리 두 개를 비교해줘.",
+    "must": ["검색 전에 질문과 기준을 쓰고 한 번 확인받는다", "출처마다 at 과 retrieved 를 적는다", "승인 편집을 시도하지 않고 in_review 로 끝낸다", "인용할 다음 문서를 안내한다"]
+  },
+  {
     "id": "iterate-resets-approval",
     "skill": "iterate-spec",
     "request": "승인된 FR의 의미를 바꾸고 plan에도 반영해줘.",
