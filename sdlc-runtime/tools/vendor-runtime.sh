@@ -40,6 +40,7 @@ if [[ $mode == check ]]; then
   cmp -s "$runtime_root/conventions.ko.md" "$target/conventions.ko.md" || same=false
   diff -qr "$runtime_root/tools" "$target/tools" >/dev/null 2>&1 || same=false
   diff -qr "$runtime_root/references" "$target/references" >/dev/null 2>&1 || same=false
+  diff -qr "$runtime_root/locales" "$target/locales" >/dev/null 2>&1 || same=false
   if [[ $same == true ]]; then
     echo "런타임 일치 — 벤더 $local_ver = 글로벌 $global_ver (내용 포함)"
     exit 0
@@ -56,15 +57,19 @@ if [[ -e $target && $mode == install ]]; then
   exit 1
 fi
 
-# tools와 references는 디렉터리째 옮긴다. 파일을 나열하면 새로 늘어난 것이 고정본에서 빠진다.
+# tools·references·locales 는 디렉터리째 옮긴다. 파일을 나열하면 새로 늘어난 것이 고정본에서 빠진다.
+# locales 가 빠진 사본은 모든 도구가 useLocale 에서 죽는다 — 0.2.0 에 생긴 디렉터리를 여기 더하지
+# 않아 실제로 그랬다. 디렉터리 하나가 늘면 이 목록과 아래 --check 두 곳을 같이 고친다.
 prev=""
 [[ -d $target ]] && prev=$(ver "$target")
 
 mkdir -p "$target"
 rm -rf "$target/tools"
 rm -rf "$target/references"
+rm -rf "$target/locales"
 cp -R "$runtime_root/tools" "$target/tools"
 cp -R "$runtime_root/references" "$target/references"
+cp -R "$runtime_root/locales" "$target/locales"
 cp "$runtime_root/VERSION" "$target/VERSION"
 # 규약은 두 언어를 함께 옮긴다. 정본인 영어판 머리에 한국어판 링크가 있어서, 한쪽만 옮기면
 # 벤더 사본에서 그 링크가 죽는다.

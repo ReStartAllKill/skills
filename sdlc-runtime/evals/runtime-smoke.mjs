@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /** Verify task attribution, completion evidence, approval guards, hook installation, and runtime integration in temporary repositories. */
-import { appendFileSync, chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { appendFileSync, chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -382,6 +382,23 @@ await test('the vendor check detects content drift at the same version', () => {
   appendFileSync(join(d, '.claude/sdlc/conventions.md'), '\n로컬 드리프트\n')
   r = run(tool('vendor-runtime.sh'), ['--check', d])
   assert(r.code !== 0 && r.out.includes('내용이 글로벌과 다르다'), r.out)
+})
+
+// A vendored copy is the only runtime a team's CI has, so it must run on its own. The copy list
+// once lacked `locales/`, added in 0.2.0, and every vendored tool died in useLocale while the
+// global copy kept passing — exactly the drift the vendor exists to prevent.
+await test('a vendored runtime runs its checker without the global copy', () => {
+  const d = temp('sdlc-vendor-standalone')
+  git(d, 'init', '-q')
+  let r = run(tool('vendor-runtime.sh'), [d])
+  assert(r.code === 0, r.out)
+  const vendored = join(d, '.claude/sdlc/tools/check-artifacts.mjs')
+  r = run(process.execPath, [vendored, '--version'])
+  assert(r.code === 0 && r.out.includes(`sdlc-runtime ${readFileSync(join(ROOT, 'VERSION'), 'utf8').trim()}`),
+    `벤더 사본의 검사기가 혼자 돌지 않는다:\n${r.out}`)
+  rmSync(join(d, '.claude/sdlc/locales'), { recursive: true, force: true })
+  r = run(tool('vendor-runtime.sh'), ['--check', d])
+  assert(r.code !== 0, 'locales 가 빠진 사본을 --check 가 일치로 읽는다')
 })
 
 await test('migration safely raises only the profile to the runtime version', () => {
@@ -1371,7 +1388,9 @@ await test('English and Korean ADR indexes round-trip and normalize legacy statu
     const d = temp('sdlc-index-language')
     put(join(d, '.claude/spec-profile.yml'), `lang: ${lang}\nadr_dir: docs/adr\n`)
     put(join(d, 'docs/adr/ADR-001-old.md'), '# ADR-001 — Old\n\n| Status | superseded |\n')
-    put(join(d, 'docs/adr/ADR-002-current.md'), '# ADR-002 — Current\n\n| 상태 | 승인됨 |\n')
+    // A bilingual label, `상태(Status)`, is how one repository actually wrote its header table; the
+    // label is not contract and must not turn a known value into an unknown status.
+    put(join(d, 'docs/adr/ADR-002-current.md'), '# ADR-002 — Current\n\n| 상태(Status) | 승인됨 |\n')
     const invoke = (...args) => run(process.execPath, [tool('adr-index.mjs'), d, ...args])
     assert(invoke().code === 0, 'index generation failed')
     assert(invoke('--check').code === 0, 'generated index failed its own check')

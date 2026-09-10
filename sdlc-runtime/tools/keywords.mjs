@@ -93,5 +93,7 @@ export const ADR_STATUS_ALIASES = {
   deprecated: ['deprecated', '폐기됨'],
   rejected: ['rejected', '기각됨'],
 }
-export const LEGACY_STATUS_ROW = /^\|\s*(?:status|상태)\s*\|\s*([^|]+?)\s*\|/mi
+/** A legacy header table may label the row bilingually, `상태(Status)`; the label is not contract, the
+ * value is, so a parenthesised twin must not turn a known value into an unknown status. */
+export const LEGACY_STATUS_ROW = /^\|\s*(?:status|상태)(?:\s*[(（]\s*(?:status|상태)\s*[)）])?\s*\|\s*([^|]+?)\s*\|/mi
 export const RE_CHANGE_LOG = new RegExp(`\\n#{3,}\\s*(?:${SECTION.changeLog.map(esc).join('|')})[^\\n]*[\\s\\S]*$`, 'i')
