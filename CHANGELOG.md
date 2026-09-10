@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.1 — 2026-09-10
+
+### Fixed
+
+- **The five v7 eval cases reach a fresh clone.** An unanchored `docs/` in `.gitignore` swallowed
+  their `docs/` fixtures, so the cases passed on the machine that wrote them and failed in CI
+  with a missing directory. The pattern is now anchored to the repository root, which is the only
+  `docs/` it was ever meant to cover.
+- **The `finish` tests run where git has no global identity.** The tool under test commits with
+  its own git invocation, so the identity the test helper passed on its own calls never reached
+  it; the temporary repository now carries a local identity, as the runtime smoke cases already
+  did.
+
+No plugin behaviour changes; 0.5.0's tag carries the same tools and skills with a red CI.
+
 ## 0.5.0 — 2026-09-10
 
 ### Added
