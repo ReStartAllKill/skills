@@ -1,5 +1,5 @@
 # Repository SDLC configuration.
-sdlc_version: 5
+sdlc_version: 7
 
 # Run checks with this repository's runtime.
 sdlc_runtime: "sdlc-runtime"
@@ -12,7 +12,7 @@ spec_dir: ".sdlc/specs"
 lang: en
 
 # Keep the verification command aligned with .github/workflows/ci.yml.
-verify: "bash scripts/list-skills.sh && node --test sdlc-runtime/evals/runner.test.mjs skills/sdlc/create-pr/evals/tools.test.mjs && python3 -m unittest discover -s skills/eval/agent-eval/scripts -p 'test_*.py' && node sdlc-runtime/evals/run.mjs"
+verify: "bash scripts/list-skills.sh && node --test sdlc-runtime/evals/*.test.mjs skills/sdlc/create-pr/evals/tools.test.mjs && python3 -m unittest discover -s skills/eval/agent-eval/scripts -p 'test_*.py' && node sdlc-runtime/evals/run.mjs"
 
 source_roots: ["sdlc-runtime", "skills", "scripts"]
 

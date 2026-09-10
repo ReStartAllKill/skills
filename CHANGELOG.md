@@ -1,5 +1,66 @@
 # Changelog
 
+## 0.5.0 — 2026-09-10
+
+### Added
+
+- **Schema v7 — lighter documents.** At v7 a `##` heading with no tier marker is read as
+  `[required · all tiers]`, so the marker that sat on nearly every section of every committed
+  document is gone from the templates; `standard+`, `full`, `conditional` and `optional` markers
+  stay. `intent_version` and `spec_version` accept `body:<hex>`, a sha256 of the upstream
+  document's body printed by `pin.mjs`, so intent, spec and plan can be born in one commit and
+  an approval no longer invalidates a pin over a body nobody touched. Both rules bind only at or
+  above v7. `generated_from`, `skills_in_force` and `superseded_by` are optional at every version.
+- **`/create-light`.** Writes intent, spec and plan for a light-tier change in one pass: one
+  instruction read, one checker and linter run on the folder, one commit after the three approval
+  dialogs. It needs `sdlc_version: 7` and refuses a change that fails the light criteria. Same
+  documents, same checker, same evidence chain — it removes the repetition, not the contract.
+- **`sdlc-metrics.mjs`.** Reports the AI-native SDLC playbook's stage indicators from git history
+  and the artifacts alone: intent-to-accept lead time and survival, spec rework after build
+  starts, plan-to-completion time, diff-to-plan deviation share, review returns, first-pass verify
+  success, finding-to-route time, and what a set costs in characters, commits and days. A value
+  the repository cannot support is `unmeasured — <reason>`, never 0. `--json` for dashboards.
+- **Fewer tool calls per document and per task.** `check-set.mjs` runs the checker and the
+  linter as one call with one merged report. The approval guard now refuses an `approved_by`
+  equal to `generated_by` before the write, so the post-approval re-check is gone from the
+  shared procedure: one check call per document instead of four. `task-worktree.mjs finish`
+  is commit, merge and remove in one call, naming the step to resume with when one fails.
+- **Verification that matches the evidence model.** Intermediate execution levels run the
+  profile's `verify_scoped` under `--label scoped`; only the final level runs the full `verify`
+  over every task, and only that log is completion evidence — which is what `plan-progress`
+  already required. Tasks are marked once, after that run. The independent audit agent runs for
+  `standard` and `full` tiers; a light change reports that it was skipped.
+- **A warning for a template newer than its schema.** A marker-free document declaring a schema
+  below 7 would have had its required-section checks silently off; the checker now says so.
+- **Bilingual pairs are checked for shape.** README and conventions now have the same heading
+  parity test the templates had.
+
+### Changed
+
+- **`conventions.md` states the v7 contract and nothing older.** What an earlier schema did,
+  and why a rule changed, lives in `references/schema.md`; the checker reads older documents,
+  the author does not. The multi-repository material moved to `references/multi-repo.md` and
+  the autonomous-route procedure to `references/autonomy.md`, each read only when the profile
+  calls for it. Skills no longer read `references/prose.md` up front: `check-set.mjs` enforces
+  the same rules and names the one that fired, so the document is read when a hint needs
+  interpreting or a `full`-tier budget must be planned. Every skill read all of this on every
+  invocation; most invocations needed none of it.
+- **Templates carry only contract.** `schema_version: 7`, no all-tiers markers, and no
+  `created`, `updated`, `generated_from`, `skills_in_force` or `superseded_by` lines — git
+  holds the dates and the rest is optional provenance. The plan template loses `Input and
+  scope`, `Definition of done`, `Open questions` and `Execution log`: the first two restated
+  the frontmatter and a fixed checklist, open-question sections are added only when a question
+  exists, and `plan-check mark` now creates the execution log. The spec template loses `Scope`
+  and its `Open questions and decisions` scaffold, and `Scenarios` is required from `standard`.
+  The `History` subsections are gone; git log is the history. A light plan is four sections.
+
+### Upgrading
+
+Nothing changes for existing artifact sets. New sets follow the profile: raise `sdlc_version`
+to 7 to get marker-free templates, body pins and `/create-light`; `migrate-schema.mjs` reports
+what a raised document would newly fail before writing. A repository that keeps an older
+`sdlc_version` and authors from the new templates sees the new warning rather than a silent pass.
+
 ## 0.4.0 — 2026-09-09
 
 ### Added
