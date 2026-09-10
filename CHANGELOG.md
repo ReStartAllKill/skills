@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.1 — 2026-09-10
+
+### Fixed
+
+- **A vendored runtime runs on its own again.** `vendor-runtime.sh` copied `tools/`,
+  `references/` and the conventions but not `locales/`, which every tool has imported since
+  0.2.0, so a repository that updated its vendored copy got a checker that died in
+  `useLocale` while the global copy kept passing. The directory is now copied and compared by
+  `--check`, and a smoke case runs the vendored checker with no global copy in reach.
+- **A legacy ADR whose status row is labelled `상태(Status)` is read.** The label is not
+  contract; the value is. A bilingual label turned a known `승인됨` into an unknown status and
+  failed `check-all` for a repository whose oldest decisions predate frontmatter.
+
+Both were found by applying `/sdlc-init` to a consumer repository that had vendored v5.
+
 ## 0.6.0 — 2026-09-10
 
 ### Added
