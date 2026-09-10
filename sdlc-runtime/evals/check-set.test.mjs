@@ -204,6 +204,9 @@ function planRepo(prefix) {
   put(join(d, 'src/api/filter.js'), 'export const f = 0\n')
   put(join(d, 'src/core/empty.js'), 'export const e = 0\n')
   git(d, 'init', '-q', '-b', 'main')
+  // The tool under test runs git itself, so the identity the helper passes with `-c` does not
+  // reach it; a CI runner has no global identity and the commit inside `finish` fails.
+  git(d, 'config', 'user.email', 'eval@local'); git(d, 'config', 'user.name', 'eval')
   git(d, 'add', '-A')
   git(d, 'commit', '-q', '-m', 'plan born')
   git(d, 'switch', '-qc', 'feat/tw')

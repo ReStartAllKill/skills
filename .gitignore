@@ -12,7 +12,9 @@ __pycache__/
 !.sdlc/specs/
 .sdlc/specs/*
 !.sdlc/specs/.gitkeep
-docs/
+# Anchored: an unanchored `docs/` also swallowed every eval case's docs/ fixture, and the
+# case then passed on the machine that wrote it while failing on a fresh clone.
+/docs/
 
 # Local agent guidance; README.md is the tracked entry point.
 CLAUDE.md
