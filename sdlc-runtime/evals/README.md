@@ -23,6 +23,7 @@ node forward-eval.mjs <results.json>  # 독립 실행 결과 채점
 - `chain-broken`은 구조 검사만, `prose-rot`·`prose-style`은 문체 검사만 실패해야 한다.
 - `@INTENT_SHA@`와 `@SPEC_SHA@`는 러너가 임시 Git 저장소의 실제 커밋으로 치환한다.
 - v1·v3 대조군은 호환성을 검사한다. v4 작업 증거는 런타임 평가가 검사한다.
+- research 케이스는 `skills/sdlc/create-research/evals/cases`에 둔다.
 
 ```sh
 node ../tools/check-artifacts.mjs --version

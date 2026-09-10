@@ -45,6 +45,8 @@ finding ──┬─ patch
                 ↑      approve  approve   ↑
                 └────── ADR ──────────────┘
                    outlives the change
+
+research ── cited by ──▶ intent · ADR
 ```
 
 For each change, this workflow produces an **artifact set** containing `finding.md`, `intent.md`,
@@ -53,6 +55,7 @@ For each change, this workflow produces an **artifact set** containing `finding.
 | Document | The question it answers | What it must not contain |
 |---|---|---|
 | `finding.md` | What was observed, and where does it go | How to fix it |
+| `research.md` | What was compared, on which criteria, from which sources | A decision — that belongs in the ADR or intent |
 | `intent.md` | Why is this needed, what must change | APIs, frameworks, data models, file order |
 | `spec.md` | What observable behaviour satisfies it | Internal classes, functions, libraries, implementation order |
 | `plan.md` | How to build and ship it safely | Restating the problem and the requirements |
@@ -77,6 +80,7 @@ The form comes from each skill's `assets/*-template.md`.
 | Form | Document |
 |---|---|
 | `FND-YYYY-NNN` | finding |
+| `RSH-YYYY-NNN` | research |
 | `CHG-YYYY-NNN` | intent |
 | `SPEC-YYYY-NNN` | spec |
 | `PLAN-YYYY-NNN` | plan |
@@ -102,6 +106,10 @@ The form comes from each skill's `assets/*-template.md`.
 | `HYP-*` | Hypothesis | finding, §진단 |
 | `ALT-*` | Alternative considered | ADR, §대안 |
 | `RV-*` | Revisit condition | ADR, §확인과 재검토 |
+| `CRIT-*` | Comparison criterion | research, §Criteria |
+| `SRC-*` | Source consulted | research, §Sources |
+| `OPT-*` | Option compared | research, §Options |
+| `REC-*` | Judgement | research, §Judgement |
 
 ### Open questions — the prefix names who answers
 
@@ -111,6 +119,7 @@ The form comes from each skill's `assets/*-template.md`.
 | `SQ-*` | spec | the spec reviewer |
 | `PQ-*` | plan | the implementation owner |
 | `FQ-*` | finding | the service owner or on-call |
+| `RQ-*` | research | the research owner |
 
 An ID is **never reused**, even after the item is deleted — so `FR-003` always points at
 one thing.
@@ -161,6 +170,7 @@ filenames.
 |---|---|
 | `/sdlc-init` | Setting up the artifact workflow in a repository |
 | `/create-finding` | An incident, alert, metric or scan result should become an input |
+| `/create-research` | Comparing options or cases before deciding — sources, criteria and comparison kept as evidence |
 | `/create-intent` | Starting a change — settling *why* before *what* |
 | `/create-spec` | Turning an approved intent into verifiable behaviour |
 | `/create-plan` | Turning an approved spec into tasks |

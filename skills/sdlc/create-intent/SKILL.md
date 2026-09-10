@@ -18,6 +18,8 @@ description: '변경의 목적·목표·범위를 intent.md로 작성한다. 구
    intent를 만든 뒤 finding의 `routed_to`를 `intent:<상대 경로>`, 상태를 `accepted`로 바꾼다.
    두 경로는 각각 자기 문서의 폴더를 기준으로 하며 같은 문서 쌍을 가리켜야 한다.
 2. 문제를 겪는 대상, 기대 결과, 제약, 범위 밖 항목을 확인한다. 입력에 없는 제품 판단만 묻는다.
+   `<spec_dir>/research/`에 같은 질문을 다룬 research 문서가 있으면 내용을 옮기지 않고 ID로 인용하며,
+   판단에 필요한 비교가 없으면 `/create-research`를 먼저 돌린다.
 3. 규약의 기준으로 위험 등급(`tier`)을 정하고 근거를 한 줄로 보고한다.
 4. `assets/<lang>/intent-template.md`를 사용해 `<spec_dir>/<YYYY-MM-DD>-<slug>/intent.md`에 쓴다.
    `OUT-*`에는 관찰 가능한 결과와 `확인:` 방법을 적는다. Must 결과는 후속 명세의 요구사항과 연결한다.

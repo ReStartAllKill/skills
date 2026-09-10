@@ -27,6 +27,9 @@ PR 본문에 기록하도록 안내한다. 결정 전에도 대안을 정리한 
 node <sdlc_runtime>/tools/adr-index.mjs <저장소 루트> --next
 ```
 
+`<spec_dir>/research/`에 같은 질문을 다룬 research 문서가 있으면 비교를 다시 적지 않고 ID로 인용하며,
+결정에 필요한 비교가 없으면 `/create-research`를 먼저 돌린다.
+
 기존 ADR 목록과 다음 번호를 확인한다. `git log origin/main..`로 현재 브랜치의 번호 사용도 확인한다.
 기존 ADR이 같은 결정을 다루면 중복 작성하지 않는다. 결론을 바꾸려면 후속 ADR을 작성하고
 기존 문서를 `superseded`로 전환한다. 승인된 ADR의 본문을 수정해 기존 결론을 바꾸지 않는다.

@@ -37,17 +37,22 @@ finding ──┬─ patch
                 ↑      승인    승인      ↑
                 └────── adr ─────────────┘
                    변경보다 오래 산다
+
+research ── 인용 ──▶ intent · adr
 ```
 
 | 파일 | 핵심 질문 | 담지 않는 것 |
 |---|---|---|
 | `finding.md` | 무엇이 관측됐고 어디로 보내나 | 고치는 방법 |
+| `research.md` | 무엇을 어떤 기준으로 어떤 출처에서 비교했나 | 결정 — ADR이나 intent의 몫 |
 | `intent.md` | 왜 필요한가, 무엇이 달라져야 하나 | API·프레임워크·데이터 모델·파일·순서 |
 | `spec.md` | 어떤 관찰 가능한 동작이면 충족되나 | 내부 클래스·함수·파일·라이브러리·순서 |
 | `plan.md` | 어떻게 만들고 안전하게 전달하나 | 문제 배경과 요구사항 원문의 복제 |
 | `ADR-NNN-*.md` | 왜 그렇게 정했고 무엇을 기각했나 | 현재 구현 상세 · 담당자 · 일정 |
 
 `plan.md`는 설계와 작업을 함께 가지며 `/implement-spec`이 이 파일 하나를 입력으로 쓴다.
+`finding.md`와 `research.md`는 세트의 구성원이 아니라 입력이다 — 발견은 세트 하나를 열고,
+조사는 의도보다 앞서며 여러 문서가 인용한다.
 
 들어오는 길은 둘이다. 사람은 의도에서 출발해 문서마다 승인하고, 기계 신호는 발견에서 출발해
 미리 선언한 정책이 `advance_to`까지 승인한 뒤 세트가 `in_review`로 멈춘다. 자세한 내용은
@@ -134,9 +139,14 @@ spec은 시스템마다 하나만 쓰고 저장소마다 쓰지 않으며, 각 �
 | `ALT-*` | 대안 | adr §대안 |
 | `RV-*` | 재검토 조건 | adr §확인과 재검토 |
 | `ASM-*` | 전제 | adr §문맥과 결정 요인 (intent 의 가정과 같은 뜻) |
+| `CRIT-*` | 비교 기준 | research §기준 |
+| `SRC-*` | 출처 | research §출처 |
+| `OPT-*` | 선택지 | research §선택지 |
+| `REC-*` | 판단 | research §판단 |
+| `RQ-*` | 열린 질문 | research §열린 질문 |
 
 질문 접두는 답할 책임을 나타낸다. `Q`는 제품 책임자, `SQ`는 명세 검토자, `PQ`는 구현
-책임자, `FQ`는 서비스 소유자·온콜이 닫는다. ID는 삭제돼도 재사용하지 않는다.
+책임자, `FQ`는 서비스 소유자·온콜, `RQ`는 조사 소유자가 닫는다. ID는 삭제돼도 재사용하지 않는다.
 
 ## 상태와 승인
 
@@ -165,6 +175,11 @@ finding의 상태는 뜻이 다르다.
 frontmatter만 바꾸는 편집은 핀을 그대로 두고 본문 편집은 핀을 깨뜨린다. `upstream.lock.json`이
 있으면 락의 상류 커밋이 정본이다(`references/multi-repo.md`).
 
+research의 상태는 따로다 — `draft → in_review → reviewed`. `reviewed`는 사람이 읽었다는 뜻이지
+무엇이 승인됐다는 뜻이 아니다. 다른 문서는 intent·spec·plan·finding·ADR 본문 어디서나
+`RSH-2026-003`이나 `RSH-2026-003/SRC-002`(`/OPT-`·`/REC-`도 같다)로 인용한다. 검사기는 문서와
+항목을 둘 다 해석하고, 가리키는 대상이 없으면 오류다. frontmatter 키는 필요 없다.
+
 ### 승인은 사람이 한다
 
 - intent·spec·plan이 `accepted` 이상이면 `approved_by`가 필수이고 `generated_by`와 같을 수 없다.
@@ -176,6 +191,8 @@ frontmatter만 바꾸는 편집은 핀을 그대로 두고 본문 편집은 핀�
   `in_review`로 남는다. 사람 세션에서는 `policy:`를 쓸 수 없다. 규칙은
   `references/autonomy.md`에 있다.
 - finding의 `accepted`는 승인 대신 경로 확정이므로 `approved_by`를 요구하지 않는다.
+- research는 결정이 아니라 증거라서 승인하지 않는다. 누가 읽었는지는 `reviewed_by`가 적고,
+  승인은 그 조사가 받치는 ADR·intent에서 한다.
 
 ## 공통 불변 조건
 
@@ -193,6 +210,7 @@ frontmatter만 바꾸는 편집은 핀을 그대로 두고 본문 편집은 핀�
 ```text
 <spec_dir>/
 ├── findings/FND-YYYY-NNN-<slug>/finding.md
+├── research/RSH-YYYY-NNN-<slug>/research.md
 └── YYYY-MM-DD-<slug>/
     ├── intent.md              # 상류가 있으면 벤더한 사본
     ├── spec.md                # 상류가 있으면 벤더한 사본
@@ -218,8 +236,10 @@ node <sdlc_runtime>/tools/check-set.mjs <산출물 폴더> [--strict]
 
 ## 스킬 공통 절차
 
-`/create-finding` · `/create-intent` · `/create-spec` · `/create-plan` · `/create-light` ·
-`/create-adr`가 이 절차를 따르며, 스킬 본문에는 그 칸에 고유한 것만 적는다.
+`/create-finding` · `/create-research` · `/create-intent` · `/create-spec` · `/create-plan` ·
+`/create-light` · `/create-adr`가 이 절차를 따르며, 스킬 본문에는 그 칸에 고유한 것만 적는다.
+`/create-research`는 `schema_version`이 언제나 7이고, 6단계의 승인 편집을 건너뛰고 `in_review`로
+끝난다 — `reviewed`는 읽은 사람이 바꾼다.
 
 시작:
 

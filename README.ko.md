@@ -39,6 +39,8 @@ finding ──┬─ patch
                 ↑      승인    승인      ↑
                 └────── adr ─────────────┘
                    변경보다 오래 산다
+
+research ── 인용 ──▶ intent · adr
 ```
 
 이 흐름에서 변경마다 만드는 `finding.md`·`intent.md`·`spec.md`·`plan.md` 묶음을 **산출물 세트**라고 한다.
@@ -47,6 +49,7 @@ finding ──┬─ patch
 | 파일 | 핵심 질문 | 담지 않는 것 |
 |---|---|---|
 | `finding.md` | 무엇이 관측됐고 어디로 보내나 | 고치는 방법 |
+| `research.md` | 무엇을 어떤 기준으로 어느 출처에서 비교했나 | 결정 — 그것은 ADR 이나 intent 의 몫이다 |
 | `intent.md` | 왜 필요한가, 무엇이 달라져야 하나 | API · 프레임워크 · 데이터 모델 · 파일 순서 |
 | `spec.md` | 어떤 관찰 가능한 동작이면 충족되나 | 내부 클래스 · 함수 · 라이브러리 · 순서 |
 | `plan.md` | 어떻게 만들고 안전하게 전달하나 | 문제 배경과 요구사항 원문의 복제 |
@@ -69,6 +72,7 @@ finding ──┬─ patch
 | 형식 | 문서 |
 |---|---|
 | `FND-YYYY-NNN` | finding |
+| `RSH-YYYY-NNN` | research |
 | `CHG-YYYY-NNN` | intent |
 | `SPEC-YYYY-NNN` | spec |
 | `PLAN-YYYY-NNN` | plan |
@@ -94,6 +98,10 @@ finding ──┬─ patch
 | `HYP-*` | 가설 | finding §진단 |
 | `ALT-*` | 대안 | ADR §대안 |
 | `RV-*` | 재검토 조건 | ADR §확인과 재검토 |
+| `CRIT-*` | 비교 기준 | research §기준 |
+| `SRC-*` | 출처 | research §출처 |
+| `OPT-*` | 선택지 | research §선택지 |
+| `REC-*` | 판단 | research §판단 |
 
 ### 열린 질문 — 접두가 곧 답할 사람
 
@@ -103,6 +111,7 @@ finding ──┬─ patch
 | `SQ-*` | spec | 명세 검토자 |
 | `PQ-*` | plan | 구현 책임자 |
 | `FQ-*` | finding | 서비스 소유자 · 온콜 |
+| `RQ-*` | research | 조사 소유자 |
 
 ID는 항목을 삭제한 뒤에도 **재사용하지 않는다.** 그래야 `FR-003`이 언제나 같은 항목을 가리킨다.
 
@@ -151,6 +160,7 @@ claude plugin install restart-harness
 |---|---|
 | `/sdlc-init` | 저장소에 산출물 체계를 설정할 때 |
 | `/create-finding` | 장애 · 알림 · 이상 지표 · 스캔 결과를 산출물 체계의 입력으로 만들 때 |
+| `/create-research` | 결정하기 전에 선택지나 사례를 비교할 때 — 출처 · 기준 · 비교를 증거로 남긴다 |
 | `/create-intent` | 변경을 시작할 때 — «무엇» 보다 «왜» 를 먼저 확정한다 |
 | `/create-spec` | 승인된 의도를 검증 가능한 동작으로 옮길 때 |
 | `/create-plan` | 승인된 명세를 작업으로 쪼갤 때 |

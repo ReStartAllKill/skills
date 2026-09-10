@@ -39,17 +39,22 @@ finding ──┬─ patch
                 ↑      approve  approve   ↑
                 └────── ADR ──────────────┘
                    outlives the change
+
+research ── cited by ──▶ intent · ADR
 ```
 
 | File | Core question | Must not contain |
 |---|---|---|
 | `finding.md` | What was observed, and where does it go? | How to fix it |
+| `research.md` | What was compared, on which criteria, from which sources? | A decision — that belongs in the ADR or intent |
 | `intent.md` | Why is this needed, and what must change? | APIs, frameworks, data models, files, ordering |
 | `spec.md` | What observable behavior satisfies it? | Internal classes, functions, files, libraries, ordering |
 | `plan.md` | How will it be built and delivered safely? | Copies of the problem statement or requirements |
 | `ADR-NNN-*.md` | Why was this chosen, and what was rejected? | Current implementation details, owners, schedules |
 
 `plan.md` contains both design and tasks; `/implement-spec` uses this one file as its input.
+`finding.md` and `research.md` are inputs rather than members of a set: a finding starts one set,
+and a research document precedes the intent and is cited by several documents.
 
 There are two ways in. A person starts with an intent and approves each document; a machine
 signal starts with a finding and a predeclared policy approves up to `advance_to`, after which the
@@ -141,9 +146,15 @@ Markers narrow that.
 | `ALT-*` | Alternative | ADR §Alternatives |
 | `RV-*` | Revisit condition | ADR §Confirmation and revisit |
 | `ASM-*` | Assumption | ADR §Context and decision drivers (same meaning as an intent assumption) |
+| `CRIT-*` | Comparison criterion | research §Criteria |
+| `SRC-*` | Source | research §Sources |
+| `OPT-*` | Option | research §Options |
+| `REC-*` | Judgement | research §Judgement |
+| `RQ-*` | Open question | research §Open questions |
 
 Question prefixes identify who must answer. `Q` belongs to the product owner, `SQ` to the spec
-reviewer, `PQ` to the implementation owner, and `FQ` to the service owner or on-call engineer.
+reviewer, `PQ` to the implementation owner, `FQ` to the service owner or on-call engineer, and
+`RQ` to the research owner.
 Never reuse an ID, even after deleting its item.
 
 ## States and approval
@@ -175,6 +186,12 @@ document. A frontmatter-only edit such as an approval leaves the pin valid; a bo
 When `upstream.lock.json` exists the lock's upstream commit governs instead; see
 `references/multi-repo.md`.
 
+A research document has its own states, `draft → in_review → reviewed`; `reviewed` means a person
+read it, not that anything was approved. Other documents cite it inline as `RSH-2026-003` or
+`RSH-2026-003/SRC-002` (also `/OPT-`, `/REC-`) anywhere in the text of an intent, spec, plan,
+finding, or ADR. The checker resolves both the document and the item, and a dangling citation is
+an error. No frontmatter key is needed.
+
 ### A person approves
 
 - An intent, spec, or plan at `accepted` or later requires `approved_by`, which must differ from
@@ -188,6 +205,8 @@ When `upstream.lock.json` exists the lock's upstream commit governs instead; see
   `references/autonomy.md` has the rules.
 - A finding's `accepted` means its route was decided, not that it was approved, so it does not
   require `approved_by`.
+- A research document is never approved, because it is evidence rather than a decision.
+  `reviewed_by` records who read it; the decision it serves is approved in the ADR or intent.
 
 ## Shared invariants
 
@@ -206,6 +225,7 @@ When `upstream.lock.json` exists the lock's upstream commit governs instead; see
 ```text
 <spec_dir>/
 ├── findings/FND-YYYY-NNN-<slug>/finding.md
+├── research/RSH-YYYY-NNN-<slug>/research.md
 └── YYYY-MM-DD-<slug>/
     ├── intent.md              # vendored copy when upstream exists
     ├── spec.md                # vendored copy when upstream exists
@@ -231,8 +251,10 @@ same arguments. Fix errors and run again; evaluate warnings and report why any r
 
 ## Shared skill procedure
 
-`/create-finding`, `/create-intent`, `/create-spec`, `/create-plan`, `/create-light`, and
-`/create-adr` follow this procedure; each skill body contains only what is unique to its stage.
+`/create-finding`, `/create-research`, `/create-intent`, `/create-spec`, `/create-plan`,
+`/create-light`, and `/create-adr` follow this procedure; each skill body contains only what is
+unique to its stage. `/create-research` always takes `schema_version: 7`, skips step 6's approval
+edit, and ends at `in_review`; a person sets `reviewed` after reading it.
 
 Start:
 

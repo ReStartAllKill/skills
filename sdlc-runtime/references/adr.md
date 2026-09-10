@@ -89,6 +89,8 @@ Prefer a table when there are at least three alternatives or three axes. Empty c
 
 The checker only needs the alternative count and chosen option. It reads headings when any exist; otherwise it reads the table header and ignores the first, axis-name cell. Do not mix formats, because headings become authoritative and the alternatives appear twice.
 
+When a research document already compared the options, each `ALT-*` cites it — `basis: RSH-2026-003/OPT-002` — instead of restating the comparison, and the checker resolves the citation.
+
 ### Legacy documents without frontmatter
 
 The checker allows pre-contract ADRs based on filename and number and emits a note. Rejecting all legacy files would prevent adoption until migration was complete. This follows the same compatibility rule that reads unversioned artifact sets as v1.

@@ -40,10 +40,11 @@ Budgets are measured without whitespace for the `light` tier.
 | spec | 2000 | 800 | 400 | | 4400 | 1800 | 880 |
 | plan | 3000 | 1200 | 350 | | 6600 | 2600 | 770 |
 | finding | 2000 | 600 | 250 | | 4400 | 1300 | 550 |
+| research | 2500 | 800 | 250 | | 5500 | 1760 | 550 |
 
 The Korean budgets were measured from 42 Korean artifacts in this repository. The English budgets were derived by multiplying them by 2.2, based on nine matching sections in the parallel READMEs (mean 2.16, median 2.21, range 1.90–2.49). Revisit them when enough English artifact sets exist. `locales/en.mjs` records the derivation and its limitations.
 
-The `standard` tier uses ×1.6 and `full` uses ×2.4. Exceeding a budget is a warning; exceeding twice the budget is an error.
+The `standard` tier uses ×1.6 and `full` uses ×2.4. Exceeding a budget is a warning; exceeding twice the budget is an error. A research document has no tier, so its budgets take no multiplier.
 
 Execution-log notes are measured separately, with no tier multiplier: ko 120, en 260 characters, whitespace included. Only the note after the deviation label is counted — the date, task IDs and result in front of it are written by `plan-check mark`. The same limit is enforced when the note is written: `mark` refuses a `--note` over it, so a hand-edited entry is the only way the linter sees one.
 
