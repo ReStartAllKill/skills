@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.6.0 — 2026-09-10
+
+### Added
+
+- **`research.md` and `/create-research`.** An investigation — comparing libraries, reading
+  other projects, searching the web — used to survive only as a conclusion in an ADR's `ALT-*`
+  or an intent's `ASM-*`; the sources, the criteria and the comparison vanished with the
+  conversation. A research document keeps them: `CRIT-*` criteria written before the search,
+  `SRC-*` sources with where and when they were read, `OPT-*` options each tied to a source, a
+  criteria-by-options comparison table, `REC-*` judgements that separate fact from inference,
+  and `RQ-*` open questions. It lives under `<spec_dir>/research/`, outside artifact sets, is
+  always schema 7, has no tier and no approval — `reviewed` records that a person read it — and
+  is cited inline as `RSH-2026-003/SRC-002` from any other document; the checker resolves the
+  citation and rejects a dangling one. The skill writes the question and criteria first and
+  confirms them once, records each source the moment it is found, and ends at `in_review`.
+- **Checker rules for research.** An undated or unlocated source, an unsourced option, a
+  criterion or option missing from the comparison, and a judgement citing no option are errors.
+  The comparison table is the one table the `entity-table` lint rule leaves alone.
+
 ## 0.5.1 — 2026-09-10
 
 ### Fixed
