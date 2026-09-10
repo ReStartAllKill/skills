@@ -12,7 +12,7 @@ intent, spec, plan, implementation — and validates traceability **as you write
 > artifacts follow `lang`.
 >
 > Contract keywords are always accepted in both languages, regardless of `lang`: `basis:`
-> and `근거:`, `[required · all tiers]` and `[필수 · 모든 티어]`. Section titles are not
+> and `근거:`, `[required · standard+]` and `[필수 · standard+]`. Section titles are not
 > part of the contract; structure is determined by ID prefixes and tier markers.
 >
 > `lang` selects the style bundle: the word lists and character budgets in
