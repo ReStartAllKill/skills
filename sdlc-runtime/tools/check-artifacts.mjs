@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { overlappingTaskPaths, validTaskPath } from './task-paths.mjs'
 import { readFileSync, existsSync, statSync, readdirSync } from 'node:fs'
 import { resolve, basename, dirname, join } from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -11,6 +12,7 @@ import {
 import { adrSeam, checkAdr, checkPins } from './adr-check.mjs'
 import { LOCK_FILE, upstreamSeam, loadLock, verifyLock, findUpstream, headOf, sameRepo } from './upstream.mjs'
 import { loadBands, revisedBy } from './bands.mjs'
+import { historicalPolicy } from './policy-history.mjs'
 import { loadPolicy, routeActive, STAGES } from './autonomy.mjs'
 import { FIELD, MARKER, BLOCKED, SECTION, hasAlias, sectionBlock, RE_NA, RE_NA_WITH_BASIS, RE_BAND_NO_CHANGE } from './keywords.mjs'
 import { useLocale } from './locale.mjs'
@@ -158,6 +160,15 @@ if (ADR_TARGETS) {
 
 const docs = loadDir(DIR, (d, dup, first) =>
   err(d.name, `${dup.id} 이 두 번 정의됐다`, `먼저: ${d.name}:${first.line + 1}`))
+// Read-only candidate validation used before a digest-bound light-set approval.
+const approveAt = argv.indexOf('--approve-as')
+if (approveAt >= 0) {
+  const approver = argv[approveAt + 1]
+  if (!approver || approver.startsWith('--')) { console.error('--approve-as 에 승인자가 없다.'); process.exit(2) }
+  for (const doc of [docs.intent, docs.spec, docs.plan].filter(Boolean)) {
+    doc.fm = { ...doc.fm, status: 'accepted', approved_by: approver }
+  }
+}
 const TEMPLATE = isTemplate(docs)
 
 if (Object.keys(docs).length === 0) {
@@ -270,7 +281,8 @@ if (!TEMPLATE) {
         ? (/^autonomy:[ \t]*(.*)$/m.exec(readFileSync(resolve(repoRoot, '.claude/spec-profile.yml'), 'utf8'))?.[1] ?? '')
             .replace(/\s+#.*$/, '').replace(/^["']|["']$/g, '').trim()
         : ''
-      const pol = repoRoot ? loadPolicy(repoRoot, polKey) : { missing: true, routes: {} }
+      const history = approveAt < 0 ? historicalPolicy(repoRoot, d) : null
+      const pol = history?.policy ?? (repoRoot ? loadPolicy(repoRoot, polKey) : { missing: true, routes: {} })
       const route = pol.routes?.[routeId]
 
       if (pol.missing) {
@@ -279,9 +291,9 @@ if (!TEMPLATE) {
       } else if (!route) {
         err(d.name, `\`${by}\` 가 가리키는 자율 경로가 정책에 없다`,
           `정책에 있는 경로: ${Object.keys(pol.routes).join(' · ') || '(없음)'}. 오타이거나, 경로가 지워진 뒤 문서만 남았다.`)
-      } else if (!routeActive(route)) {
+      } else if (!routeActive(route, history?.at ?? new Date())) {
         err(d.name, `\`${by}\` 의 자율 경로가 만료됐다 (${route.expires ?? '만료일 없음'})`,
-          '만료된 위임으로 승인된 문서는 지금 아무도 책임지지 않는다. 정책을 다시 검토해 갱신하거나, 이 문서를 사람이 직접 승인한다.')
+          '유효한 위임으로 승인된 Git 기록이 없다. 새 승인은 현재 유효한 정책이나 사람의 승인이 필요하다.')
       } else if (d.fm.tier && TIERS.indexOf(String(d.fm.tier)) > TIERS.indexOf(String(route.max_tier))) {
         err(d.name, `\`tier: ${d.fm.tier}\` 가 자율 경로 \`${routeId}\` 의 \`max_tier: ${route.max_tier}\` 를 넘는다`,
           '위임한 것보다 위험한 변경이 그 위임으로 통과했다. 사람이 직접 승인하거나 정책을 먼저 넓힌다.')
@@ -708,6 +720,7 @@ for (const h of of('finding', 'HYP')) {
 }
 
 if (wps.length) {
+  for (const w of wps) for (const p of wpFiles(w)) if (!validTaskPath(p)) err('plan.md', `${w.id} 의 files 는 저장소 안의 상대 경로여야 한다: ${p}`, '절대 경로와 저장소 밖 경로를 제거한다.')
   const { level, cycles, unknown } = levelsOf(wps)
   for (const c of cycles) err('plan.md', `${c[0]} 의 \`depends\` 가 순환한다`, `${c.join(' → ')}. 순환하면 레벨이 정해지지 않아 실행 순서가 없다.`)
   for (const u of unknown) err('plan.md', `${u.id} 의 \`depends\` 가 없는 작업 ${u.dep} 를 가리킨다`, '오타이거나 그 작업이 빠졌다.')
@@ -715,8 +728,7 @@ if (wps.length) {
   for (const w of wps) { const lv = level.get(w.id) ?? 0; (byLevel.get(lv) ?? byLevel.set(lv, []).get(lv)).push(w) }
   for (const [lv, group] of byLevel) {
     for (let i = 0; i < group.length; i++) for (let j = i + 1; j < group.length; j++) {
-      const a = new Set(wpFiles(group[i])), b = new Set(wpFiles(group[j]))
-      const shared = [...a].filter((f) => b.has(f))
+      const shared = overlappingTaskPaths(wpFiles(group[i]), wpFiles(group[j]))
       if (shared.length === 0) continue
       err('plan.md', `레벨 ${lv + 1} 의 ${group[i].id} 와 ${group[j].id} 가 같은 파일을 만진다: ${shared.join(', ')}`,
         '같은 레벨은 병렬로 돌아 합류에서 충돌한다. `depends` 로 줄을 세우거나 두 작업을 합친다.')

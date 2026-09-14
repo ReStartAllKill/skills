@@ -3,6 +3,7 @@ import { readFileSync, existsSync, appendFileSync, mkdirSync } from 'node:fs'
 import { resolve, join, relative, dirname } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { repositoryFingerprint } from './task-evidence.mjs'
 import { loadPolicy, routeActive, validate } from './autonomy.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -120,6 +121,7 @@ if (MAX_TURNS > 0) args.push('--max-turns', String(MAX_TURNS))
 
 const initialStatus = spawnSync('git', ['-C', ROOT, 'status', '--porcelain', '--', '.', ':(exclude).claude/autonomy-runs.jsonl'], { encoding: 'utf8' })
 if (!DRY && (initialStatus.status !== 0 || initialStatus.stdout.trim())) die('자율 실행은 변경이 없는 Git 작업 트리에서 시작한다.')
+const baseline = DRY ? null : repositoryFingerprint(ROOT, { specDir: SPEC_DIR, logDir: '.claude/autonomy-runs.jsonl' })
 const started = new Date().toISOString()
 console.log(`자율 실행 — ${ROUTE_ID}`)
 console.log(`  위임: ≤${route.max_tier} · →${route.advance_to} · ${route.expires} · ${pol.owner}`)
@@ -137,6 +139,7 @@ if (DRY) {
 const r = spawnSync('claude', args, {
   cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024,
   env: { ...process.env, SDLC_AUTONOMY_ROUTE: ROUTE_ID },
+  timeout: Number(route.timeout_ms ?? 1800000),
 })
 const ended = new Date().toISOString()
 
@@ -163,7 +166,9 @@ console.log(final?.result ?? (r.stderr || '(결과 없음)').slice(0, 2000))
 console.log(`\n도구 사용: ${Object.entries(used).map(([k, v]) => `${k}×${v}`).join(' · ') || '(없음)'}`)
 if (denied.length) console.log(`거부된 호출 ${denied.length}건:\n  ${denied.slice(0, 8).join('\n  ')}`)
 
-const checkAll = spawnSync(process.execPath, [join(toolsDir, 'check-all.mjs'), ROOT, '--required'], { encoding: 'utf8' })
+const scopeOk = baseline === repositoryFingerprint(ROOT, { specDir: SPEC_DIR, logDir: '.claude/autonomy-runs.jsonl' })
+if (!scopeOk) console.error('위임 범위 밖 파일이 바뀌었다 — 변경을 보존하고 검사와 커밋을 중단한다.')
+const checkAll = scopeOk ? spawnSync(process.execPath, [join(toolsDir, 'check-all.mjs'), ROOT, '--required'], { encoding: 'utf8' }) : { status: 1, stdout: '', stderr: '위임 범위 밖 변경' }
 const checkOut = (checkAll.stdout ?? '') + (checkAll.stderr ?? '')
 console.log('\n── 검사 (디스패처) ──')
 console.log(checkOut.trim())
@@ -191,7 +196,7 @@ appendFileSync(logPath, JSON.stringify({
   allowed: { max_tier: route.max_tier, advance_to: route.advance_to, tools: policyTools, plumbing: PLUMBING },
   owner: pol.owner, expires: route.expires,
   exit: r.status ?? null, turns: final?.num_turns ?? null, cost_usd: final?.total_cost_usd ?? null,
-  used, denied: denied.length, check: checkOk ? 'pass' : 'fail', commit,
+  used, denied: denied.length, scope: scopeOk ? 'pass' : 'fail', check: checkOk ? 'pass' : 'fail', commit,
 }) + '\n')
 console.log(`\n실행 기록: ${relative(ROOT, logPath)}`)
 

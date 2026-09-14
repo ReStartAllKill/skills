@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { inTaskScope } from './task-paths.mjs'
 import { existsSync } from 'node:fs'
 import { resolve, join, relative } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -70,17 +71,18 @@ function doCommit() {
   if (MAIN && current() !== plan.target_branch) die(`메인 트리가 ${current()} 에 있다 — target_branch ${plan.target_branch} 가 아니다.`)
   const staged = git(cwd, 'diff', '--cached', '--name-only', '-z', '--no-renames')
   if (!ok(staged)) die(`인덱스를 읽지 못했다:\n${out(staged)}`)
-  const outside = staged.stdout.split('\0').filter((f) => f && !task.files.includes(f))
+  const outside = staged.stdout.split('\0').filter((f) => f && !inTaskScope(task.files, f))
   if (outside.length) die(`작업 범위 밖 파일이 이미 스테이징되어 있다 — 인덱스를 변경하지 않았다: ${outside.join(', ')}`)
   const tracked = git(cwd, 'ls-files', '-z')
   if (!ok(tracked)) die(`추적 파일을 읽지 못했다:\n${out(tracked)}`)
-  const known = new Set(tracked.stdout.split('\0'))
-  const present = task.files.filter((f) => existsSync(resolve(cwd, f)) || known.has(f))
+  const known = new Set([...tracked.stdout.split('\0'), ...staged.stdout.split('\0')].filter(Boolean))
+  const present = task.files.filter((f) => existsSync(resolve(cwd, f)) || [...known].some((p) => inTaskScope([f], p)))
   if (!present.length) die(`${TASK} 의 files 중 존재하거나 추적 중인 파일이 없다: ${task.files.join(', ')}`)
   const st = stdout(git(cwd, 'status', '--porcelain')).split('\n').filter(Boolean)
-    .map((l) => l.trim().replace(/^\S+\s+/, '')).filter((p) => !task.files.includes(p))
+    .map((l) => l.trim().replace(/^\S+\s+/, '')).filter((p) => !inTaskScope(task.files, p))
   if (st.length) console.error(`⚠ files 밖의 변경 ${st.length}개는 싣지 않는다: ${st.slice(0, 5).join(', ')}${st.length > 5 ? ' …' : ''}`)
-  let r = git(cwd, 'add', '-A', '--', ...present)
+  const toAdd = present.filter((f) => existsSync(resolve(cwd, f)) || tracked.stdout.split('\0').some((p) => p && inTaskScope([f], p)))
+  let r = toAdd.length ? git(cwd, 'add', '-A', '--', ...toAdd) : { status: 0 }
   if (!ok(r)) die(`git add 실패:\n${out(r)}`)
   if (!stdout(git(cwd, 'diff', '--cached', '--name-only'))) die(`${TASK} 의 files 에 커밋할 변경이 없다.`)
   r = git(cwd, 'commit', '-q', '-m', msg, '-m', `SDLC-Task: ${TASK}\nSDLC-Plan: ${relative(ROOT, join(DIR, 'plan.md'))}`)

@@ -61,3 +61,12 @@ node ../tools/check-artifacts.mjs --supports-schema 4
 저장소의 `.github/workflows/ci.yml`은 push와 pull request에서 Linux·macOS의 Node.js 24와
 Python 3.12로 스킬 등록, 평가 러너, 채점·리포트, 문서·런타임 회귀 테스트를 실행한다.
 외부 패키지 설치나 모델 API 호출 없이 실행하며, 실제 모델 행동과 승인 UI 검증은 별도로 수행한다.
+
+
+## 협업 흐름 회귀
+
+`check-set.test.mjs`, `verify-policy.test.mjs`, `collaboration.test.mjs`는 승인 상태 인용,
+디렉터리 범위 중첩, 실패·부분 진행, 중간 레벨에서 중단한 뒤 재개, 검토 후 변경된 승인 대상,
+문체 정책, 자율 실행의 범위 밖 편집, 과거 정책 승인의 만료를 검사한다. 외부 모델 호출 없이
+실제 임시 Git 저장소·검증 명령·훅 반환값을 사용한다. 다이얼로그가 실제 클라이언트에서
+표시되는지와 사람이 검토하기 편한지는 별도의 대화형 확인이 필요하다.

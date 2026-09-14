@@ -281,6 +281,7 @@ Finish:
    accepted` and `approved_by` in one edit. The guard turns that edit into the approval dialog, so
    do not ask “Approve?” in the conversation first. If rejected, leave the document unchanged and
    ask why. Do not attempt approval while a blocking question remains open.
+   - A light set with `approval_mode: batch_light` follows `/create-light`'s digest-bound batch procedure instead of three edits.
    - `approved_by` is the profile's `owner`, or `git config user.name` when no owner exists. It
      must be a person's name and differ from `generated_by`; if neither value exists, ask once.
    - A finding is routed rather than approved: populate `routed_to` and `status` instead.
@@ -291,3 +292,15 @@ Finish:
 
 Under an autonomy route (`SDLC_AUTONOMY_ROUTE` is set), also follow `references/autonomy.md`
 “What the writing skills do under a route”.
+
+
+## Light-set approval and recovery
+
+A repository with `approval_mode: batch_light` can review and approve a v7+ light set together.
+`approve-set.mjs --prepare` shows the exact before/after documents and digest; its matching
+`--apply` receives one approval dialog. Changes to documents, profile, or approver invalidate
+the digest. Other tiers and profiles retain document-by-document approval.
+
+Use `plan-resume.mjs <set>` after an interruption. A scoped passing integration check advances
+the next level without checking the task off; only final full verification permits completion.
+Failed and partial attempts also leave the task unchecked.

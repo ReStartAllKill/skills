@@ -2,6 +2,7 @@
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve, join, basename } from 'node:path'
 import { loadDir, levelsOf, wpFiles, wpDeps, wpField, stripComments } from './artifact-parse.mjs'
+import { overlappingTaskPaths, validTaskPath } from './task-paths.mjs'
 import { SECTION, sectionBlock } from './keywords.mjs'
 
 const argv = process.argv.slice(2)
@@ -26,6 +27,7 @@ const rel = (k) => (new RegExp(`^${k}:[ \\t]*(.*)$`, 'm').exec(release)?.[1] ?? 
 const wps = [...docs.plan.ents.values()].filter((e) => e.kind === 'wp')
 const { level, cycles, unknown } = levelsOf(wps)
 const problems = [
+  ...wps.flatMap((w) => wpFiles(w).filter((p) => !validTaskPath(p)).map((p) => `${w.id} 의 files 는 저장소 안의 상대 경로여야 한다: ${p}`)),
   ...cycles.map((c) => `depends 가 순환한다: ${c.join(' → ')}`),
   ...unknown.map((u) => `${u.id} 의 depends 가 없는 작업 ${u.dep} 를 가리킨다`),
 ]
@@ -42,7 +44,7 @@ const levels = [...byLevel.keys()].sort((a, b) => a - b).map((lv) => {
   }))
   const overlaps = []
   for (let i = 0; i < tasks.length; i++) for (let j = i + 1; j < tasks.length; j++) {
-    const shared = tasks[i].files.filter((f) => tasks[j].files.includes(f))
+    const shared = overlappingTaskPaths(tasks[i].files, tasks[j].files)
     if (shared.length) overlaps.push({ a: tasks[i].id, b: tasks[j].id, files: shared })
   }
   const mode = tasks.length === 1 ? 'main' : bootstrap ? 'parallel' : 'sequential'

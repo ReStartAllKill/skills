@@ -13,6 +13,10 @@ description: '저장소에 SDLC 프로필·승인 가드·산출물 검사·CI �
 그 런타임의 `conventions.md`, `references/profile.md`, `references/runtime.md`를 읽는다.
 버전을 바꿀 때는 `references/schema.md`, 운영 신호를 연결할 때는 `references/bands.md`도 읽는다.
 
+새 프로필에는 `lint_warnings: advisory`를 넣는다. 문체 경고는 저장 시점과 CI에서 표시하되
+차단하지 않으며, 추적성·승인 오류와 린터 오류는 계속 차단한다. 팀이 엄격한 문체 관문을 원하면
+`lint_warnings: error`를 사용한다. 기존 프로필의 정책은 요청 없이 바꾸지 않는다.
+
 ## 절차
 
 1. **프로필:** CI·빌드 설정에서 검증 명령을, 워크스페이스 설정에서 작업 범위를,

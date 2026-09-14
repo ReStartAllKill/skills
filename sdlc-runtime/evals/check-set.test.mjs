@@ -7,7 +7,7 @@
  * predate v7 and a fixture pinned to the newest version would break whenever a v7 rule moves. */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -144,7 +144,7 @@ const approveWith = ({ d, doc }, name) => run(tool('guard-approval.sh'), [], {
   env: { ...process.env, CLAUDE_PROJECT_DIR: d },
   input: JSON.stringify({
     tool_name: 'Edit',
-    tool_input: { file_path: doc, old_string: 'status: in_review', new_string: `status: accepted\napproved_by: ${name}` },
+    tool_input: { file_path: doc, old_string: 'status: in_review\ngenerated_by: "claude-opus-5"\napproved_by: null', new_string: `status: accepted\ngenerated_by: "claude-opus-5"\napproved_by: ${name}` },
   }),
 })
 
@@ -259,4 +259,74 @@ test('finish refuses --main, where there is no worktree to merge or clean up', (
   assert.equal(r.code, 2, r.out)
   assert.match(r.out, /--main/)
   assert.match(r.out, /commit WP-001/)
+})
+
+
+test('quoted approval statuses and a body example use document frontmatter, not fragments', () => {
+  for (const status of ['accepted', '"accepted"', "'accepted' # reviewed"]) {
+    const { d, doc } = guardRepo('cs-quoted')
+    put(doc, `---\nstatus: ${status}\ngenerated_by: agent\napproved_by: human\n---\nOriginal requirement\n`)
+    const r = run(tool('guard-approval.sh'), [], {
+      env: { ...process.env, CLAUDE_PROJECT_DIR: d },
+      input: JSON.stringify({ tool_name: 'Edit', tool_input: {
+        file_path: doc, old_string: 'Original requirement', new_string: 'Example: status: in_review',
+      } }),
+    })
+    assert.equal(r.code, 0, r.out)
+    assert.equal(JSON.parse(r.stdout).hookSpecificOutput.permissionDecision, 'ask')
+  }
+})
+
+test('a Write cannot change both author and approver to the same identity', () => {
+  const { d, doc } = guardRepo('cs-write-self')
+  const r = run(tool('guard-approval.sh'), [], {
+    env: { ...process.env, CLAUDE_PROJECT_DIR: d },
+    input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: doc,
+      content: '---\nstatus: accepted\ngenerated_by: new-agent\napproved_by: new-agent\n---\nBody\n' } }),
+  })
+  assert.equal(r.code, 2, r.out)
+  assert.match(r.out, /generated_by/)
+})
+
+test('directory scopes overlap nested and normalized paths but not similarly named siblings', () => {
+  const { spec } = planRepo('cs-scopes')
+  const file = join(spec, 'plan.md')
+  for (const [a, b, overlap] of [['src/', 'src/new.js', true], ['./src/api/../core', 'src/core/new.js', true], ['src/api', 'src/api-v2/new.js', false]]) {
+    put(file, PLAN.replace('src/api/filter.js', a).replace('src/core/empty.js', b))
+    const r = run(process.execPath, [tool('plan-levels.mjs'), spec, '--json'])
+    assert.equal(r.code, overlap ? 1 : 0, r.out)
+    assert.equal(JSON.parse(r.stdout).levels[0].overlaps.length, overlap ? 1 : 0)
+    const check = run(process.execPath, [tool('check-artifacts.mjs'), spec, '--json'])
+    assert.equal(JSON.parse(check.stdout).problems.some((p) => p.msg.includes('같은 파일')), overlap)
+  }
+})
+
+test('committing a directory includes staged descendants and records deletions', () => {
+  const { d, spec, twt } = planRepo('cs-scope-commit')
+  put(join(spec, 'plan.md'), PLAN.replace('src/api/filter.js', 'src/api/'))
+  put(join(d, 'src/api/filter.js'), 'export const f = 2\n')
+  git(d, 'add', 'src/api/filter.js')
+  const r = twt('commit', 'WP-001', '--main', '-m', 'feat: directory scope')
+  assert.equal(r.code, 0, r.out)
+  assert.equal(git(d, 'show', 'HEAD:src/api/filter.js'), 'export const f = 2')
+  git(d, 'rm', 'src/api/filter.js')
+  const removed = twt('commit', 'WP-001', '--main', '-m', 'refactor: remove directory')
+  assert.equal(removed.code, 0, removed.out)
+  assert.equal(git(d, 'ls-tree', '-r', '--name-only', 'HEAD', '--', 'src/api'), '')
+})
+
+
+test('resume requires matching task and plan trailers in the same unmerged commit', () => {
+  const { spec, twt, wt } = planRepo('cs-resume-trailers')
+  assert.equal(twt('add', 'WP-001').code, 0)
+  const work = wt('WP-001')
+  put(join(work, 'src/api/filter.js'), 'export const f = 1\n')
+  git(work, 'add', 'src/api/filter.js')
+  git(work, 'commit', '-qm', 'other plan', '-m', 'SDLC-Task: WP-001\nSDLC-Plan: specs/other/plan.md')
+  git(work, 'commit', '--allow-empty', '-qm', 'other task', '-m', 'SDLC-Task: WP-0010\nSDLC-Plan: .sdlc/specs/2026-09-10-tw/plan.md')
+  const next = () => JSON.parse(run(process.execPath, [tool('plan-resume.mjs'), spec, '--json']).stdout)
+  assert.equal(next().action, 'resume_worktree')
+  put(join(work, 'src/api/filter.js'), 'export const f = 2\n')
+  assert.equal(twt('commit', 'WP-001', '-m', 'proper task').code, 0)
+  assert.equal(next().action, 'merge')
 })

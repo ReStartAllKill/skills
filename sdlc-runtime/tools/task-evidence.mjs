@@ -5,11 +5,8 @@ import { createHash } from 'node:crypto'
 
 const MAX_BUFFER = 512 * 1024 * 1024
 
-export function taskFiles(task) {
-  const value = task.fields.get('files') ?? ''
-  const quoted = [...value.matchAll(/`([^`]+)`/g)].map((m) => m[1].trim())
-  return (quoted.length ? quoted : value.split(',')).map((s) => s.trim()).filter(Boolean)
-}
+import { taskFiles } from './task-paths.mjs'
+export { taskFiles } from './task-paths.mjs'
 
 function expandDir(root, name, ref) {
   const git = (...args) => execFileSync('git', ['-C', root, ...args], { stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: MAX_BUFFER })

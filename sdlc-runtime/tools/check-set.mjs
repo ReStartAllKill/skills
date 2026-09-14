@@ -10,6 +10,7 @@
 import { basename, dirname, join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { lintWarningPolicy } from './profile.mjs'
 import { report, SDLC_VERSION, SUPPORTED_SCHEMA_VERSIONS } from './artifact-parse.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -53,6 +54,8 @@ if (broken.length) {
 }
 
 // 어느 권위가 말했는지 남긴다. 합친 뒤에는 규칙 이름만으로 갈라낼 수 없다.
+let lintPolicy
+try { lintPolicy = lintWarningPolicy(DIR) } catch (e) { console.error(e.message); process.exit(2) }
 const problems = runs.flatMap((r) => r.json.problems.map((p) => ({ ...p, tool: r.tool })))
 
 // 두 도구가 같은 note(«산출물 schema v7 · runtime 7»)를 내므로 같은 문장은 한 번만 싣는다.
@@ -67,6 +70,6 @@ process.exit(report({
   title: `산출물 검사 — ${basename(DIR)}`,
   notes,
   problems,
-  strict: STRICT,
+  strict: STRICT || lintPolicy === 'error',
   ruleDoc: '`conventions.md` 의 «티어» · «ID 접두» · «상태와 승인» · «산출물 문법» 절과 `references/prose.md` 에 있다. 둘이 어긋나면 check-artifacts.mjs 가 정본이다.',
 }))

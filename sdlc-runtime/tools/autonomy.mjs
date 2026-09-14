@@ -70,6 +70,7 @@ export function validate(pol, today = new Date()) {
     err(1, '`owner` 가 없다',
       '이 위임의 책임자가 없으면 자율 실행이 만든 문서의 `approved_by` 가 아무도 가리키지 못한다.')
   }
+  if (String(pol.version) !== '1') err(1, '지원하지 않는 정책 version 이다', 'version: 1 을 사용한다.')
   const ids = Object.keys(pol.routes)
   if (ids.length === 0) err(1, '경로가 하나도 없다', '`routes:` 밑에 `  <id>:` 로 정의한다.')
 
@@ -95,10 +96,13 @@ export function validate(pol, today = new Date()) {
       err(r.line, `경로 \`${id}\` 이 \`implement\` 까지 가는데 \`target_branch\` 가 없다`,
         '코드를 쓰는 자율 경로는 기본 브랜치로 바로 가면 안 된다. 사람이 보는 마지막 자리는 PR 리뷰다 — 전용 브랜치를 적는다.')
     }
+    for (const key of ['max_turns', 'timeout_ms']) if (r[key] != null && (!Number.isSafeInteger(Number(r[key])) || Number(r[key]) <= 0)) {
+      err(r.line, `경로 ${id} 의 ${key} 는 양의 정수여야 한다`, '0 이나 잘못된 값으로 실행 한도를 해제할 수 없다.')
+    }
     if (r.expires) {
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(r.expires)) {
+      if (!validExpiry(r.expires)) {
         err(r.line, `경로 \`${id}\` 의 \`expires: ${r.expires}\` 가 날짜가 아니다`, '`YYYY-MM-DD` 로 적는다.')
-      } else if (new Date(r.expires) < today) {
+      } else if (!routeActive(r, today)) {
         warn(r.line, `경로 \`${id}\` 이 만료됐다 (${r.expires})`,
           '만료된 경로는 디스패처가 실행하지 않는다. 다시 검토하고 날짜를 갱신하거나 지운다.')
       }
@@ -107,8 +111,13 @@ export function validate(pol, today = new Date()) {
   return problems
 }
 
+const validExpiry = (value) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value ?? '')) return false
+  const date = new Date(`${value}T00:00:00.000Z`)
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
+}
 export const routeActive = (r, today = new Date()) =>
-  !!r && /^\d{4}-\d{2}-\d{2}$/.test(r.expires ?? '') && new Date(r.expires) >= today
+  !!r && validExpiry(r.expires) && new Date(`${r.expires}T23:59:59.999Z`) >= today
 
 export function loadPolicy(root, profileValue) {
   const rel = profileValue || '.claude/autonomy.yml'

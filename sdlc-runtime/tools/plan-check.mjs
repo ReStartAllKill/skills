@@ -97,7 +97,7 @@ if (CMD === 'mark') {
 
   const box = new RegExp(`^(\\s*[-*]\\s*)\\[ \\](\\s*\\*\\*${TASK}\\b)`, 'm')
   if (!box.test(planText)) die(`${TASK} 의 미체크 항목을 못 찾았다 — plan.md 의 작업 줄 형식을 확인한다.`)
-  let next = planText.replace(box, '$1[x]$2')
+  let next = RESULT_KEY === 'done' ? planText.replace(box, '$1[x]$2') : planText
 
   // v7 템플릿은 §실행 기록을 싣지 않는다. 실어 봐야 도구가 채울 때까지 «해당 없음 — 아직 실행 전» 한
   // 줄이 서 있을 뿐이었고, 그 자리를 사람이 미리 만들어 두게 하면 절을 지운 계획서에서 mark 가 죽는다.
@@ -136,9 +136,10 @@ if (CMD === 'mark') {
   if (nextFm !== fm) die('프런트매터가 바뀌었다 — 도구의 버그다. 아무것도 쓰지 않았다.')
 
   const shown = merged ?? line
-  if (DRY) { console.log(`(dry-run) ${TASK} → [x]\n(dry-run) ${shown}`); process.exit(0) }
+  const mark = RESULT_KEY === 'done' ? '[x]' : '[ ]'
+  if (DRY) { console.log(`(dry-run) ${TASK} → ${mark}\n(dry-run) ${shown}`); process.exit(0) }
   writeFileSync(PLAN, next)
-  console.log(`${TASK} → [x]  (${relative(ROOT, PLAN)})`)
+  console.log(`${TASK} → ${mark}  (${relative(ROOT, PLAN)})`)
   console.log(`  ${shown}`)
   console.log(`\n레벨의 나머지 작업까지 적었으면: plan-check.mjs ${relative(ROOT, DIR)} commit --level <N>`)
 }

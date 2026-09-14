@@ -4,6 +4,8 @@ import { resolve, join, relative, basename } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { taskFingerprint, repositoryFingerprint } from './task-evidence.mjs'
 import { loadDir, stripComments, idsIn, schemaVersion } from './artifact-parse.mjs'
+import { parseCommitRecords, ownsTaskCommit } from './commit-records.mjs'
+import { taskFiles } from './task-paths.mjs'
 import { SECTION, sectionBlock, RE_NA, RE_CHANGE_LOG } from './keywords.mjs'
 
 const argv = process.argv.slice(2)
@@ -56,11 +58,7 @@ const readEvidence = (path) => {
 }
 const wps = [...docs.plan.ents.values()].filter((e) => e.kind === 'wp')
 const field = (e, k) => (e.fields.has(k) ? e.fields.get(k) : '')
-const filesOf = (e) => {
-  const v = field(e, 'files')
-  const ticked = [...v.matchAll(/`([^`]+)`/g)].map((m) => m[1].trim())
-  return (ticked.length ? ticked : v.split(',')).map((s) => s.trim().replace(/^`|`$/g, '')).filter(Boolean)
-}
+const filesOf = taskFiles
 
 const testsOf = (e) => field(e, 'tests').split(/\s·\s|\s\|\s/).map((t) => t.trim().replace(/^[`"'«]|[`"'»]$/g, '').trim())
   .filter((t) => t && !/^<.*>$/.test(t) && !RE_NA.test(t))
@@ -76,6 +74,7 @@ const yml = (k, file) => {
   const m = new RegExp(`^${k}:[ \\t]*(.*)$`, 'm').exec(readEvidence(file) ?? '')
   return m ? m[1].replace(/\s+#.*$/, '').replace(/^["']|["']$/g, '').trim() : ''
 }
+const logDir = ROOT ? relative(ROOT, resolve(ROOT, yml('verify_log_dir', resolve(ROOT, '.claude/spec-profile.yml')) || '.sdlc/verify', basename(DIR))) : null
 const verifyLogs = (() => {
   if (!ROOT) return []
   const dir = resolve(ROOT, yml('verify_log_dir', resolve(ROOT, '.claude/spec-profile.yml')) || '.sdlc/verify', basename(DIR))
@@ -87,11 +86,11 @@ const verifyLogs = (() => {
     const kv = Object.fromEntries(head.split('\n').map((l) => l.split(/:\s(.*)/s)).filter((a) => a.length > 1).map(([k, v]) => [k.trim(), v.trim()]))
     let fingerprints = {}, command = null
     try { fingerprints = JSON.parse(kv.fingerprints ?? '{}'); command = JSON.parse(kv.command ?? 'null') } catch {}
-    return { date: kv.date ?? '', repository: kv.repository, spec: kv.spec, head: kv.head, stable: kv.stable === 'true', fingerprints, command, file: relative(ROOT, path), tasks: (kv.tasks ?? '').split(/\s+/).filter(Boolean), exit: Number(kv.exit ?? 1), label: kv.label ?? null }
+    return { level: Number(kv.level), date: kv.date ?? '', repository: kv.repository, spec: kv.spec, head: kv.head, stable: kv.stable === 'true', fingerprints, command, file: relative(ROOT, path), tasks: (kv.tasks ?? '').split(/\s+/).filter(Boolean), exit: Number(kv.exit ?? 1), label: kv.label ?? null }
   })
 })()
 const verifyCommand = ROOT ? yml('verify', resolve(ROOT, '.claude/spec-profile.yml')) : ''
-const repository = ROOT ? repositoryFingerprint(ROOT, {
+const repository = ROOT && inGit ? repositoryFingerprint(ROOT, {
   specDir: yml('spec_dir', resolve(ROOT, '.claude/spec-profile.yml')) || '.sdlc/specs',
   logDir: yml('verify_log_dir', resolve(ROOT, '.claude/spec-profile.yml')) || '.sdlc/verify',
 }, evidenceRef) : null
@@ -105,18 +104,32 @@ const verifiedBy = (task, commits) => verifyLogs.filter((l) => !l.label && l.spe
   commits.length > 0 && commits.every((c) => git('merge-base', '--is-ancestor', c, l.head) !== null)
 ).map((l) => l.file)
 
+// Scoped runs authorize moving to the next level, never final completion. Compare
+// their committed snapshot so later dependent tasks can legitimately change shared files.
+const snapshotHashes = new Map()
+const integratedBy = (task, commits) => {
+  const scoped = ROOT ? yml('verify_scoped', resolve(ROOT, '.claude/spec-profile.yml')) : ''
+  const candidates = verifyLogs.filter((l) => l.spec === rel(DIR) && l.tasks.includes(task.id) &&
+    (scoped ? l.label === 'scoped' && l.command === scoped : !l.label && l.command === verifyCommand))
+    .sort((a, b) => b.date.localeCompare(a.date) || b.file.localeCompare(a.file)).slice(0, 1)
+  return candidates.filter((l) => {
+    if (l.exit !== 0 || !l.stable || !commits.length || !l.repository ||
+      !/^[a-f0-9]{40,64}$/.test(l.head ?? '') || git('merge-base', '--is-ancestor', l.head, evidenceRef ?? 'HEAD') === null ||
+      commits.some((c) => git('merge-base', '--is-ancestor', c, l.head) === null)) return false
+    if (!snapshotHashes.has(l.head)) snapshotHashes.set(l.head, repositoryFingerprint(ROOT, {
+      specDir: yml('spec_dir', resolve(ROOT, '.claude/spec-profile.yml')) || '.sdlc/specs',
+      logDir: yml('verify_log_dir', resolve(ROOT, '.claude/spec-profile.yml')) || '.sdlc/verify',
+    }, l.head))
+    return l.repository === snapshotHashes.get(l.head) && l.fingerprints[task.id] === taskFingerprint(ROOT, task, l.head)
+  }).map((l) => l.file)
+}
+
 const commitRecords = (() => {
   if (!inGit || !born) return []
   const out = git('log', '--format=%H%x1f%B%x1e', `${born}..${evidenceRef ?? 'HEAD'}`) ?? ''
-  return out.split('\x1e').map((record) => {
-    const [hash, ...body] = record.trim().split('\x1f')
-    return hash ? { hash, body: body.join('\x1f') } : null
-  }).filter(Boolean)
+  return parseCommitRecords(out)
 })()
-const taskCommits = (id) => commitRecords
-  .filter((c) => new RegExp(`^SDLC-Task:\\s*${id}\\s*$`, 'mi').test(c.body))
-  .filter((c) => c.body.split('\n').some((line) => line === `SDLC-Plan: ${planPath}`))
-  .map((c) => c.hash)
+const taskCommits = (id) => commitRecords.filter((c) => ownsTaskCommit(c, id, planPath)).map((c) => c.hash)
 
 const planBody = stripComments(docs.plan.lines.join('\n'))
 const logSection = (sectionBlock(SECTION.executionLog).exec(planBody)?.[0] ?? '')
@@ -149,6 +162,7 @@ for (const w of wps) {
     logged: loggedIds.has(w.id),
     tests: { total: sentences.length, checked: tests.checked, missing: tests.missing },
     verified: verifiedBy(w, commits),
+    integrated: integratedBy(w, commits),
   })
 }
 
@@ -160,7 +174,7 @@ for (const r of rows) {
       : 'v1~v3 계획은 trailer 도입 전 문서라 참고만 한다.' })
   }
   if (!r.done && r.commits.length > 0) {
-    notes.push({ level: 'warn', id: r.id, msg: `미체크인데 귀속 커밋 ${r.commits.length}개가 있다 (${r.commits[0]})`, hint: '한 일이 기록되지 않았다 — 검증을 대조하고 체크박스와 §실행 기록을 갱신한다. 다시 실행하지 않는다.' })
+    notes.push({ level: r.verified.length ? 'warn' : 'info', id: r.id, msg: `미체크인데 귀속 커밋 ${r.commits.length}개가 있다 (${r.commits[0]})`, hint: '전체 검증 전에는 미체크가 정상이다. plan-resume.mjs 로 다음 행동을 확인하고 다시 구현하지 않는다.' })
   }
   if (r.done && !r.logged) {
     notes.push({ level: 'warn', id: r.id, msg: '체크됐는데 §실행 기록 에 줄이 없다', hint: '«계획과의 차이» 가 없으면 이 계획서는 «하려던 것» 만 알고 «한 것» 은 모른다.' })
@@ -198,7 +212,7 @@ if (PLAN_SCHEMA >= TASK_EVIDENCE_SCHEMA && docs.plan.fm.status === 'completed') 
 }
 
 if (JSON_OUT) {
-  console.log(JSON.stringify({ dir: DIR, born, rows, notes }, null, 2))
+  console.log(JSON.stringify({ dir: DIR, born, logDir, rows, notes }, null, 2))
   process.exit(notes.some((n) => n.level === 'error') || (STRICT && notes.some((n) => n.level === 'warn')) ? 1 : 0)
 }
 

@@ -7,6 +7,7 @@ import {
 } from './artifact-parse.mjs'
 import { SECTION, RE_DIVERGENCE, hasAlias } from './keywords.mjs'
 import { loadLock } from './upstream.mjs'
+import { lintWarningPolicy } from './profile.mjs'
 import { useLocale } from './locale.mjs'
 
 const argv = process.argv.slice(2)
@@ -14,7 +15,9 @@ if (argv.includes('--version')) {
   console.log(`sdlc-runtime ${SDLC_VERSION}; schemas ${SUPPORTED_SCHEMA_VERSIONS.join(',')}`)
   process.exit(0)
 }
-const STRICT = argv.includes('--strict')
+let policy
+try { policy = lintWarningPolicy(argv.find((a) => !a.startsWith('--')) ?? '.') } catch (e) { console.error(e.message); process.exit(2) }
+const STRICT = argv.includes('--strict') || policy === 'error'
 const DIR = resolve(argv.find((a) => !a.startsWith('--')) ?? '.')
 
 // REC-* 도 재는 자리다. 사실·추론·가정을 가르는 것은 기계가 볼 수 없지만, «더 빠르다» 로 끝난 판단은

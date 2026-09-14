@@ -36,7 +36,7 @@ A commit with the same task ID but a different plan path does not belong to the 
 
 Run the profile's complete `verify` command through `verify-run.mjs` at the final level. Run additional gates, and intermediate task-scoped runs, separately with `--label`. Logs go under `<verify_log_dir>/<slug>/` and are committed with the plan update.
 
-The evidence is the header above `---`: it contains the fingerprints, repository hash, HEAD, and exit code, and the checker reads only that header. Output below `---` helps a person investigate failure, so a **passing run keeps only its final 40 lines**. A failed run keeps up to 2,000 lines; beyond that it retains the first 400 lines and the end. The header's `sha256` covers the complete output, preventing silent edits even when the stored log is truncated. Its `output` field describes what was retained.
+The evidence is the header above `---`: it contains the fingerprints, repository hash, HEAD, and exit code, and the checker reads only that header. Output below `---` helps a person investigate failure, so a **passing run keeps only its final 40 lines**. A failed run keeps up to 2,000 lines; beyond that it retains the first 400 lines and the end. The header's `sha256` identifies the complete output for comparison with a separately retained original; the checker does not authenticate that output or prevent edits to a local log. Its `output` field describes what was retained.
 
 Do not put commit SHAs or verification-log names in the Execution log section. `plan-progress.mjs` finds both directly from trailers and the log directory. The only value unique to that line is a deviation from the plan. For tasks completed as planned, `mark` appends their IDs to the earlier line from the same day; the checker scans the whole section, so grouped IDs still count individually.
 
@@ -53,3 +53,20 @@ Write that deviation as one sentence: what differed and how. `mark` refuses a `-
 An active plan is compared with current files. For a committed completed plan, the tool reads the files, tests, profile, and verification logs as of the final plan commit, so later artifact-set changes are not applied retroactively. Checkbox and Execution log edits do not affect a task fingerprint. A legacy log without task and repository fingerprints, or a task commit without `SDLC-Plan`, is not v4 completion evidence. Reverify or inspect the real task history instead of fabricating records.
 
 The final full verification passes every task ID in the plan to `--tasks`, and its log is the completion evidence for all of them. An intermediate join point may instead run the profile's `verify_scoped` with `--label scoped`, which records what ran without claiming completion: a labelled log is never completion evidence, whatever command it ran. Git-ignored environment files and external-service state are outside the fingerprint, so reverify after those conditions change. Test-name presence is only a supporting check. Determine whether a test verifies its behavior by comparing code and tests against each AC and by independent audit. Check additional gates and required manual verification separately.
+
+
+## Recovery after interruption
+
+Run `plan-resume.mjs <set> [--json]` before choosing the next action. It distinguishes
+pending implementation, commits waiting in a task branch, integrated code, final full
+verification, pending completion records, and completion review. `plan-levels` reports
+static dependencies and checkbox completion; it is not a recovery cursor.
+
+A scoped passing log allows the next level to run but never checks a task off. The log
+must match its committed snapshot and contain the task's commits. Later dependent commits
+do not erase that integration evidence; final completion still requires a full run matching
+the final repository. A newer scoped failure requires verification again.
+
+`plan-check mark --result partial|failed` records an attempt and leaves the task unchecked.
+Only `--result done` checks it after the completion evidence is present. Pending plan edits
+and verification logs are expected recovery inputs; unrelated dirty files block recovery.

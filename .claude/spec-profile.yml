@@ -10,6 +10,8 @@ spec_dir: ".sdlc/specs"
 
 # Write artifacts in English.
 lang: en
+lint_warnings: advisory
+approval_mode: batch_light
 
 # Keep the verification command aligned with .github/workflows/ci.yml.
 verify: "bash scripts/list-skills.sh && node --test sdlc-runtime/evals/*.test.mjs skills/sdlc/create-pr/evals/tools.test.mjs && python3 -m unittest discover -s skills/eval/agent-eval/scripts -p 'test_*.py' && node sdlc-runtime/evals/run.mjs"

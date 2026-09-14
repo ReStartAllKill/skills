@@ -5,6 +5,18 @@
 A Claude Code plugin that guides each change through a traceable SDLC artifact workflow —
 intent, spec, plan, implementation — and validates traceability **as you write**, not afterward.
 
+For a small change, start with `/sdlc-init` → `/create-light <change>` →
+`/implement-spec <artifact-directory>`. Review the changed behavior, risks, and open decisions.
+After an interruption, inspect the next action with:
+
+```sh
+node <sdlc_runtime>/tools/plan-resume.mjs <artifact-directory>
+```
+
+Set `approval_mode: batch_light` in the repository profile to approve the three light-tier
+documents in one dialog bound to their reviewed digest. Set `lint_warnings: advisory` to
+report prose warnings without blocking CI, or `error` to block both save-time checks and CI.
+
 > **Artifacts are written in Korean or English**, selected per repository by `lang` in the
 > profile. This is a repository setting, not a personal preference: an artifact set is a
 > committed contract that everyone in the repository reads, and CI has no conversation
@@ -182,7 +194,7 @@ filenames.
 
 Use `/create-light` when the change touches no external contract and no data, and a revert
 or a flag takes it back — it writes the same intent, spec and plan, runs the same checker and
-linter, and asks for the same three approvals, but in one pass and one commit. Anything else
+linter, and asks for the profile-selected approval procedure, but in one pass and one commit. Anything else
 goes through `/create-intent` → `/create-spec` → `/create-plan`, where each stage stops for
 review before the next one is written. It needs `sdlc_version: 7` or later.
 

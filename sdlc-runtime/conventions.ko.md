@@ -272,3 +272,14 @@ node <sdlc_runtime>/tools/check-set.mjs <산출물 폴더> [--strict]
 
 자율 경로면(`SDLC_AUTONOMY_ROUTE`가 있으면) `references/autonomy.md`의
 「What the writing skills do under a route」를 함께 따른다.
+
+
+## 작은 변경의 묶음 승인과 재개
+
+`approval_mode: batch_light`를 설정한 저장소는 v7 이상의 light 산출물 세트를 한 번에
+검토하고 승인할 수 있다. `/create-light`의 `approve-set.mjs --prepare`가 정확한 변경 전후와
+해시를 보여주고, 같은 해시의 `--apply`에 승인 다이얼로그가 한 번 뜬다. 검토 이후 문서·프로필·
+승인자가 바뀌면 적용되지 않는다. 다른 티어와 설정이 없는 저장소는 문서별 승인을 유지한다.
+
+중단된 구현은 `plan-resume.mjs <세트>`로 다음 행동을 확인한다. 중간 검증이 끝났어도
+최종 전체 검증 전에는 체크박스를 켜지 않는다. 실패·부분 진행 기록도 미체크 상태를 유지한다.

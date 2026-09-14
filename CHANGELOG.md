@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.7.0 — 2026-09-14
+
+### Fixed
+
+- Approval guards parse proposed documents with the checker's frontmatter parser. Quoted
+  statuses, body examples, duplicate approval fields and simultaneous author edits no longer
+  escape or confuse the approval decision.
+- Failed and partial attempts remain unchecked. Directory task scopes include descendants
+  consistently in overlap detection and staging, including staged directory deletions.
+- Autonomous runs preserve and reject out-of-scope edits before running checkers or committing.
+  Positive turn/time limits are validated and execution has a default 30-minute timeout.
+- Unchanged historical policy approvals use their accepted Git version's policy and timestamp;
+  expiry prevents new approvals without invalidating old contracts. Expiry includes its UTC day.
+
+### Added
+
+- Read-only `plan-resume.mjs` derives the next action from task branches, integration logs and
+  full verification. Scoped integration advances execution without pretending a task is complete.
+- Opt-in `approval_mode: batch_light` prepares an exact reviewed digest and asks once to approve
+  a v7+ light document set. Stale digests are refused; interrupted writes retain recovery records.
+- `lint_warnings: advisory|error` aligns the selected prose-warning policy across save and CI.
+  Existing profiles retain legacy behavior; new profiles use advisory warnings.
+- Regression scenarios cover interruption and recovery, approval changes after review, scope
+  conflicts, failed attempts, policy expiry, and autonomous out-of-scope edits.
+
+
 ## 0.6.1 — 2026-09-10
 
 ### Fixed

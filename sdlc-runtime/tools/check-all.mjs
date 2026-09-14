@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { loadBands, validate } from './bands.mjs'
 import { loadPolicy, validate as validatePolicy } from './autonomy.mjs'
 import { frontmatter, schemaVersion } from './artifact-parse.mjs'
+import { lintWarningPolicy } from './profile.mjs'
 import { useLocale } from './locale.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -23,6 +24,8 @@ const yml = (key, file) => {
   return m ? m[1].replace(/\s+#.*$/, '').replace(/^["']|["']$/g, '').trim() : ''
 }
 
+let lintPolicy
+try { lintPolicy = lintWarningPolicy(ROOT) } catch (e) { console.error(e.message); process.exit(2) }
 const failed = []
 const profile = join(ROOT, '.claude/spec-profile.yml')
 if (!existsSync(profile)) {
@@ -82,7 +85,11 @@ for (const dir of chains) {
   if (existsSync(planPath) && schemaVersion(frontmatter(readFileSync(planPath, 'utf8')) ?? {}) >= 4) checks.push('plan-progress.mjs')
   for (const t of checks) {
     try {
-      run(process.execPath, [tool(t), dir, '--strict'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+      const output = run(process.execPath, [tool(t), dir, ...(t === 'lint-prose.mjs' && lintPolicy === 'advisory' ? ['--json'] : ['--strict'])], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+      if (t === 'lint-prose.mjs' && lintPolicy === 'advisory') {
+        const report = JSON.parse(output)
+        for (const p of report.problems.filter((p) => p.level === 'warn')) console.log(`⚠ ${rel}/${p.doc}:${p.line ?? 0} [${p.rule}] ${p.msg}`)
+      }
     } catch (e) {
       ok = false
       out.push((e.stdout ?? '') + (e.stderr ?? ''))

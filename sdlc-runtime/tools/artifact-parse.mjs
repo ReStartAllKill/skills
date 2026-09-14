@@ -282,11 +282,7 @@ export function report({ title, notes = [], problems, strict, ruleDoc, json = fa
 }
 
 export const wpField = (e, k) => (e.fields.has(k) ? e.fields.get(k) : '')
-export const wpFiles = (w) => {
-  const v = wpField(w, 'files')
-  const ticked = [...v.matchAll(/`([^`]+)`/g)].map((m) => m[1].trim())
-  return (ticked.length ? ticked : v.split(',')).map((s) => s.trim().replace(/^`|`$/g, '')).filter(Boolean)
-}
+export { taskFiles as wpFiles } from './task-paths.mjs'
 export const wpDeps = (w) => idsIn(wpField(w, 'depends')).filter((x) => x.startsWith('WP-'))
 
 export function levelsOf(wps) {

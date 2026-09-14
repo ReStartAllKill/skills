@@ -8,6 +8,8 @@ Global skills define the method. Repository facts and the applicable SDLC versio
 |---|---|---|
 | `sdlc_version` | Schema for new artifact sets | `1`, for compatibility with legacy profiles |
 | `sdlc_runtime` | Path to conventions and checkers | Discovery order in `runtime.md` |
+| `approval_mode` | `batch_light` allows one digest-bound human approval for a v7+ light set | Omitted: separate approval for each document |
+| `lint_warnings` | `advisory` keeps prose warnings visible without blocking; `error` blocks at save and CI | Omitted: legacy behavior (save warns, CI blocks); new profiles use `advisory` |
 | `lang` | **Artifact language**: `ko` or `en`; selects prose lists and budgets | `ko` |
 | `spec_dir` | Artifact location; keep it outside `.claude/` | `.sdlc/specs` |
 | `owner` | Default `approved_by` identity | `git config user.name` |
@@ -36,7 +38,7 @@ Contract keywords are bilingual regardless of `lang`.
 
 **Commit the profile.** It defines how CI checks every artifact set. If it exists only outside Git, local runs and CI can apply different rules while both appear to pass. `check-all.mjs` reports both ignored and untracked profiles.
 
-Repository-contract keys must be committed: `sdlc_version`, `sdlc_runtime`, `lang`, `spec_dir`, `verify`, `source_roots`, `extra_gates`, `bands`, `adr_dir`, `repo`, `upstream_repo`, `spec_consumers`, and `pr_*`.
+Repository-contract keys must be committed: `sdlc_version`, `sdlc_runtime`, `lang`, `approval_mode`, `lint_warnings`, `spec_dir`, `verify`, `source_roots`, `extra_gates`, `bands`, `adr_dir`, `repo`, `upstream_repo`, `spec_consumers`, and `pr_*`.
 
 Machine- or person-specific keys are `owner`, role-specific agent names, `worktree_dir`, and `bootstrap`. Omit only the keys whose values differ between contributors.
 

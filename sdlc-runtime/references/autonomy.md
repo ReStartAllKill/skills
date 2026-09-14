@@ -60,3 +60,18 @@ When the work exceeds the delegation or lacks enough information for a decision,
 ```sh
 node <sdlc_runtime>/tools/autonomy.mjs <repo> --strict
 ```
+
+
+## Historical approvals and execution limits
+
+Expiry stops new delegated approvals after the end of the expiry date (UTC). Existing
+contracts are checked against the policy and commit time of their matching accepted Git
+version. Plan checkboxes and execution notes do not change that contract. Changing the
+contract or approver requires a current delegation or a new human approval. Keep full Git
+history in artifact CI (`fetch-depth: 0`); shallow history cannot establish old approvals.
+Policy removal stops future use without erasing a valid historical approval.
+
+The dispatcher compares non-artifact files before and after the agent. An out-of-scope edit
+is preserved and fails the run before checking or committing artifacts. This is detection,
+not filesystem isolation. `max_turns` and optional `timeout_ms` must be positive integers;
+the process timeout defaults to 30 minutes. Failed and timed-out work remains for inspection.

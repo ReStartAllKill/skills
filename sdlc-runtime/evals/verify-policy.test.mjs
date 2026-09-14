@@ -30,7 +30,7 @@ const PLAN_REL = `${SPEC_REL}/plan.md`
 /** The profile's full `verify`. Its exit code follows a git-ignored file, so the repository
  *  fingerprint is identical whether it passes or fails. */
 const FULL = 'test ! -f .verify-fail'
-const SCOPED = 'echo scoped'
+const SCOPED = 'test ! -f .scoped-fail'
 
 const temp = (prefix) => mkdtempSync(join(tmpdir(), `${prefix}-`))
 const put = (path, body) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, body) }
@@ -100,13 +100,13 @@ N/A — not started.
 
 /** A repository whose plan has WP-001 on level 1 and WP-002 on level 2, both implemented and
  *  committed with their trailers, and nothing verified yet. */
-function repo(prefix) {
+function repo(prefix, { second = true } = {}) {
   const d = temp(prefix)
   git(d, 'init', '-q', '-b', 'main')
   git(d, 'config', 'user.email', 'eval@local')
   git(d, 'config', 'user.name', 'eval')
   put(join(d, '.claude/spec-profile.yml'), PROFILE)
-  put(join(d, '.gitignore'), '.verify-fail\n')
+  put(join(d, '.gitignore'), '.verify-fail\n.scoped-fail\n')
   put(join(d, PLAN_REL), PLAN)
   put(join(d, 'src/a.js'), 'export const a = 0\n')
   put(join(d, 'src/a.test.js'), "test('the first criterion holds', () => {})\n")
@@ -121,7 +121,7 @@ function repo(prefix) {
     git(d, 'commit', '-qm', `feat: ${id}`, '-m', `SDLC-Task: ${id}\nSDLC-Plan: ${PLAN_REL}`)
   }
   task('WP-001', 'src/a.js', 'export const a = 1\n')
-  task('WP-002', 'src/b.js', 'export const b = 1\n')
+  if (second) task('WP-002', 'src/b.js', 'export const b = 1\n')
   return { dir: d, spec: join(d, SPEC_REL) }
 }
 
@@ -251,4 +251,61 @@ test('commit --level stages the logs of that level only, labelled ones included'
   assert.equal(two.code, 0, two.out)
   assert.ok(two.out.includes(full), `level 2 did not stage the full log:\n${two.out}`)
   assert.ok(!two.out.includes(scoped), `level 2 staged level 1's log:\n${two.out}`)
+})
+
+
+test('failed and partial attempts stay unchecked and can later complete with evidence', () => {
+  const { spec } = repo('vp-attempt')
+  for (const result of ['failed', 'partial']) {
+    const r = run('plan-check.mjs', spec, 'mark', 'WP-001', '--result', result, '--note', 'criterion not met')
+    assert.equal(r.code, 0, r.out)
+    assert.equal(row(spec, 'WP-001').done, false)
+    assert.match(readFileSync(join(spec, 'plan.md'), 'utf8'), new RegExp(`WP-001 — ${result}`))
+  }
+  assert.equal(verify(spec, { level: 2, tasks: ['WP-001', 'WP-002'] }).code, 0)
+  assert.equal(run('plan-check.mjs', spec, 'mark', 'WP-001', '--note', 'none').code, 0)
+  assert.equal(row(spec, 'WP-001').done, true)
+})
+
+
+const resume = (spec) => {
+  const r = run('plan-resume.mjs', spec, '--json')
+  const report = JSON.parse(r.stdout)
+  assert.notEqual(r.code, 2, r.out)
+  return report
+}
+
+test('resume advances after scoped verification without marking or reimplementing earlier work', () => {
+  const { dir, spec } = repo('vp-resume', { second: false })
+  assert.equal(resume(spec).action, 'verify_scoped')
+  assert.equal(verify(spec, { level: 1, tasks: ['WP-001'], label: 'scoped', command: SCOPED }).code, 0)
+  let next = resume(spec)
+  assert.equal(next.action, 'implement')
+  assert.equal(next.level, 2)
+  assert.deepEqual(next.tasks, ['WP-002'])
+  assert.equal(row(spec, 'WP-001').done, false)
+  put(join(dir, 'src/b.js'), 'export const b = 1\n')
+  assert.equal(resume(spec).action, 'blocked', 'uncommitted human edits were not preserved')
+  git(dir, 'add', 'src/b.js')
+  git(dir, 'commit', '-qm', 'second task', '-m', `SDLC-Task: WP-002\nSDLC-Plan: ${PLAN_REL}`)
+  assert.equal(resume(spec).action, 'verify_full', 'historical scoped evidence was lost after a later task')
+  assert.equal(verify(spec, { level: 2, tasks: ['WP-001', 'WP-002'] }).code, 0)
+  assert.equal(resume(spec).action, 'record')
+  for (const id of ['WP-001', 'WP-002']) assert.equal(run('plan-check.mjs', spec, 'mark', id, '--note', 'none').code, 0)
+  assert.equal(resume(spec).action, 'record', 'pending plan/log edits should be committed, not block recovery')
+  for (const level of ['1', '2']) assert.equal(run('plan-check.mjs', spec, 'commit', '--level', level).code, 0)
+  assert.equal(resume(spec).action, 'review_completion')
+  put(join(spec, 'plan.md'), readFileSync(join(spec, 'plan.md'), 'utf8').replace('status: in_progress', 'status: completed'))
+  assert.equal(resume(spec).action, 'commit_completion')
+  git(dir, 'add', PLAN_REL); git(dir, 'commit', '-qm', 'completed')
+  assert.equal(resume(spec).action, 'complete')
+})
+
+test('resume does not use an older scoped pass after a newer failure', () => {
+  const { dir, spec } = repo('vp-resume-fail', { second: false })
+  assert.equal(verify(spec, { level: 1, tasks: ['WP-001'], label: 'scoped', command: SCOPED }).code, 0)
+  put(join(dir, '.scoped-fail'), '')
+  assert.equal(verify(spec, { level: 1, tasks: ['WP-001'], label: 'scoped', command: SCOPED }).code, 1)
+  rmSync(join(dir, '.scoped-fail'))
+  assert.equal(resume(spec).action, 'verify_scoped')
 })
