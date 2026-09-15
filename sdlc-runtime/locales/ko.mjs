@@ -49,9 +49,11 @@ export const budget = {
   finding: { doc: 2000, section: 600, entity: 250 },
   /** Do not apply risk-tier multipliers to ADRs. */
   adr: { doc: 2600, section: 900, entity: 400 },
-  /** Research takes no tier multiplier either: evidence carries no risk tier. The item budget is
-   *  the intent's — a source that needs a long paragraph is being summarized, not cited. */
-  research: { doc: 2500, section: 800, entity: 250 },
+  /** Research takes no tier multiplier either: evidence carries no risk tier. The budgets are the
+   *  spec's, not the intent's: a source is quoted with what it measured, and a data table sits in
+   *  prose lines. Fenced blocks — diagrams, excerpts, benchmark output — are outside every budget,
+   *  so the budget prices only what was written about the material, never the material itself. */
+  research: { doc: 4000, section: 1200, entity: 400 },
 }
 
 /** Limits for titles, fields, and sentence counts based on Korean text density.

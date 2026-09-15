@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.7.1 — 2026-09-15
+
+### Fixed
+
+- **A research document can carry what a source showed.** The research budgets were the
+  intent's, so a diagram or a benchmark output redrawn under its `SRC-*` pushed the section
+  over budget and the model folded it into one sentence — which is the thing the document
+  existed to keep. Fenced blocks are now outside every budget and every prose check, and the
+  budgets are sized like a spec's (ko 4000/1200/400, en ×2.2). A smoke case holds the control:
+  the same length as unfenced prose still warns, so «fences are outside» stays distinct from
+  «the budget is off».
+- **A data table is not mistaken for the comparison table.** The checker took the first table
+  whose header carried `OPT-*`, so a §Data table with options as columns and measurements as
+  rows was read as the comparison and failed for «missing criteria». It now prefers the table
+  whose first column carries `CRIT-*` and falls back to the first candidate only when none
+  does, so a genuinely missing comparison still points at the right table.
+
+### Changed
+
+- The research template gains an optional `§Data` section for measured values and a `mermaid`
+  fence under each source; `/create-research` says to copy material into fences rather than
+  paraphrase it, and to keep numbers the comparison reads in one table with the thing measured
+  in the first column. A `research-with-material` negative-control case pins the baseline.
+
 ## 0.7.0 — 2026-09-14
 
 ### Fixed

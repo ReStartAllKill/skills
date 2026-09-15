@@ -412,19 +412,22 @@ if (docs.research) {
       }
     }
 
-    // 비교표는 이 문서에서 유일하게 2차원인 자리다 — 기준 × 선택지. 머리행의 OPT-* 로 찾는다:
-    // 제목이 계약이 아니라 ID 가 계약이라는 이 저장소의 규칙이 표에도 그대로 걸린다.
+    // 비교표는 기준 × 선택지다. 머리행의 OPT-* 로 후보를 모으고 첫 열에 CRIT-* 가 선 것을 고른다:
+    // 제목이 계약이 아니라 ID 가 계약이라는 이 저장소의 규칙이 표에도 그대로 걸린다. 머리행만 보고
+    // 첫 표를 집으면 §자료 의 수치표(선택지를 열로, 잰 것을 행으로 둔다)가 비교표로 읽혀 «기준이
+    // 빠졌다» 가 되므로, CRIT 가 선 표가 없을 때만 첫 후보로 물러난다 — 그래야 오류가 그 표를 가리킨다.
     const cells = (line) => line.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.replace(/`/g, '').trim())
-    let table = null
+    const candidates = []
     r.lines.forEach((line, i) => {
-      if (table || !r.live[i] || !/^\s*\|/.test(line)) return
+      if (!r.live[i] || !/^\s*\|/.test(line)) return
       if (!/^\s*\|[\s:|-]+\|\s*$/.test(r.lines[i + 1] ?? '')) return
       const header = cells(line)
       if (!header.some((c) => idsIn(c).some((x) => x.startsWith('OPT-')))) return
       const first = []
       for (let j = i + 2; j < r.lines.length && /^\s*\|/.test(r.lines[j]); j++) first.push(cells(r.lines[j])[0] ?? '')
-      table = { line: i, header, first }
+      candidates.push({ line: i, header, first })
     })
+    const table = candidates.find((t) => t.first.some((c) => idsIn(c).some((x) => x.startsWith('CRIT-')))) ?? candidates[0] ?? null
     if (!table) {
       err(r.name, '기준과 선택지를 함께 놓은 비교표가 없다',
         '머리행에 `OPT-NNN`, 첫 열에 `CRIT-NNN` 을 둔 표 하나가 §비교 다. 표가 없으면 어느 기준에서 무엇이 갈렸는지가 문장 사이에 흩어져 아무도 다시 세우지 못한다.')

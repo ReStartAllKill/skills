@@ -62,8 +62,9 @@ export const budget = {
   finding: { doc: 4400, section: 1300, entity: 550 },
   /** ADR takes no tier multiplier. */
   adr: { doc: 5700, section: 2000, entity: 880 },
-  /** Research takes no tier multiplier either: evidence carries no risk tier. */
-  research: { doc: 5500, section: 1760, entity: 550 },
+  /** Research takes no tier multiplier either: evidence carries no risk tier. Sized like a spec,
+   *  not an intent — see the Korean bundle for why. */
+  research: { doc: 8800, section: 2640, entity: 880 },
 }
 
 /** `sentences` is a count, not a length — it does not scale with the language. The rest are ×2.2. */

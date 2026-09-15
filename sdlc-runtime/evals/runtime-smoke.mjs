@@ -1986,6 +1986,49 @@ await test('the comparison table in a research document is not an entity table',
     'intent 의 ID 첫 열 표를 더는 걸지 않는다 — 예외가 규칙을 통째로 껐다')
 })
 
+// 조사가 담는 자료 — 도식·발췌·수치표 — 는 문장 예산 밖이어야 한다. 예산이 자료까지 세면 모델은
+// 도식을 «A 가 B 를 부른다» 한 줄로 접고, 그 접힘이 이 산출물을 만든 이유를 지운다. 반대로 펜스 밖
+// 산문은 여전히 재야 한다 — 그렇지 않으면 «펜스는 예산 밖» 이 «예산이 꺼졌다» 와 구분되지 않는다.
+await test('fenced material in a research document is outside every budget, prose is not', () => {
+  const diagram = '```mermaid\nsequenceDiagram\n' +
+    Array.from({ length: 60 }, (_, k) => `  Worker->>Broker: OPT-001 이 재시도 ${k} 를 코드에서 정한다`).join('\n') + '\n```\n'
+  const withFence = RESEARCH_MD.replace('지수 백오프가 기본이고 재시도 횟수를 코드에서 정한다고 적혀 있다.\n',
+    '지수 백오프가 기본이고 재시도 횟수를 코드에서 정한다고 적혀 있다.\n\n' + diagram)
+  let { dir } = researchRepo('sdlc-research-fence', withFence)
+  let prose = linted(dir)
+  assert(prose.counts.errors === 0 && prose.counts.warnings === 0,
+    `펜스 안 도식을 문장 예산으로 쟀다:\n${JSON.stringify(prose.problems, null, 2)}`)
+  let got = checked(dir)
+  assert(got.counts.errors === 0 && got.counts.warnings === 0,
+    `펜스 안의 OPT-001 을 정의나 인용으로 읽었다:\n${JSON.stringify(got.problems, null, 2)}`)
+
+  // 같은 분량을 펜스 밖 산문으로 두면 걸려야 한다. 이 대조군이 없으면 위 통과는 예산이 꺼진 것과 같다.
+  const paragraph = Array.from({ length: 16 }, (_, k) => `재시도 ${k} 번째는 지수 백오프로 기다린 뒤 같은 인자로 다시 부른다고 적혀 있다.`).join(' ')
+  ;({ dir } = researchRepo('sdlc-research-fence-control', RESEARCH_MD.replace(
+    '지수 백오프가 기본이고 재시도 횟수를 코드에서 정한다고 적혀 있다.', paragraph)))
+  prose = linted(dir)
+  assert(prose.problems.some((p) => p.rule === 'too-long' && p.msg.includes('SRC-001')),
+    `펜스 밖 긴 산문을 예산 초과로 걸지 않았다 — 예산이 꺼졌다:\n${JSON.stringify(prose.problems, null, 2)}`)
+})
+
+await test('a data table with options as columns is not mistaken for the comparison table', () => {
+  const data = '## 자료\n\n| 잰 것 | OPT-001 | OPT-002 | 출처 |\n|---|---:|---:|---|\n| 초당 처리량 (건) | 1200 | 3400 | SRC-001 |\n\n'
+  const { dir } = researchRepo('sdlc-research-data', RESEARCH_MD.replace('## 비교\n', data + '## 비교\n'))
+  const got = checked(dir)
+  assert(got.counts.errors === 0 && got.counts.warnings === 0,
+    `비교표 앞에 선 수치표를 비교표로 읽었다:\n${JSON.stringify(got.problems, null, 2)}`)
+  const prose = linted(dir)
+  assert(prose.counts.errors === 0 && prose.counts.warnings === 0,
+    `수치표를 린터가 걸었다:\n${JSON.stringify(prose.problems, null, 2)}`)
+
+  // 비교표를 빼면 오류는 남아야 한다. CRIT 가 선 표가 없으면 검사기는 남은 OPT 표로 물러나 기준마다
+  // 하나씩 짚는다 — 예외가 비교표 검사를 통째로 끄지 않았는지 보는 대조군이다.
+  const noCompare = RESEARCH_MD.replace(/## 비교\n[\s\S]*?(?=## 판단)/, data)
+  const missing = checked(researchRepo('sdlc-research-data-only', noCompare).dir)
+  assert(missing.counts.errors === 2 && missing.problems.every((p) => /CRIT-00[12]/.test(p.msg)),
+    `비교표 없는 조사를 통과시켰다 — 수치표 예외가 비교표 검사를 껐다:\n${JSON.stringify(missing.problems, null, 2)}`)
+})
+
 await test('research is evidence, not a decision: the guard does not ask on reviewed', () => {
   const d = temp('sdlc-research-guard')
   put(join(d, '.claude/spec-profile.yml'), `sdlc_version: 7\nsdlc_runtime: "${ROOT}"\nspec_dir: ".sdlc/specs"\n`)

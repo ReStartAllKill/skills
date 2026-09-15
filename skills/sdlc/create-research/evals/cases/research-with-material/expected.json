@@ -1,0 +1,7 @@
+{
+  "kind": "negative-control",
+  "why": "심은 것이 없다. 출처가 보여 준 시퀀스 도식과 설정 발췌를 펜스로 싣고 잰 값을 §자료 표로 둔 조사가 오류 0 경고 0 으로 서는 바닥선이다. 이 케이스가 없으면 «펜스는 예산 밖, 수치표는 비교표가 아니다» 가 우연한 성질로 남아 린터나 검사기를 고칠 때 조용히 깨진다. clean-research 와 다른 점은 자료 층뿐이다.",
+  "cmd": "check-artifacts.mjs · lint-prose.mjs 를 `<case>/docs` 에 돌린다. 프로필이 없으므로 산출물 언어는 기본값 ko 다.",
+  "check": { "errors": 0, "warns": 0 },
+  "lint": { "errors": 0, "warns": 0 }
+}

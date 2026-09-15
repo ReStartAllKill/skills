@@ -38,7 +38,12 @@ generated_by: null
 
 <!-- Recorded the moment it is read. `위치:` is a URL or a repository path, `조회:` the date it was
      read. One to three sentences of what the source actually says, not what it is hoped to say.
-     Prefer primary sources — docs, code, changelogs; a secondary source is fine if said to be one. -->
+     Prefer primary sources — docs, code, changelogs; a secondary source is fine if said to be one.
+     What the source *showed* — an architecture or sequence diagram, a code excerpt, a benchmark
+     output — goes under the sentences in a fenced block (```mermaid, ```text, ```<language>),
+     redrawn or copied from the source, not invented. Fenced blocks count toward no budget and no
+     prose check, so keep the material there and the sentences short. Measured values that compare
+     across options go in a table under §자료, not here. -->
 
 ### SRC-001 — <읽은 것>
 
@@ -46,6 +51,10 @@ generated_by: null
 - 조회: YYYY-MM-DD
 
 <그 자리가 실제로 하는 말 1~3문장.>
+
+```mermaid
+<출처가 보여 준 도식 — 보여 준 것이 없으면 이 블록을 지운다>
+```
 
 ### SRC-002 — <읽은 것>
 
@@ -64,7 +73,8 @@ generated_by: null
 
 - 근거: SRC-001
 
-<이 선택지가 실제로 무엇인지 한두 문장.>
+<이 선택지가 실제로 무엇인지 한두 문장. 문장으로 안 되는 것 — 호출 모양·설정 발췌·데이터 흐름 — 은
+아래에 펜스 블록으로 이 저장소에 어떻게 앉는지 보인다.>
 
 ### OPT-002 — <선택지>
 
@@ -72,11 +82,24 @@ generated_by: null
 
 <이 선택지가 실제로 무엇인지 한두 문장.>
 
+## 자료
+
+<!-- Optional — delete the heading when nothing was measured. Numbers a source reported or this
+     investigation measured, one table per measurement, with the thing measured in the first column
+     and the SRC-* it came from in the header or a caption. Never an ID in the first column: that
+     is an entity table and the linter rejects it. Raw output belongs in a fenced block under the
+     SRC-* that produced it; this section holds the values that the comparison reads. -->
+
+| <잰 것> | OPT-001 <선택지> | OPT-002 <선택지> | 출처 |
+|---|---:|---:|---|
+| <무엇을 어떤 단위로 쟀나> | <값> | <값> | SRC-001 |
+
 ## 비교
 
 <!-- The one genuinely two-dimensional place in this document: criteria × options. Every CRIT is a
      row, every OPT a column. A cell nobody could settle is written «모름 — <무엇을 보면 갈리나>»,
-     never left blank — a blank cell reads as «no difference». -->
+     never left blank — a blank cell reads as «no difference». A cell states what was measured and
+     cites its SRC-*; the figure it comes from is in §자료 or under that source. -->
 
 | 기준 | OPT-001 <선택지> | OPT-002 <선택지> |
 |---|---|---|

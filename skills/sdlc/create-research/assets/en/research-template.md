@@ -38,7 +38,12 @@ generated_by: null
 
 <!-- Recorded the moment it is read. `at:` is a URL or a repository path, `retrieved:` the date it
      was read. One to three sentences of what the source actually says, not what it is hoped to
-     say. Prefer primary sources — docs, code, changelogs; a secondary source is fine if said to be one. -->
+     say. Prefer primary sources — docs, code, changelogs; a secondary source is fine if said to be one.
+     What the source *showed* — an architecture or sequence diagram, a code excerpt, a benchmark
+     output — goes under the sentences in a fenced block (```mermaid, ```text, ```<language>),
+     redrawn or copied from the source, not invented. Fenced blocks count toward no budget and no
+     prose check, so keep the material there and the sentences short. Measured values that compare
+     across options go in a table under §Data, not here. -->
 
 ### SRC-001 — <what was read>
 
@@ -46,6 +51,10 @@ generated_by: null
 - retrieved: YYYY-MM-DD
 
 <One to three sentences of what it actually says.>
+
+```mermaid
+<the diagram the source showed, when it showed one — otherwise delete this block>
+```
 
 ### SRC-002 — <what was read>
 
@@ -64,7 +73,8 @@ generated_by: null
 
 - basis: SRC-001
 
-<One or two sentences on what this option actually is.>
+<One or two sentences on what this option actually is. A fenced block below may show how it would
+sit in this repository — a call shape, a config excerpt, a data flow — when a sentence cannot.>
 
 ### OPT-002 — <the option>
 
@@ -72,11 +82,24 @@ generated_by: null
 
 <One or two sentences on what this option actually is.>
 
+## Data
+
+<!-- Optional — delete the heading when nothing was measured. Numbers a source reported or this
+     investigation measured, one table per measurement, with the thing measured in the first column
+     and the SRC-* it came from in the header or a caption. Never an ID in the first column: that
+     is an entity table and the linter rejects it. Raw output belongs in a fenced block under the
+     SRC-* that produced it; this section holds the values that the comparison reads. -->
+
+| <measured on> | OPT-001 <option> | OPT-002 <option> | source |
+|---|---:|---:|---|
+| <what was measured, with unit> | <value> | <value> | SRC-001 |
+
 ## Comparison
 
 <!-- The one genuinely two-dimensional place in this document: criteria × options. Every CRIT is a
      row, every OPT a column. A cell nobody could settle is written «unknown — <what would settle
-     it>», never left blank — a blank cell reads as «no difference». -->
+     it>», never left blank — a blank cell reads as «no difference». A cell states what was
+     measured and cites its SRC-*; the figure it comes from is in §Data or under that source. -->
 
 | Criterion | OPT-001 <option> | OPT-002 <option> |
 |---|---|---|
