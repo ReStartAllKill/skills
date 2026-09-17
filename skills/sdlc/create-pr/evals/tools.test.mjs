@@ -3,7 +3,7 @@
  * These differ from artifact cases under evals/cases: that runner compares check-artifacts and
  * lint-prose output with expected.json and cannot inspect shell-tool exit codes or output. */
 import assert from 'node:assert/strict'
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -72,6 +72,15 @@ pr_strategy: 단일 PR
 
 ### RISK-001 — 잘못된 상태 전이
 
+## 작업
+
+- [x] **WP-001 — 취소 핸들러**
+  - files: \`apps/api/handler.ts\`, \`packages/db\`
+  - depends: 없음
+  - covers: FR-001 (AC-001)
+  - tests: 취소된다
+  - verify: true
+
 ## 실행 기록
 
 - 2026-09-08 WP-001 — 완료 · PR 없음 · 계획과의 차이: 없음
@@ -93,6 +102,25 @@ test('pr-context derives split signals, risk areas, and artifact sets from profi
   assert.ok(r.out.includes('OUT-001'), `산출물 문서의 ID 를 안 냈다:\n${r.out}`)
   assert.ok(r.out.includes('pr_strategy: 단일 PR'), `plan 의 pr_strategy 를 안 냈다:\n${r.out}`)
   assert.ok(r.out.includes('apps/api') && r.out.includes('apps/worker'), `영역을 두 단계로 안 묶었다:\n${r.out}`)
+  // A file no task declared is where behaviour the spec never asked for arrives; a declared file
+  // and a file under a declared directory are planned.
+  assert.match(r.out, /unplanned-files:[^\n]*\n\s+apps\/worker\/job\.ts/, `계획 밖 파일을 안 냈다:\n${r.out}`)
+  assert.doesNotMatch(r.out, /^\s+apps\/api\/handler\.ts$/m, `작업이 선언한 파일을 계획 밖으로 냈다:\n${r.out}`)
+  assert.doesNotMatch(r.out, /^\s+packages\/db\/schema\.sql$/m, `선언한 디렉터리 밑의 파일을 계획 밖으로 냈다:\n${r.out}`)
+  assert.doesNotMatch(r.out, /^\s+\.sdlc\/specs/m, `산출물 자체를 계획 밖 파일로 냈다:\n${r.out}`)
+
+  // The other two outcomes must be told apart: nothing unplanned, and nothing to measure against.
+  // «none» from a plan with no files would be a check that is off reading as a check that passed.
+  const plan = join(d, '.sdlc/specs/2026-09-08-cancel/plan.md')
+  put(plan, readFileSync(plan, 'utf8').replace('`apps/api/handler.ts`, `packages/db`', '`apps`, `packages`'))
+  git(d, 'commit', '-qam', 'plan: widen')
+  const all = run('bash', [script('pr-context.sh')], { cwd: d })
+  assert.ok(all.out.includes('unplanned-files: none'), `계획 밖 파일이 없는데 none 을 안 냈다:\n${all.out}`)
+  put(plan, readFileSync(plan, 'utf8').replace(/^\s+- files:.*\n/m, ''))
+  git(d, 'commit', '-qam', 'plan: drop files')
+  const bare = run('bash', [script('pr-context.sh')], { cwd: d })
+  assert.ok(bare.out.includes('unplanned-files: 못 잰다'), `files 없는 plan 에서 못 잰다고 말하지 않았다:\n${bare.out}`)
+  assert.ok(!bare.out.includes('unplanned-files: none'), `files 없는 plan 이 none 으로 읽혔다 — 꺼진 검사가 통과처럼 보인다:\n${bare.out}`)
 })
 
 test('pr-context runs without a profile and reports disabled features', (t) => {

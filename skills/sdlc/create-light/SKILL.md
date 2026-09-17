@@ -33,6 +33,7 @@ description: '되돌리기 쉬운 작은 변경의 intent·spec·plan 세 문서
    `.../create-spec/assets/<lang>/spec-template.md`,
    `.../create-plan/assets/<lang>/plan-template.md`.
    `standard+`·`full` 표식이 붙은 절은 지우고, 조건부 절은 채우거나 `해당 없음 — <근거>`로 닫는다.
+   §시나리오를 지우면 요구사항의 `시나리오:` 줄도 함께 지운다 — 없는 시나리오를 가리키는 줄은 오류다.
    세 문서 모두 `tier: light`다. 작업은 다섯 필드 형식을 지키며, light 계획의 작업은 보통 1~3개다.
 4. 핀을 먼저 박는다. `node <sdlc_runtime>/tools/pin.mjs intent.md`의 값을 spec의 `intent_version`에,
    `pin.mjs spec.md`의 값을 plan의 `spec_version`에 쓴다. 승인 편집은 frontmatter만 건드리므로

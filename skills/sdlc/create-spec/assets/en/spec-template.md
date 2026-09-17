@@ -19,15 +19,17 @@ generated_by: null
 
 ## Scenarios `[required · standard+]`
 
-<!-- One nominal flow and at least one error or edge flow. Observable interaction only. -->
+<!-- One nominal flow and at least one error or edge flow. Observable interaction only.
+     A priority on a scenario names a release slice: a `Must` scenario is worth shipping on its own.
+     Either every scenario carries one, or none does. -->
 
-### SCN-001 — <the main nominal flow>
+### SCN-001 — <the main nominal flow> `Must`
 
 - **Given** <starting state>
 - **When** <an action or event>
 - **Then** <what the user observes>
 
-### SCN-002 — <an error or edge flow>
+### SCN-002 — <an error or edge flow> `Should`
 
 - **Given** <state>
 - **When** <the same action repeats, or a dependency fails>
@@ -35,11 +37,15 @@ generated_by: null
 
 ## Requirements
 
-<!-- One behaviour per requirement. `basis:` is required. Every Must needs acceptance criteria. -->
+<!-- One behaviour per requirement. `basis:` is required. Every Must needs acceptance criteria.
+     `scenario:` names the scenarios this requirement realises; it is how a slice reaches the plan.
+     Delete those lines together with the Scenarios section at light tier — a citation of a
+     scenario that is not there is an error, not a slice. -->
 
 ### FR-001 — <one line> `Must`
 
 basis: OUT-001
+scenario: SCN-001
 
 <Under <condition> the system does <observable behaviour>.>
 
@@ -51,6 +57,7 @@ acceptance:
 ### FR-002 — <one line> `Should`
 
 basis: OUT-002
+scenario: SCN-002
 
 <A user can <action>.>
 

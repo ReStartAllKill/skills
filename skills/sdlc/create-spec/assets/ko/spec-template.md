@@ -19,15 +19,17 @@ generated_by: null
 
 ## 시나리오 `[필수 · standard+]`
 
-<!-- One nominal flow and at least one error or edge flow. Observable interaction only. -->
+<!-- One nominal flow and at least one error or edge flow. Observable interaction only.
+     A priority on a scenario names a release slice: a `Must` scenario is worth shipping on its own.
+     Either every scenario carries one, or none does. -->
 
-### SCN-001 — <대표 정상 흐름>
+### SCN-001 — <대표 정상 흐름> `Must`
 
 - **Given** <초기 상태>
 - **When** <행동 또는 이벤트>
 - **Then** <사용자가 관찰하는 결과>
 
-### SCN-002 — <오류 또는 경계 흐름>
+### SCN-002 — <오류 또는 경계 흐름> `Should`
 
 - **Given** <상태>
 - **When** <같은 행동이 반복되거나 의존성이 실패>
@@ -35,11 +37,15 @@ generated_by: null
 
 ## 요구사항
 
-<!-- One behaviour per requirement. `basis:` is required. Every Must needs acceptance criteria. -->
+<!-- One behaviour per requirement. `basis:` is required. Every Must needs acceptance criteria.
+     `시나리오:` names the scenarios this requirement realises; it is how a slice reaches the plan.
+     Delete those lines together with the Scenarios section at light tier — a citation of a
+     scenario that is not there is an error, not a slice. -->
 
 ### FR-001 — <한 줄 요약> `Must`
 
 근거: OUT-001
+시나리오: SCN-001
 
 <시스템은 <조건>일 때 <관찰 가능한 동작>을 한다.>
 
@@ -51,6 +57,7 @@ generated_by: null
 ### FR-002 — <한 줄 요약> `Should`
 
 근거: OUT-002
+시나리오: SCN-002
 
 <사용자는 <행동>을 할 수 있다.>
 

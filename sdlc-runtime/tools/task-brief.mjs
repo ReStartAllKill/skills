@@ -92,7 +92,7 @@ const seam = { ...adrSeam(ROOT), root: ROOT }
 const adrLines = []
 if (seam.configured && seam.dir) {
   const all = loadAdrDir(seam.dir).docs
-  const hit = adrsForFiles(all, files)
+  const hit = adrsForFiles(all, files, seam.self)
   const pinned = new Set(Object.values(docs).flatMap((d) => [].concat(d.fm?.decisions ?? []).map(String))
     .filter((p) => !p.includes('#'))
     .map((p) => /(ADR-\d{3,4})/.exec(p)?.[1]).filter(Boolean))

@@ -1,0 +1,14 @@
+{
+  "kind": "seeded · 결정 범위",
+  "why": "**계획이 결정의 자리를 만지면서 그 결정을 보지 않은 상태** — spec-kit 의 Constitution Check 에 해당하는 자리다. WP-001 의 files 가 `src/storage` 에 들어가고, 승인된 ADR-004 가 그 경로를 `scope` 로 잡고 있는데 산출물 세트 어디에도 `decisions:` 핀이 없다. task-brief 는 구현 에이전트에게 그 결정을 넣어 주지만 설계(TD-*)는 그 전에 plan 에서 끝나므로, 핀이 없으면 계획이 결정을 읽고 섰는지 아무도 모른다. 결정 기록 자체에는 결함이 없다 — `docs/adr` 에 돌리면 0/0 이고(`confirms` 의 테스트가 `src/storage/quota.test.ts` 에 있다), 이 지적은 산출물 디렉터리에서만 보인다. 짝인 adr-scope-pinned 가 핀 하나로 경고가 닫히는 것을 증명한다. 경고인 이유: CI 는 `--strict` 라 거기서 막히고, 이 규칙 전에 쓴 산출물 세트를 훅에서 빨갛게 만들지 않는다.",
+  "cmd": "check-artifacts.mjs · lint-prose.mjs 를 산출물 디렉터리 `<case>/docs/specs/2026-09-06-store-quota` 에 돌린다. `docs/` 가 레포 뿌리이고 프로필이 `spec_dir: specs` · `adr_dir: adr` 다.",
+  "check": {
+    "errors": 0, "warns": 1,
+    "matches": [
+      "WP-001 의 files 가 ADR-004",
+      "`decisions:` 에 없다"
+    ]
+  },
+  "lint": { "errors": 0, "warns": 0 },
+  "target": "specs/2026-09-06-store-quota"
+}

@@ -127,6 +127,33 @@ else
         echo "  실행 이력 (마지막 5줄 — Verification 의 재료다):"
         printf '%s\n' "$hist" | sed 's/^/    /'
       fi
+      # Files the branch changed that no task declared. The task commit tool keeps each task inside
+      # its `files`, but a branch also carries fix-up commits made outside any task — and that is
+      # where behaviour the spec never asked for arrives. The body has to say what each one is.
+      PLANNED="$(grep -E '^[[:space:]]+- files:' "$TREE/$chain/plan.md" \
+        | sed -E 's/^[[:space:]]+- files:[[:space:]]*//' | tr ',' '\n' \
+        | sed -E 's/`//g; s/^[[:space:]]+//; s/[[:space:]]+$//; s|/$||' | sed '/^$/d' | sort -u || true)"
+      if [[ -n "$PLANNED" ]]; then
+        UNPLANNED=""
+        while IFS= read -r f; do
+          [[ -n "$f" ]] || continue
+          [[ "$f" == "$SPEC_DIR"/* ]] && continue
+          hit=0
+          while IFS= read -r p; do
+            [[ -n "$p" ]] || continue
+            if [[ "$f" == "$p" || "$f" == "$p"/* ]]; then hit=1; break; fi
+          done <<< "$PLANNED"
+          [[ "$hit" -eq 0 ]] && UNPLANNED+="$f"$'\n'
+        done <<< "$CHANGED"
+        if [[ -n "$UNPLANNED" ]]; then
+          echo "  unplanned-files: (plan 의 어느 작업 files 에도 없다 — spec 밖 동작인지 본문에서 판정한다)"
+          printf '%s' "$UNPLANNED" | sed '/^$/d; s/^/    /'
+        else
+          echo "  unplanned-files: none"
+        fi
+      else
+        echo "  unplanned-files: 못 잰다 — plan 에 files 를 적은 작업이 없다"
+      fi
     fi
   done
 fi

@@ -866,6 +866,24 @@ await test('autonomous execution excludes its own log but blocks other changes',
 
 const CASES = resolve(ROOT, '../skills/sdlc/create-plan/evals/cases/clean-light/docs')
 
+await test('plan-levels prints a slice per prioritised scenario with the level at which it completes', () => {
+  // Levels say what runs first; slices say where a release becomes possible. The checker case
+  // `slice-order` proves the warning; this proves the view that lets a person see the same thing
+  // before the warning fires — a Must scenario with no task, and one that ends on the last level.
+  const docs = resolve(ROOT, '../skills/sdlc/create-plan/evals/cases/slice-order/docs')
+  const r = run(process.execPath, [tool('plan-levels.mjs'), docs, '--json'])
+  assert(r.code === 0, `plan-levels 가 실패했다:\n${r.out}`)
+  const { slices } = JSON.parse(r.out)
+  const by = Object.fromEntries(slices.map((s) => [s.id, s]))
+  assert(slices.length === 3 && by['SCN-001'].priority === 'Must', `슬라이스가 시나리오마다 서지 않았다: ${JSON.stringify(slices)}`)
+  assert(by['SCN-001'].tasks.join() === 'WP-002' && by['SCN-001'].last_level === 2, `Must 슬라이스가 끝나는 레벨이 틀렸다: ${JSON.stringify(by['SCN-001'])}`)
+  assert(by['SCN-003'].tasks.length === 0 && by['SCN-003'].last_level === null, `작업 없는 시나리오가 «작업 없음» 으로 서지 않았다: ${JSON.stringify(by['SCN-003'])}`)
+  const text = run(process.execPath, [tool('plan-levels.mjs'), docs]).out
+  assert(text.includes('슬라이스') && text.includes('SCN-003 (Must)') && text.includes('작업 없음'), `텍스트 보기에 슬라이스가 없다:\n${text}`)
+  const plain = run(process.execPath, [tool('plan-levels.mjs'), CASES, '--json']).out
+  assert(JSON.parse(plain).slices.length === 0, '우선순위 없는 spec 에 슬라이스가 섰다 — 슬라이스는 선택이다')
+})
+
 function seedRepo(dir, profile) {
   put(join(dir, '.claude/spec-profile.yml'), profile)
   git(dir, 'init', '-q'); git(dir, 'config', 'user.name', 'eval'); git(dir, 'config', 'user.email', 'eval@local')

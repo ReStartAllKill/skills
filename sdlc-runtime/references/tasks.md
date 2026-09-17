@@ -16,6 +16,11 @@ A plan task has the following five fields. Since schema v4, its commit and verif
 - Put the AC sentences corresponding to `covers` in `tests`.
 - Tasks at the same level must not overlap in `files`. Merge overlapping tasks or order them with `depends`.
 - Put the profile's task-scoped verification command in `verify`.
+- Where the spec's scenarios carry priorities, a task that realises a `Must` scenario — through the
+  requirements in its `covers` — must not depend, directly or transitively, on a task that realises
+  only `Should` or `Could` scenarios. The `Must` scenario is the first release; a task behind an
+  increment makes the whole plan the release. Tasks tied to no scenario are groundwork and may sit
+  anywhere. `plan-levels.mjs` prints each slice with the level at which it completes.
 
 ## Execution tools
 

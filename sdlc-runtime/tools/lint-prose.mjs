@@ -5,7 +5,7 @@ import {
   loadDir, isTemplate, idsIn, stripComments, report, P_ALT, SDLC_VERSION, ADR_FILENAME, loadAdrDir,
   SUPPORTED_SCHEMA_VERSIONS, schemaVersion,
 } from './artifact-parse.mjs'
-import { SECTION, RE_DIVERGENCE, hasAlias } from './keywords.mjs'
+import { SECTION, RE_DIVERGENCE, RESULT, NO_DIVERGENCE, PRIORITIES, TIERS, STATUSES, hasAlias } from './keywords.mjs'
 import { loadLock } from './upstream.mjs'
 import { lintWarningPolicy } from './profile.mjs'
 import { useLocale } from './locale.mjs'
@@ -270,6 +270,44 @@ for (const d of Object.values(LINTED)) {
     if (best >= 0.25) continue
     add('warn', d.name, w.line + 1, 'test-drift', `${w.id} 의 \`tests:\` 가 수용 기준과 겹치지 않는다`,
       `covers 의 수용 기준 문장이 곧 테스트 이름이다(겹침 ${(best * 100).toFixed(0)}%). 기준을 옮겨 적거나, 정말 다른 것을 검사한다면 그 기준을 spec 에 먼저 더한다.`)
+  }
+}
+
+// 용어 표류 — 같은 이름을 문서마다 다르게 적는 것. 사람은 «비슷한 말» 로 읽고 넘어가지만 계약에서
+// `user_id` 와 `userId` 는 다른 필드고, 구현 에이전트는 그중 하나를 고른다. 백틱 안의 식별자만 본다:
+// 산문의 낱말은 굴절이 있어 기계가 같다고 못 하지만, 코드 스팬은 저자가 «이것은 정확한 이름이다» 라고
+// 표시한 자리다. 표기가 갈리는 것만 잡는다 — 뜻이 같은 다른 이름은 이 도구가 볼 수 없고, 보는 척하면
+// 안 본 것과 구분이 안 된다.
+if (!TEMPLATE) {
+  // Contract words are quoted in prose in whatever case the sentence wants (`Must` in a heading,
+  // «must» in a hint) — they are not names. Taken from keywords.mjs so a value added there does not
+  // become a drift candidate here. `--json` and `json` are an option and a word, not two spellings,
+  // and the frontmatter is a record, not prose: its quoted values are not where a name is spelled.
+  const key = (t) => t.toLowerCase().replace(/[_-]/g, '')
+  const STOP = new Set([...PRIORITIES, ...TIERS, ...STATUSES, ...Object.values(RESULT).flat(), ...NO_DIVERGENCE,
+    'true', 'false', 'null'].map(key))
+  const seen = new Map()
+  for (const d of Object.values(LINTED)) {
+    const fmEnd = /^---\r?\n[\s\S]*?\r?\n---/.exec(d.text)?.[0].split('\n').length ?? 0
+    d.lines.forEach((line, i) => {
+      if (!d.live[i] || i < fmEnd) return
+      for (const m of stripComments(line).matchAll(/`([^`\s]{3,60})`/g)) {
+        const tok = m[1]
+        if (/^-|[\/\\.:()[\]{}<>=,'"]/.test(tok) || idsIn(tok).length || !/[A-Za-z가-힣]/.test(tok)) continue
+        const k = key(tok)
+        if (STOP.has(k)) continue
+        const forms = seen.get(k) ?? seen.set(k, new Map()).get(k)
+        if (!forms.has(tok)) forms.set(tok, { doc: d.name, line: i + 1 })
+      }
+    })
+  }
+  for (const forms of seen.values()) {
+    if (forms.size < 2) continue
+    const [first, ...rest] = [...forms.entries()]
+    for (const [tok, at] of rest) {
+      add('warn', at.doc, at.line, 'term-drift', `«${tok}» 는 «${first[0]}» 의 다른 표기다 (${first[1].doc}:${first[1].line})`,
+        '같은 이름은 한 표기로 쓴다. 인터페이스 필드라면 spec 의 표기가 정본이고, 정말 다른 것이면 이름을 갈라 헷갈리지 않게 한다.')
+    }
   }
 }
 

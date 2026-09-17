@@ -20,6 +20,9 @@ export const FIELD = {
   at: ['at', '위치'],
   /** The date a research source was read. A source without one cannot be reread. */
   retrieved: ['retrieved', '조회'],
+  /** The scenarios a requirement realises. A `Must` scenario is a release slice; this field is how
+   *  it reaches the plan, whose tasks only cite requirements. */
+  scenario: ['scenario', '시나리오'],
 }
 
 /** Markers for required sections and applicable tiers. */
@@ -28,6 +31,12 @@ export const MARKER = {
   optional: ['optional', '선택'],
   allTiers: ['all tiers', '모든 티어'],
 }
+
+/** Priorities, tiers and statuses as they are quoted in prose. The checker keeps its own status table
+ *  per document kind; this flat list is for rules that must not mistake a contract word for a name. */
+export const PRIORITIES = ['Must', 'Should', 'Could', "Won't"]
+export const TIERS = ['light', 'standard', 'full']
+export const STATUSES = ['draft', 'in_review', 'accepted', 'in_progress', 'completed', 'rejected', 'superseded', 'deprecated', 'reviewed']
 
 /** Task results used by plan-check --result and execution-log entries. */
 export const RESULT = {

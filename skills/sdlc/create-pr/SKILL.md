@@ -35,6 +35,8 @@ ${CLAUDE_PLUGIN_ROOT}/skills/sdlc/create-pr/scripts/pr-context.sh [base]   # 브
   프로필의 `pr_split_hint` 가 들고 있으므로 물을 때 그 이유를 함께 전한다.
 - `artifact-set:`이 나오면 해당 산출물 세트가 이 PR의 근거다. `intent.md`·`spec.md`·`plan.md`를 읽는다.
   `artifact-set: none`이면 커밋과 diff가 유일한 출처다.
+- `unplanned-files:` 에 파일이 있으면 **본문을 쓰기 전에** 파일마다 판정한다 — plan 이 낡았나, PR 에서
+  뺄 것인가, spec 밖 변경으로 적을 것인가. 기준은 `references/pr.md` 의 «spec 이 부르지 않은 동작» 이다.
 
 인자로 브랜치명이 오면 베이스로 쓴다. 없으면 프로필의 `pr_base`, 그것도 없으면 `main` 이다.
 

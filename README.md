@@ -105,7 +105,7 @@ The form comes from each skill's `assets/*-template.md`.
 | `OUT-*` | Intended outcome | intent, §목표 결과 |
 | `CON-*` | Constraint, invariant | intent, §제약 |
 | `ASM-*` | Assumption | intent §가정, ADR §문맥과 결정 요인 |
-| `SCN-*` | Scenario | spec, §시나리오 |
+| `SCN-*` | Scenario — with a priority, a release slice that a requirement's `scenario:` realises | spec, §시나리오 |
 | `FR-*` | Functional requirement | spec, §요구사항 |
 | `NFR-*` | Non-functional requirement | spec, §비기능 요구사항 |
 | `AC-*` | Acceptance criterion | checkbox under an FR or NFR |

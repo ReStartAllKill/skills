@@ -28,6 +28,7 @@
 | `untestable-ac` | An acceptance criterion that is not a declarative sentence |
 | `test-drift` | A mismatch between a task's `tests:` and its acceptance criteria |
 | `test-drift-lang` | `tests:` written in another language, where the overlap cannot be measured |
+| `term-drift` | One backticked name spelled two ways across the set, such as `user_id` and `userId`. Only spelling variants: a different name for the same thing is beyond the tool, and it does not pretend otherwise |
 | `lang-unsupported` | An artifact written in a language other than the profile language |
 
 ## Character budgets

@@ -7,9 +7,9 @@ import {
   PREFIXES, FILES, WP_FIELDS, P_ALT, idsIn, stripComments, isNull, frontmatter,
   loadDir, isTemplate, report, SDLC_VERSION,
   SUPPORTED_SCHEMA_VERSIONS, schemaVersion, BODY_PIN, bodyHash, bodyPin,
-  levelsOf, wpFiles, ADR_FILENAME, loadAdrDir, CHAIN_FILES, scopeOf,
+  levelsOf, wpFiles, wpDeps, ADR_FILENAME, loadAdrDir, CHAIN_FILES, scopeOf,
   RESEARCH_SCHEMA, RE_RESEARCH_CITE, loadResearchIndex } from './artifact-parse.mjs'
-import { adrSeam, checkAdr, checkPins } from './adr-check.mjs'
+import { adrSeam, checkAdr, checkPins, checkTaskScope } from './adr-check.mjs'
 import { LOCK_FILE, upstreamSeam, loadLock, verifyLock, findUpstream, headOf, sameRepo } from './upstream.mjs'
 import { loadBands, revisedBy } from './bands.mjs'
 import { historicalPolicy } from './policy-history.mjs'
@@ -645,6 +645,27 @@ if (docs.spec) {
     err('spec.md', `${o.id}(Must) 를 덮는 요구사항이 없다`, 'intent 가 Must 로 약속한 결과인데 명세가 다루지 않는다. 요구사항을 더하거나 intent 에서 우선순위를 내린다.')
   }
 }
+// 시나리오의 우선순위는 배포 슬라이스다 — `Must` 시나리오 하나만 되어도 내보낼 가치가 있다는 뜻이고,
+// 요구사항이 `scenario:` 로 그것을 가리켜야 계획이 슬라이스를 먼저 세울 수 있다. 우선순위를 안 쓴
+// spec 은 예전 그대로다: 슬라이스는 선택이지 계약이 아니다. 경고로 둔다 — CI 의 --strict 가 막는다.
+const scns = of('spec', 'SCN')
+const scnOf = (r) => idsIn(field(r, ...FIELD.scenario)).filter((x) => x.startsWith('SCN-'))
+const mustScn = new Set(scns.filter(isMust).map((s) => s.id))
+const mustReqs = new Set(reqs.filter((r) => scnOf(r).some((x) => mustScn.has(x))).map((r) => r.id))
+const incrementReqs = new Set(reqs.filter((r) => !mustReqs.has(r.id) && scnOf(r).length).map((r) => r.id))
+if (docs.spec && scns.some((s) => s.priority)) {
+  const realised = new Set(reqs.flatMap(scnOf))
+  for (const s of scns) {
+    if (!s.priority) {
+      warn('spec.md', `${s.id} 에 우선순위가 없다 — 다른 시나리오에는 있다`,
+        '슬라이스를 나누기 시작했으면 시나리오마다 `Must`·`Should`·`Could` 를 단다. 하나만 비면 그 흐름이 첫 배포에 드는지 아무도 답하지 못한다.')
+      continue
+    }
+    if (!isMust(s) || realised.has(s.id)) continue
+    warn('spec.md', `${s.id}(Must) 를 실현하는 요구사항이 없다`,
+      '이 시나리오 하나만으로 배포 가치가 있다고 적었는데 어느 FR·NFR 도 `scenario:`(`시나리오:`) 로 이것을 가리키지 않는다. 슬라이스는 요구사항을 거쳐 작업으로 내려가므로, 가리키는 요구사항이 없으면 계획이 이 흐름을 먼저 세울 수 없다.')
+  }
+}
 for (const r of reqs) {
   if (!isMust(r)) continue
   if (acs.some((a) => a.parent === r.id)) continue
@@ -725,6 +746,31 @@ for (const h of of('finding', 'HYP')) {
 if (wps.length) {
   for (const w of wps) for (const p of wpFiles(w)) if (!validTaskPath(p)) err('plan.md', `${w.id} 의 files 는 저장소 안의 상대 경로여야 한다: ${p}`, '절대 경로와 저장소 밖 경로를 제거한다.')
   const { level, cycles, unknown } = levelsOf(wps)
+  // 첫 배포 슬라이스가 증분 뒤에 서면 안 된다. Must 시나리오의 몫인 작업이 — 직접이든 건너서든 —
+  // Should·Could 시나리오만 만드는 작업에 depends 하면, 슬라이스는 이름뿐이고 실제 배포 단위는 전부다.
+  // 어느 시나리오에도 안 걸린 작업(기반 작업)은 세지 않는다 — 그것이 앞에 서는 것은 당연하다.
+  if (mustReqs.size && !cycles.length) {
+    const reqOf = (id) => id.startsWith('AC-') ? ent(id)?.parent ?? null : id
+    const sliceOf = (w) => {
+      const rs = idsIn(field(w, 'covers')).map(reqOf).filter(Boolean)
+      return rs.some((r) => mustReqs.has(r)) ? 'must' : rs.some((r) => incrementReqs.has(r)) ? 'increment' : null
+    }
+    const byId = new Map(wps.map((w) => [w.id, w]))
+    const upstream = (w, seen = new Set()) => {
+      for (const d of wpDeps(w)) {
+        if (seen.has(d) || !byId.has(d)) continue
+        seen.add(d); upstream(byId.get(d), seen)
+      }
+      return seen
+    }
+    for (const w of wps) {
+      if (sliceOf(w) !== 'must') continue
+      const behind = [...upstream(w)].filter((d) => sliceOf(byId.get(d)) === 'increment')
+      if (!behind.length) continue
+      warn('plan.md', `${w.id} 은 Must 시나리오의 몫인데 증분 작업 ${behind.join('·')} 뒤에 선다`,
+        '첫 배포 슬라이스가 그 뒤의 증분을 기다린다. 의존을 끊거나, 그 작업이 정말 기반이면 그것이 만드는 요구사항의 `scenario:`(`시나리오:`) 를 Must 시나리오로 옮긴다.')
+    }
+  }
   for (const c of cycles) err('plan.md', `${c[0]} 의 \`depends\` 가 순환한다`, `${c.join(' → ')}. 순환하면 레벨이 정해지지 않아 실행 순서가 없다.`)
   for (const u of unknown) err('plan.md', `${u.id} 의 \`depends\` 가 없는 작업 ${u.dep} 를 가리킨다`, '오타이거나 그 작업이 빠졌다.')
   const byLevel = new Map()
@@ -776,6 +822,11 @@ if (!TEMPLATE) {
 
 if (!TEMPLATE) {
   checkPins(docs, { seam: SEAM }, (level, doc, msg, hint) => problems.push({ level, doc, msg, hint }))
+  // ADR 은 v5 가 들인 다섯째 산출물이다. 그 전 버전의 산출물 세트는 결정 기록이 없던 때에 썼으므로
+  // 여기서 새로 빨개지지 않는다 — 핀의 상태 검사(checkPins)는 핀이 적혀 있을 때만 돌아 버전 문이 필요 없다.
+  if (docs.plan && (schemaVersion(docs.plan.fm) ?? 0) >= 5) {
+    checkTaskScope(docs, { seam: SEAM }, (level, doc, msg, hint) => problems.push({ level, doc, msg, hint }))
+  }
 }
 
 

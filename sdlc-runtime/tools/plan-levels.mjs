@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve, join, basename } from 'node:path'
-import { loadDir, levelsOf, wpFiles, wpDeps, wpField, stripComments } from './artifact-parse.mjs'
+import { loadDir, levelsOf, wpFiles, wpDeps, wpField, stripComments, idsIn } from './artifact-parse.mjs'
 import { overlappingTaskPaths, validTaskPath } from './task-paths.mjs'
-import { SECTION, sectionBlock } from './keywords.mjs'
+import { SECTION, FIELD, sectionBlock } from './keywords.mjs'
 
 const argv = process.argv.slice(2)
 const JSON_OUT = argv.includes('--json')
@@ -53,6 +53,21 @@ const levels = [...byLevel.keys()].sort((a, b) => a - b).map((lv) => {
 for (const l of levels) for (const o of l.overlaps) problems.push(`레벨 ${l.n} 의 ${o.a} 와 ${o.b} 가 같은 파일을 만진다: ${o.files.join(', ')}`)
 const next = levels.find((l) => !l.done) ?? null
 
+// 슬라이스 보기 — 시나리오에 우선순위가 있을 때만 선다. 레벨은 «무엇이 먼저 도는가» 이고 슬라이스는
+// «어디까지 되면 내보낼 수 있는가» 라 다른 축이다. 한 축만 보면 Must 흐름의 마지막 작업이 레벨 3 에
+// 서 있어도 아무도 모른다.
+const specEnts = [...(docs.spec?.ents.values() ?? [])]
+const fieldOf = (e, names) => { for (const n of names) if (e.fields.has(n)) return e.fields.get(n); return '' }
+const scns = specEnts.filter((e) => e.id.startsWith('SCN-') && e.priority)
+const slices = scns.map((s) => {
+  const reqs = specEnts.filter((e) => /^(FR|NFR)-/.test(e.id) && idsIn(fieldOf(e, FIELD.scenario)).includes(s.id)).map((e) => e.id)
+  const acs = specEnts.filter((e) => e.kind === 'ac' && reqs.includes(e.parent)).map((e) => e.id)
+  const tasks = wps.filter((w) => idsIn(wpField(w, 'covers')).some((id) => reqs.includes(id) || acs.includes(id)))
+  return { id: s.id, title: s.title, priority: s.priority, requirements: reqs,
+    tasks: tasks.map((w) => w.id), done: tasks.filter((w) => w.done).length,
+    last_level: tasks.length ? Math.max(...tasks.map((w) => (level.get(w.id) ?? 0) + 1)) : null }
+})
+
 const out = {
   spec: DIR, slug: basename(DIR), root: ROOT,
   status: docs.plan.fm.status ?? null,
@@ -60,7 +75,7 @@ const out = {
   bootstrap: bootstrap || null, worktree_dir: yml('worktree_dir') || '.claude/worktrees',
   task_branch: yml('task_branch') || 'task/{slug}-{task}',
   verify: yml('verify') || null,
-  levels, next: next ? next.n : null, problems,
+  levels, slices, next: next ? next.n : null, problems,
 }
 
 if (JSON_OUT) { console.log(JSON.stringify(out, null, 2)); process.exit(problems.length ? 1 : 0) }
@@ -69,6 +84,13 @@ console.log(`실행 순서 — ${out.slug}  (status: ${out.status ?? '?'} · tar
 for (const l of levels) {
   const tag = l.done ? '완료' : next && l.n === next.n ? '지금부터' : ''
   console.log(`  레벨 ${l.n} [${l.mode}]: ${l.tasks.map((t) => `${t.done ? '[x]' : '[ ]'} ${t.id}`).join('  ')}${tag ? `   — ${tag}` : ''}`)
+}
+if (slices.length) {
+  console.log('\n슬라이스 — 시나리오 하나가 배포 단위다')
+  for (const s of slices) {
+    const where = s.tasks.length ? `${s.done}/${s.tasks.length} 완료 · 레벨 ${s.last_level} 에서 끝난다` : '작업 없음'
+    console.log(`  ${s.id} (${s.priority}) ${s.title}: ${s.tasks.join(' ') || '—'}   — ${where}`)
+  }
 }
 if (problems.length) { console.log(''); for (const p of problems) console.log(`  ✗ ${p}`) }
 console.log(`\n다음: ${next ? `레벨 ${next.n} (${next.tasks.filter((t) => !t.done).map((t) => t.id).join('·')}) · ${next.mode}` : '없음 — 모든 작업이 체크됐다'}`)

@@ -1,0 +1,7 @@
+{
+  "kind": "negative-control",
+  "why": "adr-scope-unpinned 와 같은 문서에 intent 가 `decisions: [\"ADR-004\"]` 를 단 것뿐이다. 핀은 세트 어느 문서에 있어도 되므로 plan 이 아니라 intent 에 달았다 — 이 케이스가 있어야 «scope 가 겹치면 무조건 경고하는» 도구가 만점을 못 받고, 핀이 정말 경고를 닫는다는 것이 시드 케이스와 같은 배치에서 확인된다.",
+  "check": { "errors": 0, "warns": 0 },
+  "lint": { "errors": 0, "warns": 0 },
+  "target": "specs/2026-09-06-store-quota"
+}

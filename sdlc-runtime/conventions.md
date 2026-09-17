@@ -87,6 +87,9 @@ and metric comparisons.
 
 - Definition: `### <ID> — <title>`; priority is `` `Must|Should|Could|Won't` ``.
 - Field: one `key: value` line, such as `basis:`, `verification:`, or `covers:`.
+- Slice: a priority on a scenario. A `Must` scenario is worth releasing on its own; a requirement
+  names the scenarios it realises with `scenario:`, which is how the slice reaches the plan. Either
+  every scenario carries a priority or none does — a spec without them has one slice.
 - Acceptance criterion: `- [ ] AC-001 — <when>, the system <does what>`.
 - Task: a checkbox followed by five indented fields.
 - Examples inside code fences do not count as definitions.
@@ -130,7 +133,7 @@ Markers narrow that.
 | `CON-*` | Constraint or invariant | intent §Constraints |
 | `ASM-*` | Assumption | intent §Assumptions |
 | `Q-*` | Open question | intent §Open questions |
-| `SCN-*` | Scenario | spec §Scenarios |
+| `SCN-*` | Scenario; with a priority, a release slice | spec §Scenarios |
 | `FR-*` | Functional requirement | spec §Requirements |
 | `NFR-*` | Non-functional requirement | spec §Non-functional requirements |
 | `AC-*` | Acceptance criterion | Checkbox under an FR/NFR |

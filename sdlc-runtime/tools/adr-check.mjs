@@ -1,6 +1,6 @@
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { resolve, join, relative } from 'node:path'
-import { ADR_FILENAME, idsIn, stripComments, isNull, loadAdrDir } from './artifact-parse.mjs'
+import { ADR_FILENAME, idsIn, stripComments, isNull, loadAdrDir, wpFiles } from './artifact-parse.mjs'
 import { SECTION, CHOSEN, hasAlias, canonical, ADR_STATUS_ALIASES, LEGACY_STATUS_ROW } from './keywords.mjs'
 import { locale } from './locale.mjs'
 const CHOSEN_RE = new RegExp(`\\((?:${CHOSEN.join('|')})\\)`, 'i')
@@ -271,6 +271,40 @@ export function checkPins(docs, { seam }, push) {
   }
 }
 
+/** A plan whose tasks touch code an accepted ADR constrains must pin that ADR. `task-brief` does
+ *  inject the decision into the writer prompt, but design is settled in the plan before any task
+ *  runs — a `TD-*` written without reading the decision is where a settled debate reopens. The pin
+ *  is the only evidence the plan saw it, and the only handle the status check has. A warning, not
+ *  an error: CI runs `--strict`, and a chain written before this rule should not go red on a hook. */
+export function checkTaskScope(docs, { seam }, push) {
+  if (!seam?.configured || !docs.plan) return
+  const wps = [...docs.plan.ents.values()].filter((e) => e.kind === 'wp')
+  if (!wps.length) return
+  const pinned = new Set(Object.values(docs)
+    .flatMap((d) => [].concat(d.fm?.decisions ?? []).map(String))
+    .map((p) => PIN.exec(p.trim())?.groups?.id).filter(Boolean))
+  const local = seam.dir ? loadAdrDir(seam.dir).docs : null
+  const manifest = seam.dir ? null : loadManifest(seam.manifest)
+  if (!local?.length && !manifest) return
+  const byAdr = new Map()
+  for (const w of wps) {
+    const files = wpFiles(w)
+    const hits = local
+      ? adrsForFiles(local, files, seam.self).map((d) => ({ id: String(d.fm?.id ?? d.name), title: String(d.fm?.title ?? '') }))
+      : manifestForFiles(manifest, files, seam.self).map((d) => ({ id: String(d.id), title: String(d.title ?? '') }))
+    for (const a of hits) {
+      if (pinned.has(a.id)) continue
+      ;(byAdr.get(a.id) ?? byAdr.set(a.id, { ...a, wps: [] }).get(a.id)).wps.push(w.id)
+    }
+  }
+  for (const a of byAdr.values()) {
+    // A decision in another repository moves; the pin form there carries the commit it was read at.
+    const pin = local ? `"${a.id}"` : `"${manifest.source ?? '<owner>/<repo>'}#${a.id}@<sha>"`
+    push('warn', 'plan.md', `${a.wps.join('·')} 의 files 가 ${a.id}(«${a.title}») 의 scope 를 만지는데 \`decisions:\` 에 없다`,
+      `결정을 읽고 그 안에서 설계했으면 \`decisions: [${pin}]\` 로 핀한다 — 핀이 있어야 검사기가 그 결정의 상태를 보고, 대체된 결정 위에 선 계획을 잡는다. 결정에서 벗어나는 설계면 TD-* 에 적지 말고 그 ADR 을 대체하는 새 ADR 을 먼저 쓴다.`)
+  }
+}
+
 export function adrDigest(doc) {
   const dec = sectionText(doc, titleIn(doc, 'decision'))
   const alts = alternativesOf(doc)
@@ -293,7 +327,10 @@ export function adrDigest(doc) {
   }
 }
 
-export function adrsForFiles(adrDocs, files) {
+/** `self` is the profile's `repo`. A scope entry may be written `acme/quota:src/storage`; `checkAdr`
+ *  reads that entry as this repository's through `scopeEntry`, so this must too — otherwise the
+ *  confirms check sees the decision and the task-scope check does not, on the same line. */
+export function adrsForFiles(adrDocs, files, self = null) {
   const norm = (p) => String(p).replace(/^\.\//, '').replace(/\/+$/, '')
   const touches = (scope, file) => {
     const s = norm(scope), f = norm(file)
@@ -301,7 +338,8 @@ export function adrsForFiles(adrDocs, files) {
   }
   return adrDocs.filter((d) => String(d.fm?.status ?? '') === 'accepted')
     .filter((d) => [].concat(d.fm?.scope ?? []).map(String).filter((v) => !isNull(v))
-      .some((s) => files.some((f) => touches(s, f))))
+      .map((s) => scopeEntry(s, self)).filter((e) => e.mine)
+      .some((e) => files.some((f) => touches(e.path, f))))
 }
 
 export function checkManifestDrift(manifest, { root, self }, push) {

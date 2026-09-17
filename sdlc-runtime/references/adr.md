@@ -136,6 +136,7 @@ decisions: ["ADR-005", "acme/docs#ADR-007@a1b2c3d"]
 - Use only the ID for a same-repository ADR; use `<owner>/<repo>#ADR-NNN@<sha>` across repositories.
 - When a change encounters a hard-to-reverse choice, do not decide it inside the artifact set. Pin an existing ADR or create the ADR first. A diagram, wiki, or meeting note cannot serve as the checked source of truth.
 - The checker verifies each pinned ADR's existence and status. Referencing a `superseded`, `deprecated`, or `rejected` ADR is an error.
+- The checker also reads the other direction: a plan task whose `files` fall inside an accepted ADR's `scope` must have that ADR pinned somewhere in the set, or it warns. Agent injection reaches the writer, but design decisions (`TD-*`) are settled in the plan before any task runs, and the pin is the only evidence the plan saw the decision — and the only handle the status check has. Design within the decision and pin it; design against it and write the superseding ADR first, never a `TD-*`.
 
 ## Profile seam
 

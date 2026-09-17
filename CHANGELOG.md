@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.9.0 — 2026-09-17
+
+### Added
+
+Four things spec-kit does that this harness did not, each taken in the form this harness can
+check deterministically rather than the form spec-kit's agent prompts judge.
+
+- **A plan that touches code an accepted ADR constrains must pin that ADR.** spec-kit's
+  Constitution Check makes the plan confront the project's standing rules before design; here the
+  standing rules are ADRs, and the deterministic form is `scope`. When a task's `files` fall inside
+  an accepted ADR's `scope` and no document in the set pins it in `decisions:`, the checker warns.
+  `task-brief` already injects the decision into the writer prompt, but `TD-*` is settled in the
+  plan before any task runs, and the pin is the only evidence the plan saw it — and the only
+  handle the status check has. A warning: CI runs `--strict` and gates there; a hook does not
+  turn a set written before the rule red. Design against the decision goes into a superseding ADR,
+  never a `TD-*`.
+- **A scenario can name a release slice.** spec-kit prioritises user stories so that one story
+  alone is a shippable MVP. A scenario here may now carry `` `Must` ``/`` `Should` ``/`` `Could` ``,
+  and a requirement names the scenarios it realises with `scenario:` — that field is how the slice
+  reaches the plan, whose tasks cite requirements only. The checker warns on a `Must` scenario no
+  requirement realises, on a set where only some scenarios carry a priority, and on a `Must`-slice
+  task that waits — directly or transitively — on a task realising only `Should`/`Could`
+  scenarios. `plan-levels.mjs` prints each slice with the level at which it completes. A spec
+  without priorities has one slice and behaves as before.
+- **`pr-context.sh` lists the files no task declared.** spec-kit's `converge` classifies work
+  the spec never asked for as `unrequested`; the deterministic half of that is a changed file
+  outside every task's `files`. The task commit tool keeps each task inside its scope, but a
+  branch also carries fix-ups made outside any task, and that is where behaviour the spec never
+  asked for arrives. `/create-pr` settles each one before writing the body: the plan is stale,
+  the commit leaves the PR, or `### Changes` carries it with `(spec 밖)`.
+- **`term-drift` in the linter.** One backticked name spelled two ways across the set —
+  `user_id` and `userId`, `CANCELLED` and `Cancelled`. Only backticked spans, because that is
+  where the author has marked «this is the exact name», and only spelling variants: a different
+  name for the same thing is beyond a deterministic tool, and the rule does not pretend to see it.
+
 ## 0.8.0 — 2026-09-17
 
 ### Added

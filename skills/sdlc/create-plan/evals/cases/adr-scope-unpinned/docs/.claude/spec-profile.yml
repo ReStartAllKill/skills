@@ -1,0 +1,4 @@
+sdlc_version: 7
+spec_dir: "specs"
+adr_dir: "adr"
+adr_index: "adr/index.md"
