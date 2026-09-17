@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.8.0 — 2026-09-17
+
+### Added
+
+- **An artifact set records what it cost in model tokens.** Nothing in a repository says how
+  many tokens a document took to write — the count lives only in the session transcript, which
+  is not committed and does not survive, so it is the one indicator here that is captured rather
+  than derived. `gate-artifacts.sh` now appends a snapshot to `<verify_log_dir>/usage/<set>.json`
+  on every edit to an artifact inside a set, and `usage-ledger.mjs report` and `sdlc-metrics.mjs`
+  read it back as tokens and dollars.
+
+  The snapshot is a delta against the session's last recorded point *anywhere* in the repository,
+  not against the last entry in that ledger: a session that touched two sets would otherwise have
+  its whole cumulative usage charged to both. It is written before the blocking checks, not after
+  — a rejected edit spent its tokens too, and charging only the edits that passed would make
+  rework look free.
+
+- **`pricing.mjs`** holds the published Anthropic rates in whole micro-USD, and every snapshot
+  copies the rows it applied. A ledger that stored only tokens and repriced at read time would
+  rewrite what past work cost the moment the table was edited. Cache writes are priced by the TTL
+  the transcript reports rather than by one assumed rate, and fast mode is a separate row.
+
+### Changed
+
+- `sdlc-lib.sh` gains `sdlc_hook_slurp`, which reads the hook's stdin once so a hook can take
+  more than one field from it. Without it the second `sdlc_hook_field` returns empty, and that
+  empty value is indistinguishable from an absent field. `sdlc_resolve` now also sets `SDLC_KIND`
+  (`set` or `adr`), because an ADR has no set directory and a caller that guessed one from
+  `dirname` would treat the whole decision directory as a single set.
+- `sdlc-metrics.mjs` reports `usage_tokens` and `usage_cost` under Cost. A set with no ledger is
+  `unmeasured`, never 0 — it must not join a median as a free set — and a set containing a model
+  with no published rate reports no cost at all rather than a total that quietly omits it.
+
 ## 0.7.1 — 2026-09-15
 
 ### Fixed

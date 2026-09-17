@@ -6,8 +6,13 @@
 set -uo pipefail
 . "$(dirname "$0")/sdlc-lib.sh"
 
+# 훅으로 직접 등록되면 stdin 의 JSON 에서 경로와 트랜스크립트 두 가지를 읽는다. stdin 은 한 번만
+# 읽히므로 먼저 통째로 담아 둔다. 저장소 훅이 경로를 인자로 위임한 경우에는 stdin 에 아무것도 없다.
 file="${1:-}"
-[ -n "$file" ] || file="$(sdlc_hook_field tool_input.file_path)"
+if [ -z "$file" ]; then
+  sdlc_hook_slurp
+  file="$(sdlc_hook_field tool_input.file_path)"
+fi
 sdlc_resolve "$file" || exit 0
 
 # 런타임이 없으면 차단하지 않는다. 검사를 건너뛴 사실은 stderr에 남긴다.
@@ -21,6 +26,20 @@ fi
 if ! NODE="$(sdlc_node)"; then
   sdlc_say "node 를 못 찾았다 — 산출물 검사를 건너뛴다. 통과가 아니라 미검사다."
   exit 0
+fi
+
+# 토큰 사용량은 차단 검사보다 **먼저** 적는다. 검사에 걸린 편집도 토큰은 이미 썼고, 통과한
+# 편집만 기록하면 되돌린 작업의 비용이 장부에서 통째로 사라진다 — 재작업이 공짜로 보인다.
+# 기록 실패는 절대 편집을 막지 않는다. 장부는 관문이 아니라 관측이다.
+# ADR 은 세트 디렉터리가 없어 제외한다 (SDLC_KIND).
+if [ "${SDLC_KIND:-}" = "set" ] && [ -f "$RUNTIME/tools/usage-ledger.mjs" ]; then
+  transcript="$(sdlc_hook_field transcript_path)"
+  # 배열로 넘긴다. ${x:+--flag "$x"} 는 따옴표가 확장 **안쪽** 이라 단어 분리를 막지 못하고,
+  # 트랜스크립트 경로는 프로젝트 경로를 그대로 담아 공백이 들어갈 수 있다.
+  usage_args=(record --root "$TREE" --set "$(dirname "$file")" --doc "$file")
+  [ -n "$transcript" ] && usage_args+=(--transcript "$transcript")
+  "$NODE" "$RUNTIME/tools/usage-ledger.mjs" "${usage_args[@]}" 2>&1 \
+    | while IFS= read -r l; do sdlc_say "$l"; done
 fi
 
 # 폴더 단위로 검사해 방금 고친 파일 때문에 옆 문서가 깨지는 경우를 잡는다.

@@ -40,7 +40,7 @@
  *
  * A <metric> is exactly one of:
  *   { "seconds": 172800 }                           // duration; `note` may accompany it
- *   { "count": 2 }                                  // whole number
+ *   { "count": 2 }                                  // whole number; usage_cost counts micro-USD
  *   { "share": 0.333, "numerator": 1, "denominator": 3 }
  *   { "unmeasured": "<reason>" }                    // never null, never 0, never absent
  *
@@ -61,6 +61,8 @@ import { resolve, join, relative, basename } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { loadDir, frontmatter, stripComments, isNull, idsIn } from './artifact-parse.mjs'
 import { SECTION, sectionBlock, RE_DIVERGENCE, NO_DIVERGENCE, RE_NA, hasAlias } from './keywords.mjs'
+import { ledgerFor, total as usageTotal } from './usage-ledger.mjs'
+import { formatUsd } from '../pricing.mjs'
 
 const DOCS = ['intent.md', 'spec.md', 'plan.md', 'finding.md']
 const CHAIN = ['intent', 'spec', 'plan']
@@ -229,7 +231,7 @@ const KIND = {
   intent_lead: 'duration', spec_lead: 'duration', plan_lead: 'duration', build_lead: 'duration',
   finding_route_lead: 'duration', wall_days: 'duration',
   intent_rework: 'count', spec_rework_after_build: 'count', review_returns: 'count',
-  set_commits: 'count', doc_chars: 'count',
+  set_commits: 'count', doc_chars: 'count', usage_tokens: 'count', usage_cost: 'count',
   plan_deviation_share: 'share', verify_first_pass: 'share',
 }
 
@@ -246,6 +248,8 @@ const METRICS = [
   ['verify_first_pass', 'Test / first-pass verify success'],
   ['finding_route_lead', 'Maintain / breach-to-route time'],
   ['doc_chars', 'Cost / document characters'],
+  ['usage_tokens', 'Cost / model tokens recorded'],
+  ['usage_cost', 'Cost / recorded token spend'],
   ['set_commits', 'Cost / commits in the set'],
   ['wall_days', 'Cost / wall-clock span'],
 ]
@@ -413,6 +417,19 @@ function measure(dir) {
     ? { count: Object.values(chars).reduce((a, b) => a + b, 0), by_doc: chars }
     : no('no intent.md, spec.md or plan.md (a finding size is under docs.finding.chars)')
 
+  /** The one indicator here that is captured rather than derived. A session transcript is not in
+   * the repository and does not survive, so there is nothing to reconstruct it from later; the
+   * gate writes it down when the artifact is edited and this only reads it back. An absent ledger
+   * is `unmeasured`, never 0 — a set whose usage was never recorded and a set that cost nothing
+   * would otherwise land in the same median and drag it. */
+  const usage = usageTotal(ledgerFor(ROOT, basename(dir)))
+  m.usage_tokens = usage.unmeasured ? no(usage.unmeasured) : { count: usage.total_tokens, by_bucket: usage.tokens }
+  m.usage_cost = usage.unmeasured
+    ? no(usage.unmeasured)
+    : usage.micro_usd == null
+      ? no(`priced models only — no published rate for ${usage.unpriced_models.join(', ')}`)
+      : { count: usage.micro_usd, ...(usage.assumptions.length ? { assumptions: usage.assumptions } : {}) }
+
   m.set_commits = all.length ? count(all.length) : no('not committed')
   m.wall_days = all.length
     ? secs(all[0].at, all[all.length - 1].at, all.length === 1 ? 'a single commit' : undefined)
@@ -501,6 +518,12 @@ const show = (key, v) => {
   if (KIND[key] === 'share') return `${v.numerator}/${v.denominator}  (${Math.round(v.share * 100)}%)` +
     (key === 'verify_first_pass' && v.denominator - v.numerator ? `  ${v.denominator - v.numerator} failed` : '')
   if (key === 'doc_chars') return `${v.count}  (${Object.entries(v.by_doc).map(([k, n]) => `${k} ${n}`).join(' · ')})`
+  if (key === 'usage_tokens') return `${v.count.toLocaleString()}  (in ${v.by_bucket.input.toLocaleString()} · cache write ` +
+    `${(v.by_bucket.cache_5m + v.by_bucket.cache_1h).toLocaleString()} · cache read ${v.by_bucket.cache_read.toLocaleString()} · ` +
+    `out ${v.by_bucket.output.toLocaleString()})`
+  // Micro-USD is what the ledger stores, because a float total is not reproducible. Only the
+  // rendering turns it into money.
+  if (key === 'usage_cost') return formatUsd(v.count) + (v.assumptions?.length ? `  (assumed: ${v.assumptions.join('; ')})` : '')
   return String(v.count)
 }
 
@@ -525,7 +548,8 @@ for (const [key, label] of METRICS) {
   const a = aggregate[key]
   if (!isValue(a)) { console.log(`  ${pad(label)}  unmeasured — ${a.unmeasured}`); continue }
   if (KIND[key] === 'duration') console.log(`  ${pad(label)}  median ${human(a.median_seconds)}  (${a.sets} set(s))`)
-  else if (KIND[key] === 'count') console.log(`  ${pad(label)}  median ${a.median}  total ${a.total}  (${a.sets} set(s))`)
+  else if (key === 'usage_cost') console.log(`  ${pad(label)}  median ${formatUsd(a.median)}  total ${formatUsd(a.total)}  (${a.sets} set(s))`)
+  else if (KIND[key] === 'count') console.log(`  ${pad(label)}  median ${a.median.toLocaleString()}  total ${a.total.toLocaleString()}  (${a.sets} set(s))`)
   else console.log(`  ${pad(label)}  median ${Math.round(a.median_share * 100)}%  ${a.numerator}/${a.denominator} overall  (${a.sets} set(s))`)
 }
 const surv = aggregate.intent_survival

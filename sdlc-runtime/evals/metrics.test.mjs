@@ -312,3 +312,67 @@ test('--set narrows to one directory and --since drops earlier sets', () => {
   assert.equal(only(json(d, '--since', '2026-01-20')).id, 'INT-B')
   assert.equal(json(d, '--since', '2026-01-01').sets.length, 2)
 })
+
+// ── usage ──────────────────────────────────────────────────────────────────────────────────────
+
+/** The usage ledger is the one input here that git cannot supply, so these tests write it by hand
+ * the way `usage-ledger.mjs record` would. Its own arithmetic is covered in usage-ledger.test.mjs;
+ * what matters here is that a set with no ledger stays unmeasured rather than joining a median
+ * at zero. */
+const ledger = (root, setName, snapshots) =>
+  put(join(root, '.sdlc/verify/usage', `${setName}.json`), JSON.stringify({ version: 1, set: setName, snapshots }))
+
+const snapshot = (micro, tokens) => ({
+  at: iso(T0), doc: 'spec.md', session: 's1', messages: 1,
+  tokens: { 'claude-opus-5': { input: 0, output: 0, cache_5m: 0, cache_1h: 0, cache_read: 0, ...tokens } },
+  micro_usd: micro, by_model_micro_usd: { 'claude-opus-5': micro }, rates: {}, rates_as_of: '2026-06-24',
+  unpriced_models: [], assumptions: [],
+})
+
+test('recorded token spend is reported per set and totalled in dollars', () => {
+  const d = repo('m-usage', 'sdlc_version: 5\nlang: en\nspec_dir: ".sdlc/specs"\nverify_log_dir: ".sdlc/verify"\nverify: "true"\n')
+  const set = join(d, '.sdlc/specs/2026-01-05-usage')
+  put(join(set, 'intent.md'), doc('intent', { id: 'INT-2026-020', status: 'accepted', approved_by: 'owner' }, 'An idea.\n'))
+  commit(d, 'intent', T0)
+  ledger(d, '2026-01-05-usage', [snapshot(25_000_000, { output: 1_000_000 }), snapshot(500_000, { cache_read: 1_000_000 })])
+
+  const s = only(json(d))
+  assert.equal(s.metrics.usage_tokens.count, 2_000_000)
+  assert.equal(s.metrics.usage_cost.count, 25_500_000)
+
+  const text = tool(d)
+  assert.equal(text.code, 0, text.out)
+  assert.match(text.out, /Cost \/ recorded token spend\s+\$25\.50/)
+})
+
+test('a set with no ledger is unmeasured, so it never joins the median at zero', () => {
+  const d = repo('m-usage-none', 'sdlc_version: 5\nlang: en\nspec_dir: ".sdlc/specs"\nverify_log_dir: ".sdlc/verify"\nverify: "true"\n')
+  const priced = join(d, '.sdlc/specs/2026-01-05-priced')
+  const silent = join(d, '.sdlc/specs/2026-01-06-silent')
+  put(join(priced, 'intent.md'), doc('intent', { id: 'INT-2026-021', status: 'accepted', approved_by: 'owner' }, 'One.\n'))
+  put(join(silent, 'intent.md'), doc('intent', { id: 'INT-2026-022', status: 'accepted', approved_by: 'owner' }, 'Two.\n'))
+  commit(d, 'two sets', T0)
+  ledger(d, '2026-01-05-priced', [snapshot(10_000_000, { output: 400_000 })])
+
+  const report = json(d)
+  const bySet = Object.fromEntries(report.sets.map((s) => [s.id, s.metrics]))
+  assert.equal(bySet['INT-2026-021'].usage_cost.count, 10_000_000)
+  assert.match(bySet['INT-2026-022'].usage_cost.unmeasured, /no usage ledger/)
+  // One set contributed, and the median is that set's value — not half of it.
+  assert.equal(report.aggregate.usage_cost.sets, 1)
+  assert.equal(report.aggregate.usage_cost.median, 10_000_000)
+})
+
+test('an unpriced model leaves the cost unmeasured while the token count survives', () => {
+  const d = repo('m-usage-unpriced', 'sdlc_version: 5\nlang: en\nspec_dir: ".sdlc/specs"\nverify_log_dir: ".sdlc/verify"\nverify: "true"\n')
+  const set = join(d, '.sdlc/specs/2026-01-05-unpriced')
+  put(join(set, 'intent.md'), doc('intent', { id: 'INT-2026-023', status: 'accepted', approved_by: 'owner' }, 'An idea.\n'))
+  commit(d, 'intent', T0)
+  ledger(d, '2026-01-05-unpriced', [{
+    ...snapshot(null, { output: 1_000_000 }), micro_usd: null, unpriced_models: ['claude-from-the-future'],
+  }])
+
+  const s = only(json(d))
+  assert.equal(s.metrics.usage_tokens.count, 1_000_000)
+  assert.match(s.metrics.usage_cost.unmeasured, /no published rate for claude-from-the-future/)
+})

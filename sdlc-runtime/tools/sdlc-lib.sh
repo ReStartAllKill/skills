@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 훅이 공유하는 해석 로직. 저장소 루트, 산출물 여부, 런타임 경로를 판정한다.
-# source해서 사용하며 TREE·SPEC_DIR·ADR_DIR·RUNTIME 전역 변수를 채운다.
+# source해서 사용하며 TREE·SPEC_DIR·ADR_DIR·RUNTIME·SDLC_KIND 전역 변수를 채운다.
 
 sdlc_say() { printf 'sdlc: %s\n' "$1" >&2; }
 
@@ -27,6 +27,17 @@ sdlc_node() {
     [ -n "$c" ] && [ -x "$c" ] && { printf '%s' "$c"; return 0; }
   done
   return 1
+}
+
+# 훅 입력을 한 번만 읽어 SDLC_HOOK_JSON 에 담는다. stdin 은 한 번밖에 못 읽으므로,
+# 두 필드 이상이 필요한 훅은 먼저 이것을 부른다 — 부르지 않으면 두 번째 sdlc_hook_field 가
+# 빈 값을 내고, 그 빈 값은 «필드가 없다» 와 구분되지 않는다.
+# 파일 경로를 인자로 받은 위임 호출에서는 stdin 에 훅 JSON 이 없으므로 부르지 않는다.
+sdlc_hook_slurp() {
+  [ -n "${SDLC_HOOK_JSON-}" ] && return 0
+  [ -t 0 ] && return 0
+  SDLC_HOOK_JSON="$(cat)"
+  export SDLC_HOOK_JSON
 }
 
 # 훅 JSON에서 필드 하나를 뽑는다. python3가 없는 환경이 있어 node로 읽는다.
@@ -111,14 +122,17 @@ sdlc_resolve() {
   # research.md 도 여기 든다. 산출물 세트 밖에 살지만 쓰는 도구는 같고, 한 종류만 CI 에서야 검사받으면
   # «쓰는 동안 검증한다» 는 약속이 그 종류에서만 조용히 꺼진다. 승인 가드는 조사 문서를 그대로
   # 통과시킨다 — 조사에는 승인 전이가 없다.
+  # SDLC_KIND 은 호출자가 «산출물 세트 안» 과 «그 밖의 단독 문서» 를 구분하는 유일한 수단이다.
+  # ADR 은 세트 디렉터리에 살지 않아서, 세트 단위로 기록하는 쪽이 dirname 으로 짐작하면
+  # docs/adr 전체가 한 세트인 것처럼 보인다.
   case "$file" in
     "$TREE/$SPEC_DIR"/*/intent.md|"$TREE/$SPEC_DIR"/*/spec.md|\
     "$TREE/$SPEC_DIR"/*/plan.md|"$TREE/$SPEC_DIR"/*/finding.md|\
-    "$TREE/$SPEC_DIR"/*/research.md) ;;
+    "$TREE/$SPEC_DIR"/*/research.md) SDLC_KIND=set ;;
     *)
       [ -n "$ADR_DIR" ] || return 1
       case "$file" in
-        "$TREE/$ADR_DIR"/ADR-[0-9][0-9][0-9]-*.md|"$TREE/$ADR_DIR"/ADR-[0-9][0-9][0-9][0-9]-*.md) ;;
+        "$TREE/$ADR_DIR"/ADR-[0-9][0-9][0-9]-*.md|"$TREE/$ADR_DIR"/ADR-[0-9][0-9][0-9][0-9]-*.md) SDLC_KIND=adr ;;
         *) return 1 ;;
       esac
       ;;
