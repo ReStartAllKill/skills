@@ -32,6 +32,10 @@ SDLC-Plan: .sdlc/specs/2026-09-05-search/plan.md
 
 A commit with the same task ID but a different plan path does not belong to the task.
 
+A squash merge concatenates every task commit's message and joins their trailers, so a merged commit may read `SDLC-Task: WP-001, WP-002` or carry several trailer pairs. Both forms attribute the commit to each task named. A trailer line containing anything that is not a task ID attributes nothing — a garbled line must not be read as a partial match.
+
+Attribution scans every commit reachable from the evidence point, not only those after the plan entered Git. The plan path in the trailer already binds a commit to this plan; a lower bound at the plan's first commit only ever excluded evidence, most visibly in a repository that started tracking an artifact directory it had ignored until then. The file-history hint still starts at that commit, because a file touched before the plan existed says nothing about the plan.
+
 ## Verification and completion
 
 Run the profile's complete `verify` command through `verify-run.mjs` at the final level. Run additional gates, and intermediate task-scoped runs, separately with `--label`. Logs go under `<verify_log_dir>/<slug>/` and are committed with the plan update.
@@ -51,6 +55,10 @@ Write that deviation as one sentence: what differed and how. `mark` refuses a `-
 - The verified Git HEAD remains in current history and contains the task commits.
 
 An active plan is compared with current files. For a committed completed plan, the tool reads the files, tests, profile, and verification logs as of the final plan commit, so later artifact-set changes are not applied retroactively. Checkbox and Execution log edits do not affect a task fingerprint. A legacy log without task and repository fingerprints, or a task commit without `SDLC-Plan`, is not v4 completion evidence. Reverify or inspect the real task history instead of fabricating records.
+
+## Acceptance criteria
+
+The spec's `- [ ] AC-001` boxes are never ticked, by any tool or by hand. Schema 7 pins the spec body byte for byte in the plan's `spec_version`, and the approval guard refuses body edits to an accepted document; a spec whose text can drift after approval is a spec nobody approved. A criterion is instead derived: it is satisfied when every task whose `covers` names it — directly, or through its requirement — is checked. `plan-progress.mjs` reports the result under «수용 기준» and in `acceptance` of its `--json` output, and `mark` names the criteria a check completed. A criterion no task covers is reported as uncovered rather than as open, and a box ticked by hand in the spec is reported as a claim without evidence.
 
 The final full verification passes every task ID in the plan to `--tasks`, and its log is the completion evidence for all of them. An intermediate join point may instead run the profile's `verify_scoped` with `--label scoped`, which records what ran without claiming completion: a labelled log is never completion evidence, whatever command it ran. Git-ignored environment files and external-service state are outside the fingerprint, so reverify after those conditions change. Test-name presence is only a supporting check. Determine whether a test verifies its behavior by comparing code and tests against each AC and by independent audit. Check additional gates and required manual verification separately.
 

@@ -3,7 +3,7 @@ import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { resolve, join, relative, basename } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { taskFingerprint, repositoryFingerprint } from './task-evidence.mjs'
-import { loadDir, stripComments, idsIn, schemaVersion } from './artifact-parse.mjs'
+import { loadDir, stripComments, idsIn, schemaVersion, wpField } from './artifact-parse.mjs'
 import { parseCommitRecords, ownsTaskCommit } from './commit-records.mjs'
 import { taskFiles } from './task-paths.mjs'
 import { SECTION, sectionBlock, RE_NA, RE_CHANGE_LOG } from './keywords.mjs'
@@ -124,9 +124,18 @@ const integratedBy = (task, commits) => {
   }).map((l) => l.file)
 }
 
+/** Every commit reachable from the evidence point, not only those after the plan was added.
+ *
+ * This used to be `born..HEAD`. The `SDLC-Plan:` trailer already binds a task commit to this
+ * exact plan path, so the lower bound bought nothing — and it cost everything the moment a
+ * repository started tracking an artifact directory it had ignored until then: `born` became the
+ * newest commit, the window held zero commits, and every task in every plan read «no attributed
+ * commit» while its trailered commits sat right below. sdlc-metrics.mjs never had the bound, so
+ * the two tools disagreed about the same history. The file-commit hint below keeps `born`,
+ * because a file touched before the plan existed is not evidence for the plan. */
 const commitRecords = (() => {
-  if (!inGit || !born) return []
-  const out = git('log', '--format=%H%x1f%B%x1e', `${born}..${evidenceRef ?? 'HEAD'}`) ?? ''
+  if (!inGit) return []
+  const out = git('log', '--format=%H%x1f%B%x1e', evidenceRef ?? 'HEAD') ?? ''
   return parseCommitRecords(out)
 })()
 const taskCommits = (id) => commitRecords.filter((c) => ownsTaskCommit(c, id, planPath)).map((c) => c.hash)
@@ -211,15 +220,58 @@ if (PLAN_SCHEMA >= TASK_EVIDENCE_SCHEMA && docs.plan.fm.status === 'completed') 
   if (open.length) notes.push({ level: 'error', id: 'plan.md', msg: `completed 인데 미완료 작업이 있다: ${open.join(' · ')}`, hint: '모든 작업과 검증을 끝낸 뒤 completed 로 바꾼다.' })
 }
 
+/** Acceptance criteria, derived from the plan rather than read from the spec's own boxes.
+ *
+ * The spec carries `- [ ] AC-001` and nothing ever ticks it, and nothing can: schema 7 pins the
+ * spec body byte for byte in the plan's `spec_version`, and the approval guard refuses body edits
+ * to an accepted document. Both are deliberate — a spec whose text can drift after approval is
+ * a spec nobody approved. So a criterion is satisfied when every task that covers it is checked,
+ * and the answer lives here, next to the task evidence it is made of, instead of in the document
+ * it describes. A criterion no task covers is reported as such rather than as open: «no one is
+ * building this» and «this is not built yet» call for different actions.
+ *
+ * `covers: FR-001 (AC-001, AC-002)` names criteria directly; a bare `FR-001` covers every
+ * criterion under that requirement, the reading lint-prose already applies. */
+const acceptance = (() => {
+  if (!docs.spec) return null
+  const acs = [...docs.spec.ents.values()].filter((e) => e.kind === 'ac')
+  if (!acs.length) return []
+  const byId = Object.fromEntries(rows.map((r) => [r.id, r]))
+  const covering = new Map(acs.map((a) => [a.id, []]))
+  for (const w of wps) {
+    const covers = wpField(w, 'covers')
+    const direct = new Set([...covers.matchAll(/\bAC-\d{1,4}\b/g)].map((m) => m[0]))
+    const reqs = new Set([...covers.matchAll(/\b(?:FR|NFR)-\d{1,4}\b/g)].map((m) => m[0]))
+    for (const a of acs) {
+      if (direct.has(a.id) || (a.parent && reqs.has(a.parent) && !direct.size)) covering.get(a.id).push(w.id)
+    }
+  }
+  return acs.map((a) => {
+    const by = covering.get(a.id)
+    return {
+      id: a.id, title: a.title, requirement: a.parent,
+      covered_by: by,
+      done: by.length > 0 && by.every((id) => byId[id]?.done),
+      // What the spec file says, kept so a hand-ticked box is visible as a claim without evidence.
+      claimed: /\[[xX]\]/.test(docs.spec.lines[a.line]),
+    }
+  })
+})()
+
+for (const a of acceptance ?? []) {
+  if (!a.covered_by.length) notes.push({ level: 'warn', id: a.id, msg: '어느 작업의 covers 에도 없다', hint: 'spec 의 기준인데 plan 이 짓지 않는다. 작업의 covers 에 더하거나, 기준을 빼는 /iterate-spec 이 필요하다.' })
+  if (a.claimed && !a.done) notes.push({ level: 'warn', id: a.id, msg: 'spec.md 에 손으로 체크돼 있지만 덮는 작업이 다 끝나지 않았다', hint: '체크는 여기서 파생된다. spec 의 박스는 증거가 아니다 — 되돌리고 작업을 끝낸다.' })
+}
+
 if (JSON_OUT) {
-  console.log(JSON.stringify({ dir: DIR, born, logDir, rows, notes }, null, 2))
+  console.log(JSON.stringify({ dir: DIR, born, logDir, rows, acceptance, notes }, null, 2))
   process.exit(notes.some((n) => n.level === 'error') || (STRICT && notes.some((n) => n.level === 'warn')) ? 1 : 0)
 }
 
 const mark = (r) => (r.done ? '[x]' : '[ ]')
 console.log(`작업 진행 — ${basename(DIR)}  (status: ${docs.plan.fm.status ?? '?'}, 작업 ${rows.length}개)`)
 if (!inGit) console.log('  · git 저장소가 아니다 — 커밋 대조를 건너뛴다. 체크박스만 보인다.')
-else if (!born) console.log('  · plan.md 의 최초 커밋을 못 찾았다 — 최근 20개 커밋만 본다.')
+else if (!born) console.log('  · plan.md 의 최초 커밋을 못 찾았다 — 파일 이력은 최근 20개 커밋만 본다. 트레일러 귀속은 전체 이력을 본다.')
 console.log('')
 for (const r of rows) {
   const c = r.commits.length ? `귀속 커밋 ${r.commits.length} (${r.commits[0]})` : '귀속 커밋 없음'
@@ -227,6 +279,18 @@ for (const r of rows) {
   const t = r.tests.total ? (r.tests.checked ? `tests ${r.tests.total - r.tests.missing.length}/${r.tests.total}` : `tests ?/${r.tests.total}`) : 'tests 없음'
   const v = r.verified.length ? ` · verify ${r.verified.length}` : ''
   console.log(`  ${mark(r)} ${r.id}  ${c} · ${f} · ${t}${v}${r.logged ? ' · 기록됨' : ''}${r.dirty.length ? ` · 더티 ${r.dirty.length}` : ''}`)
+}
+if (acceptance?.length) {
+  const met = acceptance.filter((a) => a.done).length
+  console.log(`\n수용 기준 ${met}/${acceptance.length}  (plan 의 체크에서 파생 — spec.md 의 박스는 고치지 않는다)`)
+  for (const a of acceptance) {
+    const by = a.covered_by.length ? `← ${a.covered_by.join(' ')}` : '← 덮는 작업 없음'
+    console.log(`  ${a.done ? '[x]' : '[ ]'} ${a.id}  ${by}${a.requirement ? `  (${a.requirement})` : ''}`)
+  }
+} else if (acceptance) {
+  console.log('\n수용 기준 — spec.md 에 `- [ ] AC-…` 줄이 없다')
+} else {
+  console.log('\n수용 기준 — spec.md 가 없어 파생할 수 없다')
 }
 if (notes.length) {
   console.log('')

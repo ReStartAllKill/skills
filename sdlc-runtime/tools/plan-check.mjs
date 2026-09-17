@@ -141,6 +141,19 @@ if (CMD === 'mark') {
   writeFileSync(PLAN, next)
   console.log(`${TASK} → ${mark}  (${relative(ROOT, PLAN)})`)
   console.log(`  ${shown}`)
+  // Acceptance criteria are derived from the plan's checks, never written into spec.md — its body
+  // is pinned by `spec_version` and guarded once accepted. Say which ones this check completed,
+  // so the answer to «is AC-003 done?» is visible at the moment it becomes true.
+  if (RESULT_KEY === 'done') {
+    const before = new Set((progress.acceptance ?? []).filter((a) => a.done).map((a) => a.id))
+    const after = (() => {
+      const r = spawnSync(process.execPath, [join(HERE, 'plan-progress.mjs'), DIR, '--json'], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 })
+      try { return JSON.parse(r.stdout).acceptance ?? [] } catch { return [] }
+    })()
+    const met = after.filter((a) => a.done && !before.has(a.id)).map((a) => a.id)
+    const total = after.length
+    if (met.length) console.log(`  수용 기준 충족: ${met.join(' · ')}  (${after.filter((a) => a.done).length}/${total} — spec.md 의 박스는 고치지 않는다, plan-progress 가 파생한다)`)
+  }
   console.log(`\n레벨의 나머지 작업까지 적었으면: plan-check.mjs ${relative(ROOT, DIR)} commit --level <N>`)
 }
 

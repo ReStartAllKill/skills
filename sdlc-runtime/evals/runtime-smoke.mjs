@@ -75,6 +75,90 @@ status: in_progress
   assert(got.rows.find((x) => x.id === 'WP-002').commits.length === 0, 'WP-001 커밋을 WP-002에 잘못 귀속했다')
 })
 
+const PROGRESS_PLAN = `---
+artifact: plan
+schema_version: 4
+status: in_progress
+---
+
+## 작업 \`[필수 · 모든 티어]\`
+
+- [ ] **WP-001 — 첫 변경**
+  - files: \`search/query.ts\`
+  - depends: 없음
+  - covers: FR-001 (AC-001)
+  - tests: 첫 기준
+  - verify: true
+
+- [ ] **WP-002 — 후속 변경**
+  - files: \`search/query.ts\`
+  - depends: WP-001
+  - covers: FR-002 (AC-002)
+  - tests: 둘째 기준
+  - verify: true
+
+- [ ] **WP-003 — 셋째 변경**
+  - files: \`search/query.ts\`
+  - depends: WP-002
+  - covers: FR-003 (AC-003)
+  - tests: 셋째 기준
+  - verify: true
+
+## 실행 기록
+
+해당 없음 — 아직 실행 전.
+`
+
+await test('plan-progress finds task commits made before the plan was tracked', () => {
+  // A repository that ignored its artifact directory and starts tracking it later: the plan's first
+  // commit is the newest one, so a lower bound at that commit holds nothing. This is what every
+  // plan in a real repository looked like the day after `.sdlc/` left .gitignore.
+  const d = temp('sdlc-progress-late')
+  put(join(d, '.claude/spec-profile.yml'), 'sdlc_version: 4\nspec_dir: .\n')
+  put(join(d, '.gitignore'), 'plan.md\n')
+  put(join(d, 'plan.md'), PROGRESS_PLAN)
+  put(join(d, 'search/query.ts'), 'export const value = 0\n')
+  git(d, 'init', '-q'); git(d, 'config', 'user.email', 'eval@local'); git(d, 'config', 'user.name', 'eval')
+  git(d, 'add', '-A'); git(d, 'commit', '-qm', 'code without the plan')
+  put(join(d, 'search/query.ts'), 'export const value = 1\n')
+  git(d, 'add', 'search/query.ts'); git(d, 'commit', '-qm', 'first change', '-m', 'SDLC-Task: WP-001\nSDLC-Plan: plan.md')
+  put(join(d, '.gitignore'), '')
+  git(d, 'add', '-A'); git(d, 'commit', '-qm', 'start tracking the plan')
+
+  const r = run(process.execPath, [tool('plan-progress.mjs'), d, '--json'])
+  assert(r.code === 0, r.out)
+  const got = JSON.parse(r.out)
+  assert(got.rows.find((x) => x.id === 'WP-001').commits.length === 1, 'plan 추적 이전의 WP-001 귀속 커밋을 못 찾았다')
+  assert(got.rows.find((x) => x.id === 'WP-002').commits.length === 0, 'WP-001 커밋을 WP-002에 잘못 귀속했다')
+})
+
+await test('plan-progress reads a squash-merged trailer that names several tasks', async () => {
+  // GitHub's squash merge concatenates every task commit's message, and the joined trailer reads
+  // `SDLC-Task: WP-001, WP-002`. Reading only the one-id form lost every task in the PR at once.
+  const d = temp('sdlc-progress-squash')
+  put(join(d, '.claude/spec-profile.yml'), 'sdlc_version: 4\nspec_dir: .\n')
+  put(join(d, 'plan.md'), PROGRESS_PLAN)
+  put(join(d, 'search/query.ts'), 'export const value = 0\n')
+  git(d, 'init', '-q'); git(d, 'config', 'user.email', 'eval@local'); git(d, 'config', 'user.name', 'eval')
+  git(d, 'add', '-A'); git(d, 'commit', '-qm', 'plan born')
+  put(join(d, 'search/query.ts'), 'export const value = 1\n')
+  git(d, 'add', 'search/query.ts')
+  git(d, 'commit', '-qm', 'feat: squashed PR (#1)', '-m',
+    'first task\n\nSDLC-Task: WP-001, WP-002\nSDLC-Plan: plan.md\n\nsecond task\n\nSDLC-Task: WP-003 WP-999\nSDLC-Plan: plan.md\n\nSDLC-Task: not-a-task, WP-002\nSDLC-Plan: plan.md')
+
+  const r = run(process.execPath, [tool('plan-progress.mjs'), d, '--json'])
+  assert(r.code === 0, r.out)
+  const got = JSON.parse(r.out)
+  const commits = (id) => got.rows.find((x) => x.id === id).commits.length
+  assert(commits('WP-001') === 1, 'WP-001 — 쉼표로 합친 트레일러를 못 읽었다')
+  assert(commits('WP-002') === 1, 'WP-002 — 쉼표로 합친 트레일러의 둘째 id 를 못 읽었다')
+  assert(commits('WP-003') === 1, 'WP-003 — 공백으로 합친 트레일러를 못 읽었다')
+  // The third trailer line is garbled; a partial match would make garbage count as attribution.
+  const { taskTrailerIds } = await import(tool('commit-records.mjs'))
+  assert(taskTrailerIds('SDLC-Task: not-a-task, WP-002') === null, '깨진 트레일러 줄을 부분 일치로 읽었다')
+  assert(taskTrailerIds('SDLC-Plan: plan.md') === null, 'SDLC-Plan 줄을 작업 트레일러로 읽었다')
+})
+
 await test('verify-run records output and exit codes, and plan-progress compares tests with verification logs', () => {
   const d = temp('sdlc-verify')
   put(join(d, '.claude/spec-profile.yml'), 'sdlc_version: 4\nspec_dir: .sdlc/specs\nverify: echo ok\n')
@@ -1812,6 +1896,53 @@ await test('mark creates the execution log section when the plan has none', asyn
   assert(/^## Execution log$/m.test(text), `프로필 언어의 제목을 안 썼다:\n${text.slice(-400)}`)
   assert(/^- \d{4}-\d{2}-\d{2} WP-001 — done · no PR · differs from plan: none$/m.test(text),
     `영문 프로필에서 항목이 어긋났다:\n${text.slice(-400)}`)
+})
+
+await test('acceptance criteria are derived from the plan and never written into spec.md', async () => {
+  // spec.md 의 `- [ ] AC-…` 는 아무 도구도 켜 주지 않았고 켤 수도 없다 — v7 은 spec 본문을 plan 의
+  // spec_version 에 바이트 단위로 핀하고, 승인 가드는 accepted 문서의 본문 편집을 막는다. 그래서 답은
+  // plan 의 체크에서 파생한다. 세 가지를 본다: 파생 결과가 맞는지, spec.md 가 한 바이트도 안 바뀌어
+  // 핀이 살아 있는지, 손으로 켠 spec 의 박스가 증거로 읽히지 않고 경고로 드러나는지.
+  const c = await trimmedChain('sdlc-ac-derived', { status: 'in_progress' })
+  git(c.d, 'init', '-q'); git(c.d, 'config', 'user.email', 'eval@local'); git(c.d, 'config', 'user.name', 'eval')
+  git(c.d, 'add', '.claude', '.sdlc'); git(c.d, 'commit', '-qm', 'chain born')
+  const specPath = join(c.dir, 'spec.md')
+  const specBefore = readFileSync(specPath, 'utf8')
+
+  const progress = () => JSON.parse(run(process.execPath, [tool('plan-progress.mjs'), c.dir, '--json']).out)
+  let ac = progress().acceptance
+  assert(Array.isArray(ac) && ac.length === 1 && ac[0].id === 'AC-001', `수용 기준을 못 읽었다: ${JSON.stringify(ac)}`)
+  assert(ac[0].covered_by.join() === 'WP-001', `covers 를 못 읽었다: ${JSON.stringify(ac[0])}`)
+  assert(ac[0].done === false, '아무것도 안 했는데 충족으로 읽었다')
+
+  git(c.d, 'add', 'search/query.ts')
+  git(c.d, 'commit', '-qm', 'feat: 보관 제외', '-m', 'SDLC-Task: WP-001\nSDLC-Plan: .sdlc/specs/2026-09-10-log/plan.md')
+  let r = run(process.execPath, [tool('verify-run.mjs'), c.dir, '--level', '1', '--tasks', 'WP-001', '--', 'echo ok'])
+  assert(r.code === 0, r.out)
+  r = run(process.execPath, [tool('plan-check.mjs'), c.dir, 'mark', 'WP-001', '--note', '없음'])
+  assert(r.code === 0, r.out)
+  assert(/수용 기준 충족: AC-001/.test(r.out), `mark 가 충족된 기준을 말하지 않았다:\n${r.out}`)
+
+  ac = progress().acceptance
+  assert(ac[0].done === true, `덮는 작업이 끝났는데 충족으로 읽지 않았다: ${JSON.stringify(ac[0])}`)
+  assert(readFileSync(specPath, 'utf8') === specBefore, 'spec.md 가 바뀌었다 — 핀이 깨진다')
+  assert(checked(c.dir).counts.errors === 0, 'mark 뒤 산출물 검사가 빨개졌다')
+  const text = run(process.execPath, [tool('plan-progress.mjs'), c.dir]).out
+  assert(/수용 기준 1\/1/.test(text) && /\[x\] AC-001\s+← WP-001/.test(text), `텍스트 출력에 파생 결과가 없다:\n${text}`)
+
+  // A box ticked by hand in spec.md is a claim, not evidence. Untick the plan and tick the spec.
+  put(c.plan, readFileSync(c.plan, 'utf8').replace('- [x] **WP-001', '- [ ] **WP-001'))
+  put(specPath, specBefore.replace('- [ ] AC-001', '- [x] AC-001'))
+  const got = progress()
+  assert(got.acceptance[0].done === false && got.acceptance[0].claimed === true, JSON.stringify(got.acceptance[0]))
+  assert(got.notes.some((n) => n.id === 'AC-001' && /손으로 체크/.test(n.msg)), `손으로 켠 박스를 경고하지 않았다:\n${JSON.stringify(got.notes)}`)
+
+  // A criterion that no task covers must read as uncovered, not as merely open.
+  put(specPath, specBefore.replace(/\n- \[ \] AC-001 — ([^\n]*)/, '\n- [ ] AC-001 — $1\n- [ ] AC-002 — 아무도 짓지 않는 기준'))
+  const orphan = progress()
+  const a2 = orphan.acceptance.find((a) => a.id === 'AC-002')
+  assert(a2 && a2.covered_by.length === 0 && a2.done === false, JSON.stringify(orphan.acceptance))
+  assert(orphan.notes.some((n) => n.id === 'AC-002' && /covers 에도 없다/.test(n.msg)), `덮는 작업 없는 기준을 경고하지 않았다:\n${JSON.stringify(orphan.notes)}`)
 })
 
 await test('frontmatter without created and updated passes at every version', () => {

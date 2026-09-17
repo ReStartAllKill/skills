@@ -22,6 +22,31 @@
   rewrite what past work cost the moment the table was edited. Cache writes are priced by the TTL
   the transcript reports rather than by one assumed rate, and fast mode is a separate row.
 
+### Fixed
+
+- **Task attribution no longer vanishes when a repository starts tracking its artifacts late.**
+  `plan-progress.mjs` scanned only `born..HEAD`, `born` being the commit that first added
+  `plan.md`. In a repository that had ignored `.sdlc/` and then un-ignored it, `born` was the
+  newest commit, the window held zero commits, and every task in every plan read «no attributed
+  commit» while its trailered commits sat right below — so `mark` refused to check a single box.
+  The `SDLC-Plan:` trailer already binds a commit to its plan, so the scan now covers the whole
+  reachable history, as `sdlc-metrics.mjs` always did. The file-history hint keeps the bound.
+- **A squash-merged trailer that names several tasks is read.** GitHub joins the task commits'
+  trailers into `SDLC-Task: WP-001, WP-002`; the reader accepted only one id per line, so every
+  task in a squashed PR lost its commit at once. Commas and whitespace both separate now, and a
+  line carrying anything that is not a task id attributes nothing rather than partially.
+
+### Added (acceptance criteria)
+
+- **Acceptance criteria are derived, not ticked.** The spec's `- [ ] AC-…` boxes were never
+  written by any tool, and cannot be: schema 7 pins the spec body byte for byte in the plan's
+  `spec_version`, and the approval guard refuses body edits to an accepted document. So
+  `plan-progress.mjs` now reports each criterion as satisfied when every task covering it is
+  checked, in text and under `acceptance` in `--json`; `mark` names the criteria a check
+  completed. A criterion no task covers is reported as uncovered, and a box ticked by hand in
+  the spec is reported as a claim without evidence. Writing `[x]` into the spec was rejected —
+  it would break every plan's pin and make the spec assert its own completion.
+
 ### Changed
 
 - `sdlc-lib.sh` gains `sdlc_hook_slurp`, which reads the hook's stdin once so a hook can take
