@@ -83,5 +83,10 @@ integrity and records that limitation as a note. CI checks out upstream and poin
 
 Decisions often cross repository boundaries. Giving every repository an `adr_dir` forces repeated
 decisions about where an ADR belongs and splits the numbering space. Designate one document
-repository as `adr_repo`; code repositories keep only `<repo>#ADR-NNN@<sha>` pins. Organizations
+repository as `adr_repo`; code repositories keep `<repo>#ADR-NNN@<sha>` pins. Organizations
 whose decisions never cross a repository boundary may use `adr_dir` instead.
+
+The ADR names the repositories it constrains (`applies_to`); each code repository names the paths
+and tests in its own `.claude/adr-bindings.yml`, next to a manifest `pull-adr.mjs` writes. A path
+belongs where it can be checked and where the PR that renames it lands. «Decisions in another
+repository» in `adr.md` has the format and the checks.

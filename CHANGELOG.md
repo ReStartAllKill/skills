@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **A code repository owns the paths that bind it to a decision kept in another repository.**
+  Under `adr_repo`, an ADR's `scope` held another repository's paths (`rwa-contracts:src/vault`).
+  The document repository skips paths it does not own, the code repository's drift check had no
+  caller, and a rename owed a second PR nobody asked for. Now the ADR names repositories
+  (`applies_to`) and the code repository names paths and tests in `.claude/adr-bindings.yml`.
+  `pull-adr.mjs` writes `.claude/adr-manifest.json` (status, `applies_to`, the digest
+  `task-brief` injects; never a path) with an integrity hash, and prints a binding skeleton that
+  carries old-form paths across. `adr-bindings.mjs`, run by `check-all`, checks a missing or
+  hand-edited manifest, an applicable decision left unbound, a binding read at an older decision
+  (`at`), a path or test that is gone, an opt-out with no `reason`, and — next to an upstream
+  checkout — a manifest behind upstream. The plan's task-scope check and `task-brief` match
+  against binding `paths`, so a decision from another repository reaches the writer at last.
+  A pin into the manifest's repository is checked against it instead of passing on its SHA shape.
+- `applies_to` marks the new form, since an ADR is always schema 5: with it, a repo-prefixed
+  `scope` entry is an error; without it, a warning, which gates only where CI runs `--strict`.
+- An ADR `scope` path that no longer exists now warns even when `confirms` is empty. The check
+  used to run only alongside `confirms`, so a scope-only ADR pointed at a deleted directory
+  silently.
+
 ## 0.9.0 — 2026-09-17
 
 ### Added

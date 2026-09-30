@@ -52,9 +52,10 @@ revisit: ["RV-001"]
 ---
 ```
 
-- `scope` lists repository-relative code paths constrained by the decision. Agent injection and drift checks both depend on it; an empty scope disconnects the ADR from implementation.
+- `scope` lists repository-relative code paths constrained by the decision. Agent injection and drift checks both depend on it; an empty scope disconnects the ADR from implementation. A path that no longer exists warns whether or not `confirms` is set.
 - `confirms` is the source of truth for verifying that the decision still holds. Use test names or gate commands; the checker looks for each name within `scope`.
 - `revisit` lists the `RV-*` entries in Review and revisit.
+- `applies_to` lists the repositories a decision constrains when its code lives in another repository — `applies_to: ["rwa-contracts"]`. That repository holds the paths and tests in its own bindings; see «Decisions in another repository». Repository names compare by final path component.
 
 ## Five required sections
 
@@ -138,16 +139,57 @@ decisions: ["ADR-005", "acme/docs#ADR-007@a1b2c3d"]
 - The checker verifies each pinned ADR's existence and status. Referencing a `superseded`, `deprecated`, or `rejected` ADR is an error.
 - The checker also reads the other direction: a plan task whose `files` fall inside an accepted ADR's `scope` must have that ADR pinned somewhere in the set, or it warns. Agent injection reaches the writer, but design decisions (`TD-*`) are settled in the plan before any task runs, and the pin is the only evidence the plan saw the decision — and the only handle the status check has. Design within the decision and pin it; design against it and write the superseding ADR first, never a `TD-*`.
 
+## Decisions in another repository
+
+When decisions live in a document repository (`adr_repo`), the link from a decision to code is cut in two, and each half belongs to the repository that can check it.
+
+- **The ADR names repositories.** `applies_to: ["rwa-contracts"]`, with `scope` and `confirms` empty. A path in another repository cannot be verified where the ADR lives, and the person who renames it works elsewhere.
+- **The code repository names paths and tests,** in `.claude/adr-bindings.yml`:
+
+```yaml
+source: "acme/docs"
+bindings:
+  ADR-012:
+    at: "a1b2c3d4e5f6"        # the upstream commit that last changed the ADR, when it was read
+    paths: ["src/vault", "src/nav"]
+    confirms: ["test_Deposit_MintsAtCurrentPrice"]
+  ADR-001:
+    at: "9f8e7d6c5b4a"
+    paths: []
+    reason: "pricing lives in the backend; nothing here computes it"
+```
+
+- **The decision text arrives as a manifest.** `node <sdlc_runtime>/tools/pull-adr.mjs [--from <checkout>]` writes `.claude/adr-manifest.json` — status, `applies_to` and the digest `task-brief` injects, never a path — with an integrity hash. Commit it; never edit it. It prints a binding skeleton for every accepted decision that applies here and has none.
+
+`adr-bindings.mjs`, which `check-all` runs when the profile has `adr_repo`, checks in the code repository:
+
+| Condition | Level |
+|---|---|
+| No manifest | warn — pins, task scope and injection are all off |
+| Manifest edited by hand, or from another source | error |
+| Accepted decision whose `applies_to` names this repository, with no binding | warn |
+| Binding to a decision not in the manifest, or to one no longer in force | error |
+| `at` missing, or behind the decision's current commit | error — re-read it, then raise `at` |
+| `paths` missing, or `paths: []` without `reason` | error |
+| A path that no longer exists, a `confirms` name not found under `paths`, empty `confirms` | warn |
+| Upstream checkout (`SDLC_UPSTREAM`, `--from`) shows the manifest is behind | error; without a checkout, a note |
+
+The plan's task-scope check and `task-brief` match plan `files` against binding `paths`, so a rename is fixed in the PR that makes it. A pin into the manifest's repository is checked against the manifest, so `acme/docs#ADR-009@…` for a decision that does not exist is an error rather than a SHA-shape check.
+
+An ADR is always schema 5, so no version can mark where the new form begins; `applies_to` does. An ADR that has `applies_to` and still names another repository's path in `scope` is an error — the same link held twice, and the upstream copy is the one nothing checks. An ADR without `applies_to` that names one is a warning: it was valid when written, and it stays readable. `pull-adr` treats the repositories such an entry names as its `applies_to` and carries its paths and `confirms` into the skeleton, so a code repository can bind before the document repository migrates.
+
 ## Profile seam
 
 ```yaml
 adr_dir: "docs/adr"              # Omit when this repository has no ADRs
 adr_repo: "acme/docs"            # Optional; decisions live in another repository
 adr_index: "docs/adr/index.md"   # Default: <adr_dir>/index.md
+adr_manifest: ".claude/adr-manifest.json"  # Default when adr_repo is set without adr_dir
+adr_bindings: ".claude/adr-bindings.yml"   # Default when adr_repo is set
 ```
 
 ## Agent injection
 
-When a task's `files` overlap an ADR's `scope`, `task-brief.mjs` injects the ADR's **decision, Non-goals, and rejected-alternative titles** into the writer prompt and supplies only a link to the full text.
+When a task's `files` overlap an ADR's `scope` — or, for a decision in another repository, its binding's `paths` — `task-brief.mjs` injects the ADR's **decision, Non-goals, and rejected-alternative titles** into the writer prompt and supplies only a link to the full text.
 
 This injection is how an ADR reaches implementation. Without it, an agent can apply a default that contradicts the decision or reopen a settled debate. An ADR with an empty `scope` is therefore only decoration.

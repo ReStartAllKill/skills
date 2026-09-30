@@ -27,6 +27,8 @@ Global skills define the method. Repository facts and the applicable SDLC versio
 | `adr_dir` | Decision-record directory | None; ADR checks are skipped |
 | `adr_repo` | `<owner>/<repo>` when decisions live elsewhere | None; same repository |
 | `adr_index` | Generated decision index | `<adr_dir>/index.md` |
+| `adr_manifest` | Decisions pulled from `adr_repo` by `pull-adr.mjs` | `.claude/adr-manifest.json` |
+| `adr_bindings` | This repository's paths and tests for those decisions | `.claude/adr-bindings.yml` |
 | `pr_base` | Default base branch for `/create-pr` | `main` |
 | `pr_workspace_dirs` | Top-level directories used to group changes | Top-level directory names only |
 | `pr_split_dir`, `pr_split_hint` | Ask about splitting when changes span multiple children | None |
@@ -38,7 +40,7 @@ Contract keywords are bilingual regardless of `lang`.
 
 **Commit the profile.** It defines how CI checks every artifact set. If it exists only outside Git, local runs and CI can apply different rules while both appear to pass. `check-all.mjs` reports both ignored and untracked profiles.
 
-Repository-contract keys must be committed: `sdlc_version`, `sdlc_runtime`, `lang`, `approval_mode`, `lint_warnings`, `spec_dir`, `verify`, `source_roots`, `extra_gates`, `bands`, `adr_dir`, `repo`, `upstream_repo`, `spec_consumers`, and `pr_*`.
+Repository-contract keys must be committed: `sdlc_version`, `sdlc_runtime`, `lang`, `approval_mode`, `lint_warnings`, `spec_dir`, `verify`, `source_roots`, `extra_gates`, `bands`, `adr_dir`, `adr_repo`, `adr_manifest`, `adr_bindings`, `repo`, `upstream_repo`, `spec_consumers`, and `pr_*`.
 
 Machine- or person-specific keys are `owner`, role-specific agent names, `worktree_dir`, and `bootstrap`. Omit only the keys whose values differ between contributors.
 

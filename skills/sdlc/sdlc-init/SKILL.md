@@ -43,6 +43,10 @@ description: '저장소에 SDLC 프로필·승인 가드·산출물 검사·CI �
 3. **ADR 저장 위치:** 되돌리기 어려운 결정을 기록할 위치를 확인하고 `adr_dir`(기본 `docs/adr`)을 적는다.
    다른 저장소에서 관리하면 `adr_dir` 대신 `adr_repo`를 사용한다. ADR은 변경 이후에도 유지하는
    아키텍처 결정 기록이므로 `adr_dir`을 Git 추적에서 제외하지 않는다.
+   `adr_repo`를 쓰는 코드 저장소는 `repo`도 적고, `node <sdlc_runtime>/tools/pull-adr.mjs <저장소>`로
+   `.claude/adr-manifest.json`을 만든 뒤 출력된 뼈대로 `.claude/adr-bindings.yml`을 작성한다.
+   경로를 확인하고 두 파일을 함께 커밋한다. 형식은 `<sdlc_runtime>/references/adr.md`의
+   «Decisions in another repository»를 따른다.
    ADR을 사용하지 않기로 하면 키를 비우고, ADR 관련 검사가 비활성화된다는 점을 보고한다.
 4. **버전:** 기존 프로필이면 `node <sdlc_runtime>/tools/migrate-schema.mjs <저장소>`로 차이를 확인한다.
    확인 후 기본적으로 `--profile`을 사용해 새로 작성할 산출물의 스키마 버전만 올린다. 기존 문서 변경은

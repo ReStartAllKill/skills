@@ -1514,6 +1514,203 @@ await test('English and Korean ADR indexes round-trip and normalize legacy statu
   }
 })
 
+// Cross-repository decisions: the document repository names repositories, the code repository
+// names paths. Each fixture pair is a real `git init` because freshness is read from commits.
+const bindAdr = (id, title, extra) => `---
+artifact: adr
+schema_version: 5
+id: "${id}"
+title: "${title}"
+status: accepted
+${extra}
+supersedes: null
+superseded_by: null
+approved_by: "human"
+generated_by: "agent"
+revisit: []
+---
+
+# ${id} — ${title}
+
+## Decision
+
+Price at 1:1 on the first epoch.
+
+### Non-goals
+
+- Fee schedules.
+
+## Context and forces
+
+Pricing drift.
+
+## Alternatives
+
+### ALT-001 — Administrator sets the price
+
+Flexible, and an input error persists.
+
+### ALT-002 — Fixed 1:1 (chosen)
+
+Nothing to misconfigure.
+
+## Consequences
+
+- What this buys: no configuration error.
+- What it costs: no way to start at a premium.
+
+## Review and revisit
+
+- **Confirms:** the pool tests.
+`
+function bindUpstream() {
+  const up = temp('sdlc-adr-docs')
+  put(join(up, '.claude/spec-profile.yml'), 'adr_dir: "docs/adr"\nrepo: "acme/docs"\n')
+  put(join(up, 'docs/adr/ADR-001-vault-pricing.md'), bindAdr('ADR-001', 'Vault pricing', 'applies_to: ["acme/contracts"]\nscope: []\nconfirms: []'))
+  // The shape 8percent/rwa-docs PR 174 wrote: another repository's paths held upstream.
+  put(join(up, 'docs/adr/ADR-002-nav-freshness.md'), bindAdr('ADR-002', 'NAV freshness', 'scope: ["contracts:src/nav"]\nconfirms: ["test_NavIsFresh"]'))
+  git(up, 'init', '-q'); git(up, 'config', 'user.email', 'eval@local'); git(up, 'config', 'user.name', 'eval')
+  git(up, 'add', '-A'); git(up, 'commit', '-qm', 'decisions')
+  return up
+}
+function bindConsumer() {
+  const d = temp('sdlc-adr-contracts')
+  put(join(d, '.claude/spec-profile.yml'), `sdlc_version: 7\nsdlc_runtime: "${ROOT}"\nspec_dir: ".sdlc/specs"\nrepo: "acme/contracts"\nadr_repo: "acme/docs"\n`)
+  put(join(d, '.sdlc/specs/.keep'), '')
+  put(join(d, 'src/vault/Pool.sol'), 'contract Pool {}\n')
+  put(join(d, 'src/vault/Pool.t.sol'), 'function test_PoolPricesAtGenesis() {}\n')
+  put(join(d, 'src/nav/Nav.t.sol'), 'function test_NavIsFresh() {}\n')
+  git(d, 'init', '-q'); git(d, 'config', 'user.email', 'eval@local'); git(d, 'config', 'user.name', 'eval')
+  git(d, 'add', '-A'); git(d, 'commit', '-qm', 'code')
+  return d
+}
+const bindingsYml = (sha, vault = 'src/vault') => `source: "acme/docs"
+bindings:
+  ADR-001:
+    at: "${sha.slice(0, 12)}"
+    paths: ["${vault}"]
+    confirms: ["test_PoolPricesAtGenesis"]
+  ADR-002:
+    at: "${sha.slice(0, 12)}"
+    paths:
+      - "src/nav"
+    confirms: ["test_NavIsFresh"]
+`
+const bindCheck = (d, up) => {
+  const r = run(process.execPath, [tool('adr-bindings.mjs'), d, '--json', ...(up ? ['--from', up] : [])])
+  try { return { ...JSON.parse(r.out), code: r.code, raw: r.out } } catch { throw new Error(`adr-bindings did not print JSON (code ${r.code}):\n${r.out}`) }
+}
+const said = (rep, re) => rep.problems.some((p) => re.test(`${p.msg} ${p.hint ?? ''}`))
+
+await test('a binding whose path is gone warns in the code repository', () => {
+  const up = bindUpstream(), d = bindConsumer()
+  let r = run(process.execPath, [tool('pull-adr.mjs'), d, '--from', up])
+  assert(r.code === 0, `pull-adr failed:\n${r.out}`)
+  put(join(d, '.claude/adr-bindings.yml'), bindingsYml(git(up, 'rev-parse', 'HEAD')))
+  let rep = bindCheck(d, up)
+  assert(rep.counts.errors === 0 && rep.counts.warnings === 0, `a clean binding did not pass:\n${rep.raw}`)
+
+  git(d, 'mv', 'src/vault', 'src/pool'); git(d, 'commit', '-qm', 'rename')
+  rep = bindCheck(d, up)
+  assert(said(rep, /`paths` 의 `src\/vault` 가 없다/), `a renamed path passed in the repository that renamed it:\n${rep.raw}`)
+  r = run(process.execPath, [tool('check-all.mjs'), d])
+  assert(r.code !== 0 && /결정 바인딩 실패/.test(r.out), `check-all let the broken binding through:\n${r.out}`)
+
+  put(join(d, '.claude/adr-bindings.yml'), bindingsYml(git(up, 'rev-parse', 'HEAD'), 'src/pool'))
+  rep = bindCheck(d, up)
+  assert(rep.counts.errors === 0 && rep.counts.warnings === 0, `fixing the binding in the same repository did not clear it:\n${rep.raw}`)
+})
+
+await test('an accepted ADR that applies to this repository and has no binding warns', () => {
+  const up = bindUpstream(), d = bindConsumer()
+  let rep = bindCheck(d, up)
+  assert(said(rep, /결정 매니페스트가 없다/) && rep.counts.warnings > 0, `a missing manifest looked like a pass:\n${rep.raw}`)
+
+  const r = run(process.execPath, [tool('pull-adr.mjs'), d, '--from', up])
+  assert(r.code === 0, r.out)
+  // The old-form ADR hands its paths across; the new-form one leaves them for this repository.
+  assert(/ADR-002:[\s\S]*paths: \["src\/nav"\][\s\S]*confirms: \["test_NavIsFresh"\]/.test(r.out), `no skeleton carried the legacy paths:\n${r.out}`)
+  rep = bindCheck(d, up)
+  for (const id of ['ADR-001', 'ADR-002']) {
+    assert(said(rep, new RegExp(`${id}.*이 레포에 적용되는데 바인딩이 없다`)), `${id} went unbound silently:\n${rep.raw}`)
+  }
+
+  const sha = git(up, 'rev-parse', 'HEAD').slice(0, 12)
+  const nav = `  ADR-002:\n    at: "${sha}"\n    paths: ["src/nav"]\n    confirms: ["test_NavIsFresh"]\n`
+  put(join(d, '.claude/adr-bindings.yml'), `source: "acme/docs"\nbindings:\n  ADR-001:\n    at: "${sha}"\n    paths: []\n${nav}`)
+  rep = bindCheck(d, up)
+  assert(said(rep, /ADR-001 — `paths: \[\]` 인데 `reason` 이 없다/) && rep.counts.errors === 1, `an unexplained opt-out passed:\n${rep.raw}`)
+  put(join(d, '.claude/adr-bindings.yml'), `source: "acme/docs"\nbindings:\n  ADR-001:\n    at: "${sha}"\n    paths: []\n    reason: "pricing lives in the backend here"\n${nav}`)
+  rep = bindCheck(d, up)
+  assert(rep.counts.errors === 0 && rep.counts.warnings === 0 && rep.notes.some((n) => /경로 없이 묶었다/.test(n)), `an explained opt-out was not accepted, or not shown:\n${rep.raw}`)
+})
+
+await test('a repo-prefixed scope is rejected from the schema that introduces bindings — `applies_to` marks it, since an ADR is always schema 5', () => {
+  const up = bindUpstream()
+  put(join(up, 'docs/adr/ADR-003-both-forms.md'), bindAdr('ADR-003', 'Both forms', 'applies_to: ["acme/contracts"]\nscope: ["contracts:src/vault"]\nconfirms: []'))
+  const r = run(process.execPath, [tool('check-artifacts.mjs'), join(up, 'docs/adr'), '--json'])
+  const rep = JSON.parse(r.out)
+  const on = (name) => rep.problems.filter((p) => p.doc.startsWith(name))
+  assert(on('ADR-003').some((p) => p.level === 'error' && /`applies_to` 를 쓰는데 `scope` 가 다른 레포의 경로를 짚는다/.test(p.msg)), `both forms at once passed:\n${r.out}`)
+  assert(on('ADR-002').some((p) => p.level === 'warn' && /`scope` 가 다른 레포의 경로를 짚는다/.test(p.msg)), `the old form was not flagged as unchecked:\n${r.out}`)
+  assert(on('ADR-002').every((p) => p.level !== 'error'), `the old form turned red — ADRs written before bindings must not:\n${r.out}`)
+  assert(on('ADR-001').every((p) => !/`(scope|confirms)` 가 비었다/.test(p.msg)), `an ADR reaching code through applies_to was told to fill scope:\n${r.out}`)
+})
+
+await test('a cross-repository decision reaches the plan and the writer through bindings, and goes stale loudly', () => {
+  const up = bindUpstream(), d = bindConsumer()
+  assert(run(process.execPath, [tool('pull-adr.mjs'), d, '--from', up]).code === 0, 'pull-adr failed')
+  put(join(d, '.claude/adr-bindings.yml'), bindingsYml(git(up, 'rev-parse', 'HEAD')))
+  const set = join(d, '.sdlc/specs/pool')
+  const plan = (pins) => `---
+artifact: plan
+schema_version: 7
+status: draft
+decisions: [${pins}]
+---
+
+# Plan
+
+## 작업
+
+- [ ] **WP-001 — 첫 에포크 가격**
+  - files: \`src/vault/Pool.sol\`
+  - depends: 없음
+  - covers: FR-001 (AC-001)
+  - tests: 첫 에포크는 1:1 이다
+  - verify: true
+`
+  put(join(set, 'plan.md'), plan(''))
+  let r = run(process.execPath, [tool('check-artifacts.mjs'), set, '--json'])
+  assert(/WP-001 의 files 가 ADR-001.*바인딩 paths 를 만지는데/.test(r.out), `the plan touched a bound decision unpinned, unnoticed:\n${r.out}`)
+  assert(/acme\/docs#ADR-001@<sha>/.test(r.out), `the pin hint did not name the other repository:\n${r.out}`)
+
+  r = run(process.execPath, [tool('task-brief.mjs'), set, 'WP-001'])
+  assert(/Price at 1:1 on the first epoch/.test(r.out) && /Administrator sets the price/.test(r.out) && /Fee schedules/.test(r.out),
+    `the writer never saw the decision from the other repository:\n${r.out}`)
+
+  put(join(set, 'plan.md'), plan('"acme/docs#ADR-009@abcdef1"'))
+  r = run(process.execPath, [tool('check-artifacts.mjs'), set, '--json'])
+  assert(/핀한 ADR-009 가 없다/.test(r.out), `a pin into the manifest's repository passed without being found:\n${r.out}`)
+
+  const adr = join(up, 'docs/adr/ADR-001-vault-pricing.md')
+  put(adr, readFileSync(adr, 'utf8').replace('Price at 1:1', 'Price at 1:1.01'))
+  git(up, 'commit', '-qam', 'change the decision')
+  let rep = bindCheck(d, up)
+  assert(said(rep, /ADR-001 가 끌어온 뒤 상류에서 바뀌었다/), `a stale manifest passed next to a checkout:\n${rep.raw}`)
+  rep = bindCheck(d)
+  assert(rep.notes.some((n) => /체크아웃이 없다/.test(n)), `freshness went unchecked without a word:\n${rep.raw}`)
+
+  assert(run(process.execPath, [tool('pull-adr.mjs'), d, '--from', up]).code === 0, 're-pull failed')
+  rep = bindCheck(d, up)
+  assert(said(rep, /ADR-001 — 묶은 뒤 결정이 바뀌었다/) && !said(rep, /ADR-002 — 묶은 뒤/), `a binding read at an older decision passed:\n${rep.raw}`)
+
+  const mpath = join(d, '.claude/adr-manifest.json')
+  put(mpath, readFileSync(mpath, 'utf8').replace('"accepted"', '"draft"'))
+  rep = bindCheck(d, up)
+  assert(said(rep, /매니페스트가 `pull-adr` 가 쓴 것과 다르다/), `a hand-edited manifest passed:\n${rep.raw}`)
+})
+
 await test('Execution log ignores change-history task IDs in either language', async () => {
   const { SECTION, sectionBlock, RE_CHANGE_LOG } = await import('../tools/keywords.mjs')
   for (const heading of ['Change log', 'Changelog', '변경 기록']) {

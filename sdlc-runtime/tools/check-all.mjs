@@ -122,7 +122,18 @@ if (adrDir) {
     }
   }
 } else if (yml('adr_repo', profile)) {
-  console.log(`\n결정 기록은 ${yml('adr_repo', profile)} 에 있다 — 여기서는 핀의 형식만 본다`)
+  // The decisions live elsewhere; what lives here is the manifest pulled from them and the paths
+  // this repository bound them to. Those are checked here because only here are the paths visible.
+  const rel = yml('adr_bindings', profile) || '.claude/adr-bindings.yml'
+  let ok = true
+  let out = ''
+  if (!existsSync(tool('adr-bindings.mjs'))) { ok = false; out = `런타임에 adr-bindings.mjs 가 없다: ${runtime} — 바인딩을 검사하지 못했다.` }
+  else {
+    try { run(process.execPath, [tool('adr-bindings.mjs'), ROOT, '--strict'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) }
+    catch (e) { ok = false; out = (e.stdout ?? '') + (e.stderr ?? '') }
+  }
+  console.log(`\n결정 바인딩 ${ok ? '통과' : '실패'}  ${yml('adr_repo', profile)} → ${rel}`)
+  if (!ok) failed.push({ rel, out })
 }
 
 const bandsKey = yml("bands", profile)

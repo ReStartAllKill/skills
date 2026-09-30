@@ -3,7 +3,8 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { resolve, join, relative, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { loadDir, levelsOf, wpFiles, wpField, frontmatter, loadAdrDir } from './artifact-parse.mjs'
-import { adrSeam, adrDigest, adrsForFiles } from './adr-check.mjs'
+import { adrSeam, adrDigest, adrsForFiles, loadManifest } from './adr-check.mjs'
+import { loadBindings, boundForFiles } from './adr-bindings.mjs'
 import { FIELD } from './keywords.mjs'
 const FIELD_LINE = new RegExp(`^\\s*(?:${[...FIELD.basis, ...FIELD.acceptance].join('|')})\\s*:`, 'i')
 
@@ -106,6 +107,20 @@ if (seam.configured && seam.dir) {
   }
   const missed = [...pinned].filter((id) => !hit.some((d) => String(d.fm?.id) === id))
   if (missed.length) console.error(`· 산출물 세트가 핀한 ${missed.join(' · ')} 는 이 작업의 files 에 안 걸려 싣지 않았다`)
+} else if (seam.configured && seam.repo) {
+  // The decision lives in another repository: the paths come from this repository's bindings and
+  // the text from the pulled manifest. Either missing turns injection off, so say which.
+  const manifest = loadManifest(seam.manifest)
+  const bindings = loadBindings(seam.bindings)
+  if (!manifest) console.error(`· ${seam.repo} 의 결정 매니페스트가 없다 — 결정을 싣지 못했다. pull-adr.mjs 로 끌어온다`)
+  else if (!bindings) console.error(`· ${relative(ROOT, seam.bindings)} 가 없다 — ${seam.repo} 의 결정을 이 작업의 files 와 대조하지 못했다`)
+  for (const d of boundForFiles(manifest, bindings, files)) {
+    adrLines.push(`### ${d.id} — ${d.title ?? ''}`)
+    if (d.decision) adrLines.push('', d.decision)
+    if (d.non_goals?.length) adrLines.push('', '정하지 않은 것 (이 작업의 범위가 아니다):', ...d.non_goals.map((n) => `- ${n}`))
+    if (d.rejected?.length) adrLines.push('', `이미 기각한 안 — 다시 고르지 마라: ${d.rejected.join(' · ')}`)
+    adrLines.push('', `전문: \`${manifest.source}\` 의 \`${d.path}\`${d.sha ? ` @ ${d.sha.slice(0, 7)}` : ''}`, '')
+  }
 }
 
 const { level } = levelsOf([...docs.plan.ents.values()].filter((e) => e.kind === 'wp'))

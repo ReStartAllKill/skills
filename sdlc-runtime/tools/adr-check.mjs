@@ -1,12 +1,14 @@
-import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
-import { resolve, join, relative } from 'node:path'
+import { existsSync } from 'node:fs'
+import { resolve, relative } from 'node:path'
 import { ADR_FILENAME, idsIn, stripComments, isNull, loadAdrDir, wpFiles } from './artifact-parse.mjs'
 import { SECTION, CHOSEN, hasAlias, canonical, ADR_STATUS_ALIASES, LEGACY_STATUS_ROW } from './keywords.mjs'
 import { locale } from './locale.mjs'
+import { ADR_DEAD, adrSeam, loadManifest, loadBindings, boundForFiles, collect, touches } from './adr-bindings.mjs'
+import { sameRepo } from './upstream.mjs'
+export { ADR_DEAD, adrSeam, loadManifest }
 const CHOSEN_RE = new RegExp(`\\((?:${CHOSEN.join('|')})\\)`, 'i')
 
 export const ADR_STATUS = ['draft', 'in_review', 'accepted', 'deprecated', 'superseded', 'rejected']
-export const ADR_DEAD = ['deprecated', 'superseded', 'rejected']
 const SECTION_KEYS = ['decision', 'forces', 'alternatives', 'consequences', 'revisit']
 const SECTIONS = SECTION_KEYS.map((k) => SECTION[k][1])
 const titleIn = (doc, key) => SECTION[key].find((t) => sectionText(doc, t) != null) ?? SECTION[key][1]
@@ -24,41 +26,12 @@ export function alternativesOf(doc) {
   return cells.slice(1).map((t, i) => ({ id: `표 ${i + 1}번째 열`, title: t, chosen: CHOSEN_RE.test(t) }))
 }
 
-export function adrSeam(repoRoot) {
-  const path = repoRoot && resolve(repoRoot, '.claude/spec-profile.yml')
-  if (!path || !existsSync(path)) return { configured: false }
-  const text = readFileSync(path, 'utf8')
-  const yml = (k) => (new RegExp(`^${k}:[ \\t]*(.*)$`, 'm').exec(text)?.[1] ?? '')
-    .replace(/\s+#.*$/, '').replace(/^["']|["']$/g, '').trim()
-  const dir = yml('adr_dir')
-  const repo = yml('adr_repo')
-  const manifest = yml('adr_manifest') || (repo && !dir ? '.claude/adr-manifest.json' : '')
-  if (!dir && !repo) return { configured: false, self: yml('repo') || null }
-  return {
-    configured: true,
-    root: repoRoot,
-    self: yml('repo') || null,
-    dir: dir ? resolve(repoRoot, dir) : null,
-    repo: repo || null,
-    manifest: manifest ? resolve(repoRoot, manifest) : null,
-    index: yml('adr_index') ? resolve(repoRoot, yml('adr_index')) : (dir ? resolve(repoRoot, dir, 'index.md') : null),
-  }
-}
-
 export function scopeEntry(raw, self) {
   const s = String(raw).trim()
   const m = /^([A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)?):(.+)$/.exec(s)
   if (!m) return { repo: null, path: s, mine: true }
   const tail = (x) => String(x).split('/').pop()
   return { repo: m[1], path: m[2].trim(), mine: !!self && tail(m[1]) === tail(self) }
-}
-
-export function loadManifest(path) {
-  if (!path || !existsSync(path)) return null
-  try {
-    const j = JSON.parse(readFileSync(path, 'utf8'))
-    return Array.isArray(j?.decisions) ? j : null
-  } catch { return null }
 }
 
 const sectionText = (doc, title) => {
@@ -171,33 +144,56 @@ export function checkAdr(doc, { seam, siblings = [] }, push) {
 
   const scope = [].concat(fm.scope ?? []).map(String).filter((v) => !isNull(v))
   const confirms = [].concat(fm.confirms ?? []).map(String).filter((v) => !isNull(v))
+  const appliesTo = [].concat(fm.applies_to ?? []).map(String).filter((v) => !isNull(v))
   const live = !['draft', 'rejected', ...ADR_DEAD].includes(status)
-  if (live && !scope.length) {
-    warn('`scope` 가 비었다', '이 결정이 제약하는 코드 자리다. 비우면 task-brief 가 구현 에이전트에게 못 싣고 확인 드리프트 검사도 안 돈다 — 결정이 코드에 닿지 않는다.')
-  }
-  if (live && !confirms.length) {
-    warn('`confirms` 가 비었다', '지켜졌는지 무엇으로 판정하나. 식이나 fixture 를 옮겨 적지 말고 어느 테스트가 정본인지를 가리킨다.')
-  }
-
   const entries = scope.map((s) => scopeEntry(s, seam?.self))
   const mine = entries.filter((e) => e.mine)
   const foreign = entries.filter((e) => !e.mine)
+
+  for (const r of appliesTo) {
+    if (!/^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)?$/.test(r)) err(`\`applies_to\` 의 \`${r}\` 가 레포 이름이 아니다`, '`<repo>` 나 `<owner>/<repo>` 다. 경로는 그 레포의 `.claude/adr-bindings.yml` 이 적는다.')
+  }
+  // `applies_to` is the opt-in to bindings. An ADR is always schema 5, so the version cannot mark
+  // the boundary; the field can. An ADR that has it and still names another repository's path
+  // holds the same link in two places, and the upstream copy is the one nothing checks.
+  if (foreign.length && appliesTo.length) {
+    err(`\`applies_to\` 를 쓰는데 \`scope\` 가 다른 레포의 경로를 짚는다 — ${foreign.map((e) => `${e.repo}:${e.path}`).join(' · ')}`,
+      '경로는 그 레포의 `.claude/adr-bindings.yml` 로 옮긴다. 여기 남기면 아무도 검사하지 않는 사본이 된다.')
+  } else if (foreign.length && live) {
+    warn(`\`scope\` 가 다른 레포의 경로를 짚는다 — ${foreign.map((e) => `${e.repo}:${e.path}`).join(' · ')}`,
+      '이 레포는 그 경로를 볼 수 없고, 경로를 바꾸는 사람은 저쪽 레포에 있다. `applies_to: [<repo>]` 로 레포만 적고, 경로와 confirms 는 그 레포의 `.claude/adr-bindings.yml` 로 옮긴다 — `pull-adr.mjs` 가 뼈대를 출력한다.')
+  }
   if (foreign.length && !seam?.self) {
     push('info', `\`scope\` 가 다른 레포를 짚는데 프로필에 \`repo\` 가 없다 — ${foreign.map((e) => e.repo).join(' · ')}`,
       '`repo: <이 레포 이름>` 을 프로필에 적으면 「내 자리」와 「남의 자리」를 갈라 본다. 없으면 접두 붙은 항목을 전부 남의 것으로 읽는다.')
   }
-  if (seam?.root && mine.length && confirms.length) {
+
+  // A decision that reaches code through `applies_to` has its paths and tests in the other
+  // repository's bindings, so an empty `scope` and `confirms` here is the expected shape.
+  const viaBindings = appliesTo.length > 0 && !mine.length
+  if (live && !scope.length && !appliesTo.length) {
+    warn('`scope` 가 비었다', '이 결정이 제약하는 코드 자리다. 비우면 task-brief 가 구현 에이전트에게 못 싣고 확인 드리프트 검사도 안 돈다 — 결정이 코드에 닿지 않는다. 코드가 다른 레포에 있으면 `applies_to` 다.')
+  }
+  if (live && !confirms.length && !viaBindings) {
+    warn('`confirms` 가 비었다', '지켜졌는지 무엇으로 판정하나. 식이나 fixture 를 옮겨 적지 말고 어느 테스트가 정본인지를 가리킨다.')
+  }
+  if (confirms.length && viaBindings) {
+    warn('`confirms` 를 이 레포에서 대조할 곳이 없다', '테스트는 코드가 있는 레포에 있다. 그 레포의 `.claude/adr-bindings.yml` 에 `confirms` 로 옮긴다.')
+  }
+
+  // The path check stands on its own. It once ran only when `confirms` was non-empty, so an ADR
+  // with a scope and no confirms kept pointing at a deleted directory with nothing said.
+  if (seam?.root && mine.length) {
     const bodies = []
     for (const e of mine) {
       const p = resolve(seam.root, e.path)
       if (!existsSync(p)) { warn(`\`scope\` 의 \`${e.path}\` 가 없다`, '경로가 바뀌었거나 지워졌다. 결정이 제약하던 자리가 사라졌으면 이 ADR 이 아직 유효한지 본다.'); continue }
       collect(p, bodies)
     }
-    const hay = bodies.join('\n')
+    const hay = bodies.join('\n').replace(/\s+/g, '')
     if (hay) {
       for (const c of confirms) {
-        const needle = c.replace(/\s+/g, '')
-        if (!hay.replace(/\s+/g, '').includes(needle)) {
+        if (!hay.includes(c.replace(/\s+/g, ''))) {
           warn(`\`confirms\` 의 «${c}» 를 scope 안에서 못 찾았다`, '테스트 이름이 바뀌었거나 사라졌다. 결정이 아직 지켜지는지 확인하고, 이름만 바뀐 것이면 confirms 를 고친다.')
         }
       }
@@ -214,17 +210,6 @@ export function checkAdr(doc, { seam, siblings = [] }, push) {
   }
 }
 
-function collect(path, out, budget = { files: 400 }) {
-  if (budget.files <= 0) return
-  let st
-  try { st = statSync(path) } catch { return }
-  if (st.isFile()) { budget.files--; try { out.push(readFileSync(path, 'utf8')) } catch {} ; return }
-  if (!st.isDirectory()) return
-  for (const name of readdirSync(path)) {
-    if (name === 'node_modules' || name === '.git' || name.startsWith('.')) continue
-    collect(join(path, name), out, budget)
-  }
-}
 
 const PIN = /^(?:(?<owner>[\w.-]+)\/(?<repo>[\w.-]+)#)?(?<id>ADR-\d{3,4})(?:@(?<sha>[0-9a-f]{7,40}))?$/
 
@@ -245,7 +230,10 @@ export function checkPins(docs, { seam }, push) {
     for (const raw of pins) {
       const m = PIN.exec(raw.trim())
       if (!m) { err(`\`decisions: ${raw}\` 를 읽을 수 없다`, '같은 레포면 `ADR-005`, 다른 레포면 `<owner>/<repo>#ADR-005@<sha>` 다.'); continue }
-      if (m.groups.repo && !byId.has(m.groups.id)) {
+      // A pin into the repository the manifest came from is checked against it. Only a pin into a
+      // repository this one has no manifest for is left at the SHA-shape check.
+      const known = m.groups.repo && manifest?.source && sameRepo(`${m.groups.owner}/${m.groups.repo}`, manifest.source)
+      if (m.groups.repo && !byId.has(m.groups.id) && !known) {
         if (!m.groups.sha) warn(`\`${raw}\` 에 SHA 가 없다`, '다른 레포의 결정은 움직인다. `@<sha>` 로 고정해야 나중에 무엇을 읽고 정했는지 되짚을 수 있다.')
         continue
       }
@@ -286,12 +274,15 @@ export function checkTaskScope(docs, { seam }, push) {
   const local = seam.dir ? loadAdrDir(seam.dir).docs : null
   const manifest = seam.dir ? null : loadManifest(seam.manifest)
   if (!local?.length && !manifest) return
+  // Across repositories the paths are this repository's bindings, not the decision's scope.
+  // Without a bindings file nothing matches here; `adr-bindings.mjs` is what says so, per decision.
+  const bindings = local ? null : loadBindings(seam.bindings)
   const byAdr = new Map()
   for (const w of wps) {
     const files = wpFiles(w)
     const hits = local
       ? adrsForFiles(local, files, seam.self).map((d) => ({ id: String(d.fm?.id ?? d.name), title: String(d.fm?.title ?? '') }))
-      : manifestForFiles(manifest, files, seam.self).map((d) => ({ id: String(d.id), title: String(d.title ?? '') }))
+      : boundForFiles(manifest, bindings, files).map((d) => ({ id: String(d.id), title: String(d.title ?? '') }))
     for (const a of hits) {
       if (pinned.has(a.id)) continue
       ;(byAdr.get(a.id) ?? byAdr.set(a.id, { ...a, wps: [] }).get(a.id)).wps.push(w.id)
@@ -300,7 +291,7 @@ export function checkTaskScope(docs, { seam }, push) {
   for (const a of byAdr.values()) {
     // A decision in another repository moves; the pin form there carries the commit it was read at.
     const pin = local ? `"${a.id}"` : `"${manifest.source ?? '<owner>/<repo>'}#${a.id}@<sha>"`
-    push('warn', 'plan.md', `${a.wps.join('·')} 의 files 가 ${a.id}(«${a.title}») 의 scope 를 만지는데 \`decisions:\` 에 없다`,
+    push('warn', 'plan.md', `${a.wps.join('·')} 의 files 가 ${a.id}(«${a.title}») 의 ${local ? 'scope' : '바인딩 paths'} 를 만지는데 \`decisions:\` 에 없다`,
       `결정을 읽고 그 안에서 설계했으면 \`decisions: [${pin}]\` 로 핀한다 — 핀이 있어야 검사기가 그 결정의 상태를 보고, 대체된 결정 위에 선 계획을 잡는다. 결정에서 벗어나는 설계면 TD-* 에 적지 말고 그 ADR 을 대체하는 새 ADR 을 먼저 쓴다.`)
   }
 }
@@ -331,55 +322,8 @@ export function adrDigest(doc) {
  *  reads that entry as this repository's through `scopeEntry`, so this must too — otherwise the
  *  confirms check sees the decision and the task-scope check does not, on the same line. */
 export function adrsForFiles(adrDocs, files, self = null) {
-  const norm = (p) => String(p).replace(/^\.\//, '').replace(/\/+$/, '')
-  const touches = (scope, file) => {
-    const s = norm(scope), f = norm(file)
-    return s === f || f.startsWith(s + '/') || s.startsWith(f + '/')
-  }
   return adrDocs.filter((d) => String(d.fm?.status ?? '') === 'accepted')
     .filter((d) => [].concat(d.fm?.scope ?? []).map(String).filter((v) => !isNull(v))
       .map((s) => scopeEntry(s, self)).filter((e) => e.mine)
-      .some((e) => files.some((f) => touches(e.path, f))))
-}
-
-export function checkManifestDrift(manifest, { root, self }, push) {
-  if (!manifest) return
-  for (const d of manifest.decisions ?? []) {
-    if (ADR_DEAD.includes(String(d.status ?? ''))) continue
-    const mine = (d.scope ?? []).map((s) => scopeEntry(s, self)).filter((e) => e.mine)
-    if (!mine.length) continue
-    const bodies = []
-    let gone = false
-    for (const e of mine) {
-      const p = resolve(root, e.path)
-      if (!existsSync(p)) {
-        push('warn', `${d.id} 의 \`scope\` \`${e.path}\` 가 이 레포에 없다`,
-          `${manifest.source ?? '소유 레포'} 의 결정이 제약하던 자리가 사라졌다. 그 결정이 아직 유효한지 보고, 아니면 그쪽에서 superseded 로 옮긴다.`)
-        gone = true
-        continue
-      }
-      collect(p, bodies)
-    }
-    if (gone || !bodies.length) continue
-    const hay = bodies.join('\n').replace(/\s+/g, '')
-    for (const c of d.confirms ?? []) {
-      if (!hay.includes(String(c).replace(/\s+/g, ''))) {
-        push('warn', `${d.id} 의 \`confirms\` «${c}» 를 이 레포에서 못 찾았다`,
-          '그 결정이 지켜졌는지 판정할 테스트가 없다. 이름만 바뀐 것이면 소유 레포의 ADR 을 고치고 매니페스트를 다시 벤더한다.')
-      }
-    }
-  }
-}
-
-export function manifestForFiles(manifest, files, self) {
-  if (!manifest) return []
-  const norm = (p) => String(p).replace(/^\.\//, '').replace(/\/+$/, '')
-  const touches = (scope, file) => {
-    const s = norm(scope), f = norm(file)
-    return s === f || f.startsWith(s + '/') || s.startsWith(f + '/')
-  }
-  return (manifest.decisions ?? [])
-    .filter((d) => String(d.status ?? '') === 'accepted')
-    .filter((d) => (d.scope ?? []).map((s) => scopeEntry(s, self)).filter((e) => e.mine)
       .some((e) => files.some((f) => touches(e.path, f))))
 }
