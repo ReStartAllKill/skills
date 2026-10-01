@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /** Record verification output, exit code, and file fingerprints in verify_log_dir. */
-import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { readFileSync, existsSync, mkdirSync, writeFileSync, lstatSync } from 'node:fs'
 import { resolve, join, relative, basename } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { loadDir } from './artifact-parse.mjs'
-import { taskFingerprint, repositoryFingerprint } from './task-evidence.mjs'
+import { taskFingerprint, repositoryFingerprint, repositoryFiles, taskFiles } from './task-evidence.mjs'
 
 const argv = process.argv.slice(2)
 const sep = argv.indexOf('--')
@@ -43,8 +43,22 @@ const fingerprints = () => Object.fromEntries(selected.map((t) => [t.id, taskFin
 const before = fingerprints()
 const LOG_DIR_KEY = 'verify_log_dir'
 const logRoot = resolve(ROOT, yml(LOG_DIR_KEY) || '.sdlc/verify')
-const repository = () => repositoryFingerprint(ROOT, { specDir: yml('spec_dir') || '.sdlc/specs', logDir: logRoot })
+const dirs = { specDir: yml('spec_dir') || '.sdlc/specs', logDir: logRoot }
+const repository = () => repositoryFingerprint(ROOT, dirs)
 const repositoryBefore = repository()
+/** Size, mtime and mode of every fingerprinted path, so an unstable run can name what it changed.
+ * The fingerprints are single hashes and cannot; a per-file content hash could, but would read the
+ * whole repository a third time. A stat is cheap, and it is only consulted once the hashes already
+ * disagree, so a file touched without being changed costs at most a spurious name in a list that is
+ * printed for a run that is unstable anyway. */
+const snapshot = () => {
+  const names = new Set([...repositoryFiles(ROOT, dirs), ...selected.flatMap((t) => taskFiles(t))])
+  return new Map([...names].map((n) => {
+    try { const s = lstatSync(resolve(ROOT, n)); return [n, s.isDirectory() ? 'dir' : `${s.size}:${s.mtimeMs}:${s.mode}`] }
+    catch { return [n, 'missing'] }
+  }))
+}
+const statBefore = snapshot()
 const slug = basename(DIR)
 const dir = join(logRoot, slug)
 mkdirSync(dir, { recursive: true })
@@ -63,6 +77,13 @@ const r = spawnSync('sh', ['-c', command], { cwd: ROOT, encoding: 'utf8', maxBuf
 const out = (r.stdout ?? '') + (r.stderr ?? '')
 process.stdout.write(out)
 const code = r.status ?? 1
+const stable = JSON.stringify(before) === JSON.stringify(fingerprints()) && repositoryBefore === repository()
+const changed = (() => {
+  if (stable) return []
+  const after = snapshot()
+  return [...new Set([...statBefore.keys(), ...after.keys()])].filter((n) => (statBefore.get(n) ?? 'missing') !== (after.get(n) ?? 'missing')).sort()
+})()
+const CHANGED_MAX = 20
 
 /** Keep only the output tail for successful runs and full output for failed runs.
  * Preserve the evidence header and SHA-256 of the complete output. */
@@ -95,7 +116,9 @@ writeFileSync(file, [
   `command: ${JSON.stringify(command)}`,
   `fingerprints: ${JSON.stringify(before)}`,
   `repository: ${repositoryBefore}`,
-  `stable: ${JSON.stringify(before) === JSON.stringify(fingerprints()) && repositoryBefore === repository()}`,
+  `stable: ${stable}`,
+  // Absent on a stable run and in every log written before it existed; plan-progress reads both.
+  ...(stable ? [] : [`changed: ${JSON.stringify(changed.slice(0, CHANGED_MAX))}`, `changed_total: ${changed.length}`]),
   `head: ${head}`,
   `exit: ${code}`,
   `bytes: ${Buffer.byteLength(out)}`,
@@ -105,5 +128,24 @@ writeFileSync(file, [
   body,
 ].join('\n'))
 
-console.log(`\n${code === 0 ? '통과' : `실패 (exit ${code})`} — 기록: ${relative(ROOT, file)} (${shape})`)
+/** A bare «통과» over a log that can never be evidence sent people to plan-check, which refused with
+ * «no verify record — run verify-run first», which they had just done. Say here what plan-progress
+ * will say later. The exit code stays the command's: callers read a non-zero exit as «the suite
+ * failed», and an unstable pass did not fail — it only cannot be recorded as completion. */
+const verifyCommand = yml('verify')
+const unusable = []
+if (!stable) {
+  const more = changed.length > CHANGED_MAX ? ` 외 ${changed.length - CHANGED_MAX}개` : ''
+  unusable.push([`실행 중에 명령이 추적되거나 git 이 무시하지 않는 파일을 바꿨다 (stable: false)${changed.length ? `: ${changed.slice(0, CHANGED_MAX).join(', ')}${more}` : ''}`,
+    '테스트가 쓰는 보고서·커버리지·캐시 파일은 .gitignore 에 넣거나 저장소 밖에 쓰게 한 뒤 다시 돌린다 — 그대로 다시 돌리면 같은 결과다.'])
+}
+// Only an unlabelled run claims completion; a labelled one is never evidence and says so by its label.
+if (!LABEL && !legacy && verifyCommand !== command) {
+  unusable.push(verifyCommand
+    ? [`명령이 프로필 verify 와 다르다 — 이번 ${JSON.stringify(command)} · 프로필 ${JSON.stringify(verifyCommand)}`, '프로필의 verify 를 공백·따옴표까지 그대로 넘긴다.']
+    : ['프로필에 verify 가 없다 — 비교할 명령이 없어 어느 로그도 완료 증거가 못 된다', '.claude/spec-profile.yml 에 verify: 를 적는다.'])
+}
+const verdict = code !== 0 ? `실패 (exit ${code})` : unusable.length ? '통과했지만 증거로 쓸 수 없다' : '통과'
+console.log(`\n${verdict} — 기록: ${relative(ROOT, file)} (${shape})`)
+for (const [msg, hint] of unusable) console.log(`  ✗ ${msg}\n      ${hint}`)
 process.exit(code)

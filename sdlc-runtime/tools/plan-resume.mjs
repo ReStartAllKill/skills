@@ -24,6 +24,19 @@ try {
   }
   const action = (action, tasks = [], level = null, reason = '') => ({ action, tasks, level, reason })
   const rows = new Map(progress.rows.map((r) => [r.id, r]))
+  /** Why the logs that exist do not count, grouped so one unstable run over five tasks reads once.
+   * Without it `verify_scoped` repeated forever for a run that could never qualify. An older
+   * plan-progress has no reason fields and this adds nothing. */
+  const why = (ids, key) => {
+    const byMsg = new Map()
+    for (const id of ids) {
+      const u = rows.get(id)?.[key]
+      if (!u) continue
+      const k = `${u.msg}\n  ${u.hint} (로그: ${u.log})`
+      byMsg.set(k, [...(byMsg.get(k) ?? []), id])
+    }
+    return [...byMsg].map(([k, tasks]) => `\n${tasks.join(' ')}: ${k}`).join('')
+  }
   const next = (() => {
     const errors = [...plan.problems, ...progress.notes.filter((n) => n.level === 'error').map((n) => n.msg)]
     if (!ROOT || !progress.born) return action('blocked', [], null, '프로필과 커밋된 plan 이 필요하다.')
@@ -51,13 +64,15 @@ try {
         }
         return action('implement', pending.map((t) => t.id), level.n, '귀속 커밋이 없는 작업만 구현한다.')
       }
-      if (level.n !== plan.levels.at(-1).n && level.tasks.some((t) => !rows.get(t.id).integrated.length && !rows.get(t.id).verified.length)) {
-        return action('verify_scoped', level.tasks.map((t) => t.id), level.n, '이 레벨은 병합됐지만 합류점 검증 증거가 없다. 프로필에 verify_scoped 가 없으면 전체 verify 를 실행한다.')
+      const unproven = level.tasks.filter((t) => !rows.get(t.id).integrated.length && !rows.get(t.id).verified.length).map((t) => t.id)
+      if (level.n !== plan.levels.at(-1).n && unproven.length) {
+        return action('verify_scoped', level.tasks.map((t) => t.id), level.n, '이 레벨은 병합됐지만 합류점 검증 증거가 없다. 프로필에 verify_scoped 가 없으면 전체 verify 를 실행한다.' + why(unproven, 'unintegrated'))
       }
     }
     const all = progress.rows.map((r) => r.id)
     const last = plan.levels.at(-1)?.n ?? null
-    if (progress.rows.some((r) => !r.verified.length)) return action('verify_full', all, last, '전체 작업 ID로 마지막 전체 verify 를 실행한다.')
+    if (progress.rows.some((r) => !r.verified.length)) return action('verify_full', all, last, '전체 작업 ID로 마지막 전체 verify 를 실행한다.' +
+      why(progress.rows.filter((r) => !r.verified.length).map((r) => r.id), 'unverified'))
     if (plan.status === 'completed' && changed.length && progress.rows.every((r) => r.done)) return action('commit_completion', all, last, '완료 상태로 바꾼 plan 과 이 세트의 검증 로그만 커밋한다. plan-check commit 은 in_progress 전용이다.')
     if (progress.rows.some((r) => !r.done) || changed.length) return action('record', all, last, '미체크 작업을 mark 하고 계획서와 각 레벨 검증 로그를 커밋한다.')
     if (plan.status !== 'completed') return action('review_completion', all, last, '추가 게이트·수동 검증·AC 감사를 확인한 뒤 completed 로 기록한다.')

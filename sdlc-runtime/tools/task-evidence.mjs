@@ -63,12 +63,18 @@ export function taskFingerprint(root, task, ref = null) {
   return hash.digest('hex')
 }
 
-export function repositoryFingerprint(root, { specDir, logDir }, ref = null) {
+/** The paths the repository fingerprint covers. Exported so verify-run can say *which* of them a
+ * command changed while it ran — the fingerprint alone only says that something did. */
+export function repositoryFiles(root, { specDir, logDir }, ref = null) {
   const git = (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: MAX_BUFFER })
   const names = ref ? git('ls-tree', '-r', '--name-only', '-z', ref)
     : git('ls-files', '-z', '--cached', '--others', '--exclude-standard')
   const excluded = [specDir, logDir].map((p) => relative(root, resolve(root, p)))
-  const files = [...new Set(names.split('\0').filter(Boolean))].filter((name) =>
+  return [...new Set(names.split('\0').filter(Boolean))].filter((name) =>
     name !== '.claude/autonomy-runs.jsonl' && !excluded.some((dir) => name === dir || name.startsWith(dir + '/')))
+}
+
+export function repositoryFingerprint(root, dirs, ref = null) {
+  const files = repositoryFiles(root, dirs, ref)
   return taskFingerprint(root, { fields: new Map([['files', files.map((f) => '`' + f + '`').join(', ')]]) }, ref)
 }

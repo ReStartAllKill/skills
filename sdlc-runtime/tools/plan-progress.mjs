@@ -86,9 +86,11 @@ const verifyLogs = (() => {
   return paths.filter((p) => p.endsWith('.log')).map((path) => {
     const head = (readEvidence(path) ?? '').split('\n---\n')[0]
     const kv = Object.fromEntries(head.split('\n').map((l) => l.split(/:\s(.*)/s)).filter((a) => a.length > 1).map(([k, v]) => [k.trim(), v.trim()]))
-    let fingerprints = {}, command = null
+    let fingerprints = {}, command = null, changed = null
     try { fingerprints = JSON.parse(kv.fingerprints ?? '{}'); command = JSON.parse(kv.command ?? 'null') } catch {}
-    return { level: Number(kv.level), date: kv.date ?? '', repository: kv.repository, spec: kv.spec, head: kv.head, stable: kv.stable === 'true', fingerprints, command, file: relative(ROOT, path), tasks: (kv.tasks ?? '').split(/\s+/).filter(Boolean), exit: Number(kv.exit ?? 1), label: kv.label ?? null }
+    // `changed` is absent from stable runs and from every log written before verify-run recorded it.
+    try { changed = kv.changed ? { paths: JSON.parse(kv.changed), total: Number(kv.changed_total ?? 0) } : null } catch {}
+    return { level: Number(kv.level), date: kv.date ?? '', repository: kv.repository, spec: kv.spec, head: kv.head, stable: kv.stable === 'true', changed, fingerprints, command, file: relative(ROOT, path), tasks: (kv.tasks ?? '').split(/\s+/).filter(Boolean), exit: Number(kv.exit ?? 1), label: kv.label ?? null }
   })
 })()
 const verifyCommand = ROOT ? yml('verify', resolve(ROOT, '.claude/spec-profile.yml')) : ''
@@ -96,34 +98,109 @@ const repository = ROOT && inGit ? repositoryFingerprint(ROOT, {
   specDir: yml('spec_dir', resolve(ROOT, '.claude/spec-profile.yml')) || '.sdlc/specs',
   logDir: yml('verify_log_dir', resolve(ROOT, '.claude/spec-profile.yml')) || '.sdlc/verify',
 }, evidenceRef) : null
-const verifiedBy = (task, commits) => verifyLogs.filter((l) => !l.label && l.spec === rel(DIR) && l.command === verifyCommand)
-  .sort((a, b) => b.date.localeCompare(a.date) || b.file.localeCompare(a.file)).slice(0, 1).filter((l) =>
-  l.exit === 0 && !l.label && l.tasks.includes(task.id) && l.spec === rel(DIR) &&
-  l.stable && l.command === verifyCommand && !!verifyCommand &&
-  l.repository === repository && !!repository &&
-  l.fingerprints[task.id] === taskFingerprint(ROOT ?? DIR, task, evidenceRef) &&
-  /^[a-f0-9]{40,64}$/.test(l.head ?? '') && git('merge-base', '--is-ancestor', l.head, evidenceRef ?? 'HEAD') !== null &&
-  commits.length > 0 && commits.every((c) => git('merge-base', '--is-ancestor', c, l.head) !== null)
-).map((l) => l.file)
+const newest = (ls) => [...ls].sort((a, b) => b.date.localeCompare(a.date) || b.file.localeCompare(a.file))[0] ?? null
+
+/** Why a log is not evidence, in words a person can act on.
+ *
+ * Both verdicts below used to be a single conjunction, and every way of failing it read the same:
+ * «no verify record — run verify-run first». A test run that writes an un-ignored coverage file is
+ * unstable on every run, so following that advice looped forever, and nothing named the cause. Each
+ * condition is now a [fails, reason] pair tried in order; the first that fails is the reason, and
+ * none failing is exactly the old conjunction holding. The order puts the specific before the
+ * general — a task-file change also changes the repository hash, a rebase may change both — so the
+ * named cause is the one to fix. Evaluation stays lazy, as the `&&` chain was: the git calls and
+ * fingerprints after a failing condition are never run. */
+const firstFailure = (l, checks) => {
+  for (const [fails, why] of checks) if (fails()) return { ...why(), log: l.file }
+  return null
+}
+const HEX = /^[a-f0-9]{40,64}$/
+const short = (h) => String(h ?? '').slice(0, 12)
+const RERUN = '지금 상태에서 verify-run.mjs 로 다시 돌린다.'
+const common = (task, commits, l) => ({
+  exit: [() => l.exit !== 0, () => ({ code: 'exit', msg: `최신 로그가 실패했다 (exit ${l.exit})`, hint: '실패를 고친 뒤 다시 돌린다 — 더 오래된 통과 로그는 새 실패를 대신하지 않는다.' })],
+  tasks: [() => !l.tasks.includes(task.id), () => ({ code: 'tasks', msg: `최신 로그의 --tasks 에 ${task.id} 가 없다 (${l.tasks.join(' ') || '없음'})`, hint: `--tasks 에 ${task.id} 를 넣어 다시 돌린다.` })],
+  legacy: [() => !l.repository || !(task.id in l.fingerprints), () => ({ code: 'legacy', msg: '최신 로그에 작업·저장소 지문이 없다 — 지문을 남기기 전의 verify-run 이 쓴 로그다', hint: RERUN })],
+  stable: [() => !l.stable, () => {
+    const paths = l.changed?.paths ?? []
+    const more = l.changed && l.changed.total > paths.length ? ` 외 ${l.changed.total - paths.length}개` : ''
+    return { code: 'unstable', changed: paths,
+      msg: `verify 명령이 실행 중에 추적되거나 git 이 무시하지 않는 파일을 바꿨다 (stable: false)${paths.length ? `: ${paths.join(', ')}${more}` : ''}`,
+      hint: '테스트가 쓰는 보고서·커버리지·캐시 파일은 .gitignore 에 넣거나 저장소 밖에 쓰게 한 뒤 다시 돌린다 — 그대로 다시 돌리면 같은 결과다.' }
+  }],
+  commits: [() => !commits.length, () => ({ code: 'no-commits', msg: `${task.id} 에 귀속 커밋이 없다`, hint: `\`SDLC-Task: ${task.id}\` trailer 가 붙은 커밋 뒤에 다시 돌린다.` })],
+  headFormat: [() => !HEX.test(l.head ?? ''), () => ({ code: 'head', msg: '최신 로그에 검증한 HEAD 가 없다', hint: `커밋이 있는 git 저장소에서 ${RERUN}` })],
+  headGone: [() => git('merge-base', '--is-ancestor', l.head, evidenceRef ?? 'HEAD') === null, () => ({ code: 'head-gone',
+    msg: `검증한 HEAD ${short(l.head)} 가 지금 이력에 없다 — rebase·amend·reset 뒤로 보인다`, hint: RERUN })],
+  contains: [() => commits.some((c) => git('merge-base', '--is-ancestor', c, l.head) === null), () => {
+    const missing = commits.find((c) => git('merge-base', '--is-ancestor', c, l.head) === null)
+    return { code: 'commits', msg: `검증한 HEAD ${short(l.head)} 가 작업 커밋 ${short(missing)} 를 담지 않는다 — 커밋 전에 돌렸다`, hint: `작업 커밋 뒤에 ${RERUN}` }
+  }],
+})
+
+/** When no log is even a candidate, say what the nearest miss was rather than «none»: the profile
+ * has no `verify`, a run used a command that differs from it by a space or a quote, the folder's
+ * logs name another spec path, or every log carries a label. No log at all stays `null`, so the
+ * caller keeps its «run verify-run first» message for the one case where that advice is right. */
+const nearestMiss = (unlabelled, labelled) => {
+  const mine = unlabelled.filter((l) => l.spec === rel(DIR))
+  const l = newest(mine)
+  if (l && !verifyCommand) return { code: 'no-verify', log: l.file, msg: '프로필에 verify 가 없다 — 비교할 명령이 없어 어느 로그도 완료 증거가 못 된다', hint: '.claude/spec-profile.yml 에 verify: 를 적는다.' }
+  if (l) return { code: 'command', log: l.file, command: l.command, expected: verifyCommand,
+    msg: `최신 로그의 명령이 프로필 verify 와 다르다 — 로그 ${JSON.stringify(l.command)} · 프로필 ${JSON.stringify(verifyCommand)}`,
+    hint: '프로필의 verify 를 공백·따옴표까지 그대로 넘겨 다시 돌린다.' }
+  const other = newest(unlabelled)
+  if (other) return { code: 'spec', log: other.file, msg: `이 폴더의 로그가 다른 스펙 경로를 적고 있다 — 로그 ${other.spec} · 지금 ${rel(DIR)}`, hint: '세트를 옮겼으면 지금 경로에서 다시 돌린다.' }
+  const tagged = newest(labelled)
+  if (tagged) return { code: 'label', log: tagged.file, msg: `라벨이 붙은 로그만 있다 (label: ${tagged.label}) — 라벨 붙은 실행은 완료 증거가 아니다`,
+    hint: '`verify-run.mjs <스펙> --level <N> --tasks <모든 WP> -- "<프로필 verify>"` 를 라벨 없이 돌린다.' }
+  return null
+}
+
+/** `files` is the evidence exactly as before; `reason` says why there is none when a log exists. */
+const verifiedBy = (task, commits) => {
+  const l = newest(verifyLogs.filter((x) => !x.label && x.spec === rel(DIR) && x.command === verifyCommand))
+  if (!l) return { files: [], reason: nearestMiss(verifyLogs.filter((x) => !x.label), verifyLogs.filter((x) => x.label)) }
+  const c = common(task, commits, l)
+  const reason = firstFailure(l, [
+    c.exit, c.tasks, c.legacy, c.stable,
+    [() => !verifyCommand, () => nearestMiss([l], [])],
+    c.headFormat, c.headGone, c.commits, c.contains,
+    [() => l.fingerprints[task.id] !== taskFingerprint(ROOT ?? DIR, task, evidenceRef), () => ({ code: 'task-changed',
+      msg: `verify 뒤에 ${task.id} 의 files 내용이나 작업 정의가 바뀌었다`, hint: RERUN })],
+    [() => !repository, () => ({ code: 'repository', msg: '저장소 지문을 계산할 수 없다 — git 저장소가 아니다', hint: 'git 저장소 안에서 돌린다.' })],
+    [() => l.repository !== repository, () => ({ code: 'repository-changed',
+      msg: 'verify 뒤에 저장소가 바뀌었다 — 다른 파일 편집, 새로 생긴 파일, rebase, 커밋 안 된 변경 중 하나다', hint: `증거는 실행한 그 저장소 상태에만 묶인다. ${RERUN}` })],
+  ])
+  return { files: reason ? [] : [l.file], reason }
+}
 
 // Scoped runs authorize moving to the next level, never final completion. Compare
 // their committed snapshot so later dependent tasks can legitimately change shared files.
 const snapshotHashes = new Map()
 const integratedBy = (task, commits) => {
   const scoped = ROOT ? yml('verify_scoped', resolve(ROOT, '.claude/spec-profile.yml')) : ''
-  const candidates = verifyLogs.filter((l) => l.spec === rel(DIR) && l.tasks.includes(task.id) &&
-    (scoped ? l.label === 'scoped' && l.command === scoped : !l.label && l.command === verifyCommand))
-    .sort((a, b) => b.date.localeCompare(a.date) || b.file.localeCompare(a.file)).slice(0, 1)
-  return candidates.filter((l) => {
-    if (l.exit !== 0 || !l.stable || !commits.length || !l.repository ||
-      !/^[a-f0-9]{40,64}$/.test(l.head ?? '') || git('merge-base', '--is-ancestor', l.head, evidenceRef ?? 'HEAD') === null ||
-      commits.some((c) => git('merge-base', '--is-ancestor', c, l.head) === null)) return false
+  const l = newest(verifyLogs.filter((x) => x.spec === rel(DIR) && x.tasks.includes(task.id) &&
+    (scoped ? x.label === 'scoped' && x.command === scoped : !x.label && x.command === verifyCommand)))
+  if (!l) return { files: [], reason: null }
+  const snapshot = () => {
     if (!snapshotHashes.has(l.head)) snapshotHashes.set(l.head, repositoryFingerprint(ROOT, {
       specDir: yml('spec_dir', resolve(ROOT, '.claude/spec-profile.yml')) || '.sdlc/specs',
       logDir: yml('verify_log_dir', resolve(ROOT, '.claude/spec-profile.yml')) || '.sdlc/verify',
     }, l.head))
-    return l.repository === snapshotHashes.get(l.head) && l.fingerprints[task.id] === taskFingerprint(ROOT, task, l.head)
-  }).map((l) => l.file)
+    return snapshotHashes.get(l.head)
+  }
+  const c = common(task, commits, l)
+  const reason = firstFailure(l, [
+    c.exit, c.stable, c.commits,
+    [() => !l.repository, () => c.legacy[1]()],
+    c.headFormat, c.headGone, c.contains,
+    [() => l.repository !== snapshot(), () => ({ code: 'uncommitted',
+      msg: `실행할 때의 작업 트리가 검증한 HEAD ${short(l.head)} 커밋과 달랐다 — 커밋 안 된 변경이 있는 채로 돌렸다`, hint: `변경을 커밋한 뒤 ${RERUN}` })],
+    [() => l.fingerprints[task.id] !== taskFingerprint(ROOT, task, l.head), () => ({ code: 'task-uncommitted',
+      msg: `실행할 때의 ${task.id} files 가 검증한 HEAD ${short(l.head)} 커밋과 달랐다`, hint: `변경을 커밋한 뒤 ${RERUN}` })],
+  ])
+  return { files: reason ? [] : [l.file], reason }
 }
 
 /** Every commit reachable from the evidence point, not only those after the plan was added.
@@ -167,13 +244,19 @@ for (const w of wps) {
   }
   const sentences = testsOf(w)
   const tests = testsPresent(files, sentences)
+  const verdict = verifiedBy(w, commits)
+  const integration = integratedBy(w, commits)
   rows.push({
     id: w.id, title: w.title, done: !!w.done,
     files, present: present.length, commits, fileCommits, dirty,
     logged: loggedIds.has(w.id),
     tests: { total: sentences.length, checked: tests.checked, missing: tests.missing },
-    verified: verifiedBy(w, commits),
-    integrated: integratedBy(w, commits),
+    verified: verdict.files,
+    integrated: integration.files,
+    // Added fields — plan-check and plan-resume read this JSON, so nothing existing changed shape.
+    // Null when the task is verified (integrated) or when there is no log to find fault with.
+    unverified: verdict.files.length ? null : verdict.reason,
+    unintegrated: integration.files.length ? null : integration.reason,
   })
 }
 
@@ -195,7 +278,15 @@ for (const r of rows) {
       hint: '수용 기준 문장이 곧 테스트 이름이다 — 테스트를 그 문장으로 쓰거나, 실제 테스트 이름에 맞춰 tests: 줄을 고친다.' })
   }
   if (r.done && PLAN_SCHEMA >= TASK_EVIDENCE_SCHEMA && r.verified.length === 0) {
-    notes.push({ level: 'warn', id: r.id, msg: '체크됐는데 합류점 verify 기록이 없다', hint: '`verify-run.mjs <스펙 폴더> --level <N> --tasks <WP> -- "<verify>"` 로 돌리면 기록이 남는다. 통과했다는 주장의 증거는 그 로그다.' })
+    const u = r.unverified
+    notes.push(u
+      ? { level: 'warn', id: r.id, msg: `체크됐는데 합류점 verify 기록이 증거가 못 된다 — ${u.msg}`, hint: `${u.hint} (로그: ${u.log})` }
+      : { level: 'warn', id: r.id, msg: '체크됐는데 합류점 verify 기록이 없다', hint: '`verify-run.mjs <스펙 폴더> --level <N> --tasks <WP> -- "<verify>"` 로 돌리면 기록이 남는다. 통과했다는 주장의 증거는 그 로그다.' })
+  }
+  // Before the check, too: this is the moment someone is about to run `mark` and be refused. A
+  // label-only reason is left out — mid-plan, scoped logs and no full run are the expected state.
+  if (!r.done && r.commits.length && r.unverified && r.unverified.code !== 'label') {
+    notes.push({ level: 'info', id: r.id, msg: `최신 verify 로그가 완료 증거가 못 된다 — ${r.unverified.msg}`, hint: `${r.unverified.hint} (로그: ${r.unverified.log})` })
   }
   if (r.dirty.length) {
     notes.push({ level: 'warn', id: r.id, msg: `커밋되지 않은 변경 ${r.dirty.length}개`, hint: `${r.dirty.slice(0, 3).join(', ')}` })

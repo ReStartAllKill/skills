@@ -1705,6 +1705,89 @@ status: in_progress
   assert(JSON.parse(r.out).rows[0].verified.length === 1, `헤더를 못 읽었다:\n${r.out}`)
 })
 
+await test('a verify log that is not evidence says which condition it failed', () => {
+  // Every way of failing the evidence conjunction used to read «no verify record — run verify-run
+  // first». For a test run that writes an un-ignored report file that advice loops forever.
+  const repo = (prefix, verify) => {
+    const d = temp(prefix)
+    put(join(d, '.claude/spec-profile.yml'), `sdlc_version: 4\nspec_dir: .sdlc/specs\nverify: "${verify}"\n`)
+    const spec = join(d, '.sdlc/specs/2026-09-08-why')
+    put(join(spec, 'plan.md'), `---
+artifact: plan
+schema_version: 4
+status: in_progress
+---
+
+## 작업 \`[필수 · 모든 티어]\`
+
+- [ ] **WP-001 — 변경**
+  - files: \`src/a.js\`
+  - depends: 없음
+  - covers: FR-001 (AC-001)
+  - tests: 결과가 참이다
+  - verify: true
+
+## 실행 기록
+
+해당 없음 — 아직 실행 전
+`)
+    put(join(d, 'README.md'), 'readme\n')
+    put(join(d, 'src/a.js'), "test('결과가 참이다', () => {})\n")
+    git(d, 'init', '-q'); git(d, 'config', 'user.email', 'eval@local'); git(d, 'config', 'user.name', 'eval')
+    git(d, 'add', '.claude', '.sdlc', 'README.md'); git(d, 'commit', '-qm', 'plan born')
+    git(d, 'add', 'src/a.js'); git(d, 'commit', '-qm', 'feat: a', '-m', 'SDLC-Task: WP-001\nSDLC-Plan: .sdlc/specs/2026-09-08-why/plan.md')
+    const verifyRun = (command) => run(process.execPath, [tool('verify-run.mjs'), spec, '--level', '1', '--tasks', 'WP-001', '--', command])
+    const mark = () => run(process.execPath, [tool('plan-check.mjs'), spec, 'mark', 'WP-001', '--note', '없음'])
+    const row = () => JSON.parse(run(process.execPath, [tool('plan-progress.mjs'), spec, '--json']).out).rows[0]
+    return { d, spec, verifyRun, mark, row }
+  }
+
+  // No log at all: the old message is the right one, and the only case that keeps it.
+  let c = repo('sdlc-why-none', 'echo ok')
+  let r = c.mark()
+  assert(r.code !== 0 && /기록이 없다/.test(r.out) && /먼저 돌린다/.test(r.out), `로그가 없을 때의 안내가 바뀌었다:\n${r.out}`)
+  assert(c.row().unverified === null, `로그가 없는데 이유를 지어냈다: ${JSON.stringify(c.row().unverified)}`)
+
+  // The command writes a file git does not ignore: unstable on every run.
+  c = repo('sdlc-why-unstable', 'echo $$ >> coverage.tmp')
+  r = c.verifyRun('echo $$ >> coverage.tmp')
+  assert(r.code === 0, `불안정한 통과의 종료 코드를 바꿨다 (${r.code}):\n${r.out}`)
+  assert(!/\n통과 —/.test(r.out) && /증거로 쓸 수 없다/.test(r.out) && /stable: false/.test(r.out) && /coverage\.tmp/.test(r.out) && /\.gitignore/.test(r.out),
+    `verify-run 이 불안정한 실행을 그냥 «통과» 로 말했다:\n${r.out}`)
+  const logDir = join(c.d, '.sdlc/verify/2026-09-08-why')
+  const logFile = join(logDir, readdirSync(logDir)[0])
+  assert(/^changed: \["coverage\.tmp"\]$/m.test(readFileSync(logFile, 'utf8')), `바뀐 경로를 헤더에 안 남겼다:\n${readFileSync(logFile, 'utf8')}`)
+  r = c.mark()
+  assert(r.code !== 0 && /stable: false/.test(r.out) && /coverage\.tmp/.test(r.out) && /\.gitignore/.test(r.out) && !/먼저 돌린다/.test(r.out),
+    `mark 가 불안정을 말하지 않거나 «verify-run 을 먼저» 로 돌려보냈다:\n${r.out}`)
+  assert(c.row().unverified?.code === 'unstable' && c.row().verified.length === 0, JSON.stringify(c.row().unverified))
+  // A log written before `changed:` existed still reads as unstable, just without the paths.
+  writeFileSync(logFile, readFileSync(logFile, 'utf8').replace(/^changed(_total)?: .*\n/gm, ''))
+  const old = c.row().unverified
+  assert(old?.code === 'unstable' && old.changed.length === 0 && /\.gitignore/.test(old.hint), `옛 로그를 못 읽었다: ${JSON.stringify(old)}`)
+
+  // A command that differs from the profile's `verify` by one space is not a candidate at all.
+  c = repo('sdlc-why-command', 'echo ok')
+  r = c.verifyRun('echo  ok')
+  assert(r.code === 0 && /증거로 쓸 수 없다/.test(r.out) && r.out.includes('"echo  ok"') && r.out.includes('"echo ok"'), `verify-run 이 명령 불일치를 말하지 않는다:\n${r.out}`)
+  const u = c.row().unverified
+  assert(u?.code === 'command' && u.msg.includes('"echo  ok"') && u.msg.includes('"echo ok"'), `명령 불일치를 두 문자열로 말하지 않는다: ${JSON.stringify(u)}`)
+  r = c.mark()
+  assert(r.code !== 0 && r.out.includes('"echo  ok"') && r.out.includes('"echo ok"') && !/먼저 돌린다/.test(r.out), `mark 가 명령 불일치를 말하지 않는다:\n${r.out}`)
+
+  // A passing, stable run, then an unrelated edit: the repository changed since the run.
+  c = repo('sdlc-why-changed', 'echo ok')
+  r = c.verifyRun('echo ok')
+  assert(r.code === 0 && /\n통과 —/.test(r.out) && !/증거로 쓸 수 없다/.test(r.out), `증거가 되는 실행을 의심했다:\n${r.out}`)
+  assert(c.row().verified.length === 1 && c.row().unverified === null, JSON.stringify(c.row()))
+  put(join(c.d, 'README.md'), 'edited after the run\n')
+  assert(c.row().unverified?.code === 'repository-changed', JSON.stringify(c.row().unverified))
+  r = c.mark()
+  assert(r.code !== 0 && /저장소가 바뀌었다/.test(r.out) && !/먼저 돌린다/.test(r.out), `mark 가 실행 뒤 바뀐 저장소를 말하지 않는다:\n${r.out}`)
+  r = run(process.execPath, [tool('plan-progress.mjs'), c.spec])
+  assert(/최신 verify 로그가 완료 증거가 못 된다 — verify 뒤에 저장소가 바뀌었다/.test(r.out), `plan-progress 텍스트 보고에 이유가 없다:\n${r.out}`)
+})
+
 
 await test('uncommitted profiles and ADRs are reported as local-only checks', () => {
   const d = temp('sdlc-tracked')

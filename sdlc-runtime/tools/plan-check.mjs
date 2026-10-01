@@ -82,7 +82,13 @@ if (CMD === 'mark') {
 
   if (RESULT_KEY === 'done') {
     if (!row.commits.length) die(`${TASK} 에 귀속 커밋이 없다 — \`SDLC-Task: ${TASK}\` trailer 가 붙은 커밋이 있어야 한다.\n  아직 합류 전이면 \`task-worktree.mjs <스펙> commit|merge ${TASK}\` 가 먼저다.`)
-    if (!row.verified.length) die(`${TASK} 에 합류점 verify 기록이 없다 — 통과했다는 주장의 증거는 그 로그다.\n  \`verify-run.mjs <스펙> --level <N> --tasks ${TASK} -- "<프로필 verify>"\` 를 먼저 돌린다.`)
+    // «Run verify-run first» is right only when there is no log. When there is one, it is the wrong
+    // advice — an unstable run fails the same way every time — so say which condition it failed.
+    // An older plan-progress has no `unverified` field and falls through to the old message.
+    const u = row.unverified
+    if (!row.verified.length) die(u
+      ? `${TASK} 의 합류점 verify 기록이 완료 증거가 못 된다 — ${u.msg}\n  로그: ${u.log}\n  ${u.hint}`
+      : `${TASK} 에 합류점 verify 기록이 없다 — 통과했다는 주장의 증거는 그 로그다.\n  \`verify-run.mjs <스펙> --level <N> --tasks ${TASK} -- "<프로필 verify>"\` 를 먼저 돌린다.`)
   }
 
   const today = new Date().toLocaleDateString('sv-SE')

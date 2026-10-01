@@ -4,6 +4,24 @@
 
 ### Fixed
 
+- **A verify log that does not count as completion evidence now says which condition it failed.**
+  A log is evidence only when a list of conditions all hold, and every way of failing that list
+  read the same: `plan-check mark` refused with «verify 기록이 없다 … verify-run 을 먼저 돌린다»,
+  which the user had just done. A test command that writes an un-ignored coverage file is unstable
+  on every run, so that advice looped forever; a command one space away from the profile's
+  `verify`, a rebase that dropped the verified HEAD and an unrelated edit after the run hit the same
+  dead end. `plan-progress --json` now adds `unverified` and `unintegrated` to each row — the
+  newest log's first failed condition, or, when no log is a candidate, the nearest miss (the two
+  command strings side by side, a missing `verify`, another spec path, labelled logs only). The
+  text report, `mark` and `plan-resume`'s `verify_scoped` and `verify_full` print it with a hint
+  that fits; no log at all keeps the old message, the one case where it is right. `verify-run` no
+  longer prints a bare «통과» for an unstable run or an unlabelled run of another command: it ends
+  with «통과했지만 증거로 쓸 수 없다» and the reason, and records the paths the run changed in a new
+  `changed:` header key, found by comparing a stat snapshot taken before the run once the
+  fingerprints disagree. Hashing each file separately would name them as well, at the cost of
+  reading the repository a third time. The exit code stays the command's, because callers read a
+  non-zero exit as a failed suite, and what counts as evidence is unchanged.
+
 - **Pattern and word-list rules stop failing correct documents.** `check-all` runs
   `check-artifacts --strict`, so each of these failed CI on a document that was right. A code span
   or a fenced block holding `Result<Blob, StoreError>` or `Promise<Quota>` was read as a leftover
