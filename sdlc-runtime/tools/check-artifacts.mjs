@@ -5,7 +5,7 @@ import { resolve, basename, dirname, join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import {
   PREFIXES, FILES, WP_FIELDS, P_ALT, idsIn, stripComments, isNull, frontmatter,
-  loadDir, isTemplate, report, SDLC_VERSION,
+  loadDir, isTemplate, report, SDLC_VERSION, schemaNote,
   SUPPORTED_SCHEMA_VERSIONS, schemaVersion, BODY_PIN, bodyHash, bodyPin,
   levelsOf, wpFiles, wpDeps, ADR_FILENAME, loadAdrDir, CHAIN_FILES, scopeOf,
   RESEARCH_SCHEMA, RE_RESEARCH_CITE, loadResearchIndex } from './artifact-parse.mjs'
@@ -330,7 +330,7 @@ for (const d of chain.slice(1)) {
 }
 const loneDoc = docs.finding ?? docs.research
 const shownSchema = chainSchema ?? (loneDoc ? schemaVersion(loneDoc.fm) : null)
-if (shownSchema != null) notes.push(`산출물 schema v${shownSchema}${shownSchema === 1 ? ' (무버전 문서 호환)' : ''} · runtime ${SDLC_VERSION}`)
+if (shownSchema != null) notes.push(schemaNote(shownSchema))
 
 const TIER = docs.intent?.fm?.tier ?? docs.finding?.fm?.tier ?? 'standard'
 for (const d of [docs.spec, docs.plan].filter(Boolean)) {

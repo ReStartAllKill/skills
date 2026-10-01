@@ -2,7 +2,7 @@
 import { existsSync, statSync } from 'node:fs'
 import { resolve, basename, dirname } from 'node:path'
 import {
-  loadDir, isTemplate, idsIn, stripComments, report, P_ALT, SDLC_VERSION, ADR_FILENAME, loadAdrDir,
+  loadDir, isTemplate, idsIn, stripComments, report, P_ALT, SDLC_VERSION, schemaNote, ADR_FILENAME, loadAdrDir,
   SUPPORTED_SCHEMA_VERSIONS, schemaVersion,
 } from './artifact-parse.mjs'
 import { SECTION, RE_DIVERGENCE, RESULT, NO_DIVERGENCE, PRIORITIES, TIERS, STATUSES, hasAlias } from './keywords.mjs'
@@ -70,7 +70,7 @@ if (Object.keys(docs).length === 0) {
   process.exit(1)
 }
 const schema = schemaVersion((docs.intent ?? docs.finding ?? docs.spec ?? docs.plan ?? Object.values(docs)[0])?.fm)
-if (schema != null) notes.push(`산출물 schema v${schema}${schema === 1 ? ' (무버전 문서 호환)' : ''} · runtime ${SDLC_VERSION}`)
+if (schema != null) notes.push(schemaNote(schema))
 if (isTemplate(LINTED) && !argv.includes('--json')) {
   console.log(`\n산문 린트 — ${basename(DIR)}\n  · 템플릿 원본이다 — 주석과 placeholder 가 있는 것이 정상이라 «항목을 행으로 접었나» 검사만 돈다.`)
 }

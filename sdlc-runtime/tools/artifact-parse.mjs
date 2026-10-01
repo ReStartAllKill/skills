@@ -251,6 +251,15 @@ export function loadResearchIndex(specDir) {
 export const isTemplate = (docs) => Object.values(docs)
   .some((doc) => /YYYY-NNN/.test(String(doc?.fm?.id ?? '')))
 
+/** The line every report opens with: which schema judged the set and which runtime did the judging.
+ *  `check-all` prints the other notes of a passing check and leaves this one out, since it is the
+ *  same line for every set. Notes are plain strings in the JSON contract, so the line is recognised
+ *  by its shape; the matcher lives beside the one function that writes it so that rewording one
+ *  without the other is visible in the same diff. Turning notes into objects was rejected — it
+ *  would change `--json` for every consumer to tell apart one line. */
+export const schemaNote = (schema) => `산출물 schema v${schema}${schema === 1 ? ' (무버전 문서 호환)' : ''} · runtime ${SDLC_VERSION}`
+export const isSchemaNote = (n) => /^산출물 schema v\d+(?: \(무버전 문서 호환\))? · runtime \S+$/.test(String(n))
+
 export function report({ title, notes = [], problems, strict, ruleDoc, json = false }) {
   const errors = problems.filter((p) => p.level === 'error')
   const warns = problems.filter((p) => p.level === 'warn')

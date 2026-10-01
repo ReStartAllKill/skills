@@ -1804,6 +1804,61 @@ await test('a closed plan is not asked to pin a decision accepted after it close
   assert(scopeWarn(rep), `a plan that closed past a decision already in force was excused:\n${rep.raw}`)
 })
 
+// The history is read only when a verdict turns on it. A closed set whose pins are live and whose
+// tasks meet no unpinned decision never reads it, and must be judged exactly as an open one.
+await test('a closed set with only live pins is judged as an open one', () => {
+  const d = closedRepo()
+  adrAt(d, 'ADR-001', 'store', 'accepted')
+  put(join(d, '.sdlc/specs/s/plan.md'), closedPlan('completed', '"ADR-001"'))
+  git(d, 'add', '-A'); git(d, 'commit', '-qm', 'close the set')
+  const closed = setCheck(d)
+  put(join(d, '.sdlc/specs/s/plan.md'), closedPlan('in_progress', '"ADR-001"'))
+  const open = setCheck(d)
+  const adrSaid = (rep) => [...rep.notes, ...rep.problems.map((p) => p.msg)].filter((m) => /ADR-001/.test(m))
+  assert(adrSaid(closed).length === 0 && adrSaid(open).length === 0, `a live pin drew a word:\n${closed.raw}\n${open.raw}`)
+})
+
+// check-all printed a child's output only on failure, so a passing check's notes never reached CI —
+// a freshness check that did not run read as one that passed.
+await test('check-all prints a passing binding check\'s note that freshness went unchecked', () => {
+  const up = bindUpstream()
+  // Nested two deep in a fresh directory: findUpstream also looks at ../docs and ../../docs, and
+  // neither may exist here, or the freshness check would run and the note would never appear.
+  const d = join(temp('sdlc-adr-nocheckout'), 'a', 'contracts')
+  cpSync(bindConsumer(), d, { recursive: true })
+  assert(run(process.execPath, [tool('pull-adr.mjs'), d, '--from', up]).code === 0, 'pull-adr failed')
+  put(join(d, '.claude/adr-bindings.yml'), bindingsYml(git(up, 'rev-parse', 'HEAD')))
+  const r = run(process.execPath, [tool('check-all.mjs'), d], { env: { ...process.env, SDLC_UPSTREAM: '' } })
+  assert(r.code === 0, `check-all failed on a clean binding:\n${r.out}`)
+  assert(/결정 바인딩 통과[^\n]*\n\s+· [^\n]*체크아웃이 없다/.test(r.out), `the unchecked freshness read as a plain pass:\n${r.out}`)
+})
+
+await test('check-all prints the note of a closed set whose pin was superseded after it closed', () => {
+  const d = closedRepo()
+  // check-all runs the ADR folder under --strict too, so the pair must be clean on its own:
+  // a test to confirm and the supersession written on both sides.
+  put(join(d, 'src/a/x.ts'), 'export const x = 1 // test_Store\n')
+  const adr = (id, slug, status) => put(join(d, `docs/adr/${id}-${slug}.md`), bindAdr(id, slug, 'scope: ["src/a"]\nconfirms: ["test_Store"]')
+    .replace('status: accepted', `status: ${status}`)
+    .replace('superseded_by: null', id === 'ADR-001' && status === 'superseded' ? 'superseded_by: "ADR-002"' : 'superseded_by: null')
+    .replace('supersedes: null', id === 'ADR-002' ? 'supersedes: "ADR-001"' : 'supersedes: null'))
+  adr('ADR-001', 'store', 'accepted')
+  // A rejected intent closes a set as a completed plan does, and the clean v7 fixture passes every
+  // other check, so whatever check-all says here is the pin alone.
+  const intent = readFileSync(join(ROOT, '..', 'skills/sdlc/create-intent/evals/cases/clean-intent-v7/docs/intent.md'), 'utf8')
+    .replace('status: accepted', 'status: rejected\ndecisions: ["ADR-001"]')
+  put(join(d, '.sdlc/specs/s/intent.md'), intent)
+  git(d, 'add', '-A'); git(d, 'commit', '-qm', 'close the set')
+  adr('ADR-001', 'store', 'superseded')
+  adr('ADR-002', 'store-again', 'accepted')
+  assert(run(process.execPath, [tool('adr-index.mjs'), d]).code === 0, 'adr-index failed')
+  git(d, 'add', '-A'); git(d, 'commit', '-qm', 'supersede')
+  const r = run(process.execPath, [tool('check-all.mjs'), d])
+  assert(r.code === 0, `a set closed under a live decision failed check-all:\n${r.out}`)
+  assert(/통과  \.sdlc\/specs\/s\n(\s+· [^\n]*\n)*\s+· [^\n]*끝난 세트가 핀한 ADR-001/.test(r.out), `the closed-set note never reached check-all:\n${r.out}`)
+  assert(!/산출물 schema v/.test(r.out), `the per-set schema line was repeated:\n${r.out}`)
+})
+
 await test('Execution log ignores change-history task IDs in either language', async () => {
   const { SECTION, sectionBlock, RE_CHANGE_LOG } = await import('../tools/keywords.mjs')
   for (const heading of ['Change log', 'Changelog', '변경 기록']) {

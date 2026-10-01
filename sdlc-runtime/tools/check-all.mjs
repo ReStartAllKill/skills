@@ -5,7 +5,7 @@ import { execFileSync, execFileSync as run } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { loadBands, validate } from './bands.mjs'
 import { loadPolicy, validate as validatePolicy } from './autonomy.mjs'
-import { frontmatter, schemaVersion } from './artifact-parse.mjs'
+import { frontmatter, schemaVersion, isSchemaNote } from './artifact-parse.mjs'
 import { lintWarningPolicy } from './profile.mjs'
 import { useLocale } from './locale.mjs'
 
@@ -67,6 +67,30 @@ if (runtime.startsWith('~/')) runtime = join(process.env.HOME ?? '', runtime.sli
 runtime = resolve(ROOT, runtime)
 
 const tool = (n) => join(runtime, 'tools', n)
+
+/** Runs a child check in `--json` and hands back its notes when it passes. A passing check says
+ *  things a reader needs — a freshness check that found no checkout to compare with, a finished set
+ *  whose pinned decision was superseded after it closed — and printing only failures made those
+ *  read as plain passes. The JSON `notes` are taken rather than the text scraped (runtime.md,
+ *  «Language and machine output»). A failure is run again in text mode so its output stays the
+ *  report a person reads; the second run costs only on the failing path. Output that is not JSON
+ *  from a run that exited 0 is a failure: a report nobody could read is not a pass. */
+const runChecked = (t, args, { rerun = true } = {}) => {
+  let output
+  try { output = run(process.execPath, [tool(t), ...args, '--json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) }
+  catch (e) {
+    if (!rerun) return { ok: false, out: (e.stdout ?? '') + (e.stderr ?? '') }
+    try { run(process.execPath, [tool(t), ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }); return { ok: false, out: (e.stdout ?? '') + (e.stderr ?? '') } }
+    catch (e2) { return { ok: false, out: (e2.stdout ?? '') + (e2.stderr ?? '') } }
+  }
+  try {
+    const report = JSON.parse(output)
+    return { ok: true, report, notes: (report.notes ?? []).filter((n) => !isSchemaNote(n)) }
+  } catch { return { ok: false, out: `${t} 가 JSON 보고서를 내지 않았다 — 미검사다. 통과가 아니다.\n${output}` } }
+}
+const showNotes = (notes) => {
+  for (const n of [...new Set(notes)]) console.log(`    · ${String(n).replace(/\n\s*/g, '\n      ')}`)
+}
 for (const t of ['check-artifacts.mjs', 'lint-prose.mjs', 'plan-progress.mjs']) {
   if (existsSync(tool(t))) continue
   console.error(`런타임에 ${t} 가 없다: ${runtime}`)
@@ -79,23 +103,26 @@ if (REQUIRED && chains.length === 0) failed.push({ rel: relative(ROOT, specDir),
 for (const dir of chains) {
   const rel = relative(ROOT, dir)
   const out = []
+  const notes = []
   let ok = true
   const checks = ['check-artifacts.mjs', 'lint-prose.mjs']
-  const planPath = join(dir, 'plan.md')
-  if (existsSync(planPath) && schemaVersion(frontmatter(readFileSync(planPath, 'utf8')) ?? {}) >= 4) checks.push('plan-progress.mjs')
   for (const t of checks) {
-    try {
-      const output = run(process.execPath, [tool(t), dir, ...(t === 'lint-prose.mjs' && lintPolicy === 'advisory' ? ['--json'] : ['--strict'])], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
-      if (t === 'lint-prose.mjs' && lintPolicy === 'advisory') {
-        const report = JSON.parse(output)
-        for (const p of report.problems.filter((p) => p.level === 'warn')) console.log(`⚠ ${rel}/${p.doc}:${p.line ?? 0} [${p.rule}] ${p.msg}`)
-      }
-    } catch (e) {
-      ok = false
-      out.push((e.stdout ?? '') + (e.stderr ?? ''))
-    }
+    const advisory = t === 'lint-prose.mjs' && lintPolicy === 'advisory'
+    // The advisory lint already ran in JSON, and its failure output has always been that JSON.
+    const r = runChecked(t, advisory ? [dir] : [dir, '--strict'], { rerun: !advisory })
+    if (!r.ok) { ok = false; out.push(r.out); continue }
+    if (advisory) for (const p of r.report.problems.filter((p) => p.level === 'warn')) console.log(`⚠ ${rel}/${p.doc}:${p.line ?? 0} [${p.rule}] ${p.msg}`)
+    notes.push(...r.notes)
+  }
+  // plan-progress stays in text mode: under `--strict` any warning or error fails it, so a passing
+  // run carries only info-level notes — routine progress hints that would flood CI on every set.
+  const planPath = join(dir, 'plan.md')
+  if (existsSync(planPath) && schemaVersion(frontmatter(readFileSync(planPath, 'utf8')) ?? {}) >= 4) {
+    try { run(process.execPath, [tool('plan-progress.mjs'), dir, '--strict'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) }
+    catch (e) { ok = false; out.push((e.stdout ?? '') + (e.stderr ?? '')) }
   }
   console.log(`${ok ? '통과' : '실패'}  ${rel}`)
+  showNotes(notes)
   if (!ok) failed.push({ rel, out: out.join('\n') })
 }
 
@@ -109,11 +136,12 @@ if (adrDir) {
   } else {
     const out = []
     let ok = true
-    for (const [t, args] of [['check-artifacts.mjs', [dir, '--strict']], ['adr-index.mjs', [ROOT, '--check']]]) {
-      try { run(process.execPath, [tool(t), ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) }
-      catch (e) { ok = false; out.push((e.stdout ?? '') + (e.stderr ?? '')) }
-    }
+    const adrCheck = runChecked('check-artifacts.mjs', [dir, '--strict'])
+    if (!adrCheck.ok) { ok = false; out.push(adrCheck.out) }
+    try { run(process.execPath, [tool('adr-index.mjs'), ROOT, '--check'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) }
+    catch (e) { ok = false; out.push((e.stdout ?? '') + (e.stderr ?? '')) }
     console.log(`\n결정 기록 ${ok ? '통과' : '실패'}  ${rel}`)
+    if (adrCheck.ok) showNotes(adrCheck.notes)
     if (!ok) failed.push({ rel, out: out.join('\n') })
     if (!tracked(dir)) {
       const msg = `결정 기록이 Git 에 없다 — ${rel}`
@@ -127,12 +155,15 @@ if (adrDir) {
   const rel = yml('adr_bindings', profile) || '.claude/adr-bindings.yml'
   let ok = true
   let out = ''
+  let notes = []
   if (!existsSync(tool('adr-bindings.mjs'))) { ok = false; out = `런타임에 adr-bindings.mjs 가 없다: ${runtime} — 바인딩을 검사하지 못했다.` }
   else {
-    try { run(process.execPath, [tool('adr-bindings.mjs'), ROOT, '--strict'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) }
-    catch (e) { ok = false; out = (e.stdout ?? '') + (e.stderr ?? '') }
+    const r = runChecked('adr-bindings.mjs', [ROOT, '--strict'])
+    if (r.ok) notes = r.notes
+    else { ok = false; out = r.out }
   }
   console.log(`\n결정 바인딩 ${ok ? '통과' : '실패'}  ${yml('adr_repo', profile)} → ${rel}`)
+  showNotes(notes)
   if (!ok) failed.push({ rel, out })
 }
 

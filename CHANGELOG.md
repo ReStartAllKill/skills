@@ -16,6 +16,23 @@
   closed plan is not asked to pin a decision accepted after it closed, and still is for one
   accepted before. Notes from these checks now reach the report; an `info` pushed into problems
   used to vanish.
+- **`check-all` prints the notes of a check that passed.** It ran each check as a child and
+  printed its output only on failure, so a passing check's notes never reached CI: under
+  `adr_repo` with no upstream checkout, «체크아웃이 없다 — 매니페스트가 최신인지 대조하지 않았다»
+  became a bare `결정 바인딩 통과`, and the closed-set notes above were dropped the same way.
+  Artifact, prose, ADR-folder and binding checks now run in `--json`, and their `notes` are
+  printed under the `통과` line; a failing check is run again in text mode so its report reads
+  as before. The schema-and-runtime line every set carries is left out, recognised by a matcher
+  that sits beside the one function writing it — turning notes into objects to tell that one line
+  apart was rejected as a change to `--json` for every consumer. `plan-progress` stays in text
+  mode, since a run that passes `--strict` holds only info-level hints. Output that is not JSON
+  from a run that exited 0 now fails rather than passing unread.
+- **The closed-set history is read only when a verdict depends on it.** It costs a `git log`
+  and a `git show` per commit that touched the plan, and both the pin check and the task-scope
+  check read it for every closed set; a plan with 13 commits took ~620 ms instead of ~110 ms, on
+  every set `check-all` walks. It is now read once per run, and only for a pinned decision that is
+  no longer in force or a task that meets an unpinned decision. A closed set with live pins makes
+  one git call where it made 31, and its report is unchanged.
 
 ## 0.10.0 — 2026-09-30
 

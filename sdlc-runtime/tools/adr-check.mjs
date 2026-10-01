@@ -268,6 +268,18 @@ export function closedHistory(docs, seam) {
   return { closed: true, commit, statusAt }
 }
 
+/** Reading the history costs a `git log` and a `git show` per commit that touched the plan — half a
+ *  second on a plan with a dozen commits, paid for every set `check-all` walks. Most sets never need
+ *  it: an open set, or a closed one whose pins are all live and whose tasks meet no unpinned
+ *  decision, is judged the same with or without it. So it is read only when a verdict turns on it,
+ *  and once per document set: `checkPins` and `checkTaskScope` see the same `docs`. Computing it up
+ *  front in the caller was rejected — the caller cannot know whether a dead pin is coming. */
+const histories = new WeakMap()
+const historyOf = (docs, seam) => {
+  if (!histories.has(docs)) histories.set(docs, closedHistory(docs, seam))
+  return histories.get(docs)
+}
+
 export function checkPins(docs, { seam }, push) {
   if (!seam?.configured) return
   const local = seam.dir ? loadAdrDir(seam.dir).docs : []
@@ -276,7 +288,6 @@ export function checkPins(docs, { seam }, push) {
     ? local.map((d) => [String(d.fm?.id ?? ''), { status: String(d.fm?.status ?? ''), superseded_by: d.fm?.superseded_by, path: d.path }])
     : (manifest?.decisions ?? []).map((d) => [String(d.id), { status: String(d.status ?? ''), superseded_by: d.superseded_by }]))
   const haveSource = local.length > 0 || manifest != null
-  const history = closedHistory(docs, seam)
 
   for (const d of Object.values(docs)) {
     const pins = [].concat(d.fm?.decisions ?? []).map(String).filter((v) => !isNull(v))
@@ -297,7 +308,8 @@ export function checkPins(docs, { seam }, push) {
       const target = byId.get(m.groups.id)
       if (!target) { err(`핀한 ${m.groups.id} 가 없다`, `${seam.dir ? relative(seam.root ?? '', seam.dir) : (manifest?.source ?? '매니페스트')} 에서 못 찾았다. 오타이거나, 소비 레포라면 매니페스트가 낡았다.`); continue }
       const st = String(target.status ?? '')
-      const then = ADR_DEAD.includes(st) && history ? history.statusAt(m.groups.id, target.path) : null
+      const history = ADR_DEAD.includes(st) ? historyOf(docs, seam) : null
+      const then = history ? history.statusAt(m.groups.id, target.path) : null
       if (ADR_DEAD.includes(st) && then && !ADR_DEAD.includes(then)) {
         push('info', d.name, `끝난 세트가 핀한 ${m.groups.id} 는 세트를 닫은 ${history.commit.slice(0, 7)} 에서 \`${then}\` 였고 그 뒤 \`${st}\` 가 됐다${st === 'superseded' && target.superseded_by ? ` (→ ${target.superseded_by})` : ''}`,
           '이 세트는 그 결정 아래에서 끝났다. 이어 가는 작업은 새 세트를 쓰고 효력 있는 결정을 핀한다.')
@@ -355,7 +367,7 @@ export function checkTaskScope(docs, { seam }, push) {
   // A closed plan's files meeting a decision that was not yet in force when the set closed is code
   // that predates the decision, not a plan that skipped it. Only that case becomes a note: a
   // decision already in force at closing was there to be read, and the warning stands.
-  const history = closedHistory(docs, seam)
+  const history = byAdr.size ? historyOf(docs, seam) : null
   for (const a of [...byAdr.values()]) {
     const then = history?.commit ? history.statusAt(a.id, a.path) : null
     if (history?.commit && then !== 'accepted') {
