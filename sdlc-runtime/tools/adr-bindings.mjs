@@ -16,8 +16,9 @@
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { resolve, join, relative, dirname } from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { ADR_FILENAME, report } from './artifact-parse.mjs'
+import { ADR_FILENAME, BODY_PIN, report, loadAdr } from './artifact-parse.mjs'
 import { hashOf, headOf, findUpstream, sameRepo } from './upstream.mjs'
+import { decisionHash, digestPin, appliesToOf } from './adr-text.mjs'
 import { R, noteDrift } from './rules.mjs'
 
 export const ADR_DEAD = ['deprecated', 'superseded', 'rejected']
@@ -274,6 +275,7 @@ export function checkBindings({ root, seam, from = null }, push) {
   const self = seam.self
   const byId = new Map((manifest.decisions ?? []).map((d) => [String(d.id), d]))
   const bound = bindings?.bindings ?? {}
+  const later = []
 
   if (!self && (manifest.decisions ?? []).some((d) => [].concat(d.applies_to ?? []).length)) {
     push('info', brel, '프로필에 `repo` 가 없다 — 어느 결정이 이 레포에 적용되는지 `applies_to` 와 대조하지 못했다',
@@ -304,13 +306,33 @@ export function checkBindings({ root, seam, from = null }, push) {
     } else if (st !== 'accepted') {
       warn(`결정이 아직 \`${st}\` 다`, '승인 안 된 결정에 묶인 코드는 결정이 바뀔 때 같이 흔들린다.', R('binding-unaccepted'))
     }
-    if (!b.at) err('`at` 이 없다', `어느 판의 결정을 읽고 묶었는지가 없으면 결정이 바뀐 것을 알 수 없다. 지금 판은 ${d.sha ? d.sha.slice(0, 7) : '(상류에서 미커밋)'} 이다.`, R('binding-at-missing'))
-    else if (!/^[0-9a-f]{7,40}$/.test(b.at)) err(`\`at: ${b.at}\` 이 커밋 SHA 가 아니다`, '상류 ADR 파일을 마지막으로 바꾼 커밋이다. `pull-adr.mjs` 가 출력한다.', R('binding-at-invalid'))
+    // `at` names what was read when the binding was written. The content form (`body:<hex>`, the
+    // decision's `decisionHash`) moves only when what the decision says moves; the commit form moves
+    // with every commit that touches the file — a typo, an `applies_to` edit, a squash merge — and
+    // stays accepted, unchanged, so no existing binding breaks.
+    const now = d.digest ? `body:${d.digest.slice(0, 12)}` : d.sha ? d.sha.slice(0, 12) : null
+    const reread = `${manifest.source ?? seam.repo} 의 ${d.path ?? d.id} 를 다시 읽고, 경로와 확인이 여전히 맞으면 \`at\` 을 올린다`
+    const bodyAt = BODY_PIN.exec(b.at ?? '')?.[1]?.toLowerCase()
+    if (!b.at) err('`at` 이 없다', `어느 판의 결정을 읽고 묶었는지가 없으면 결정이 바뀐 것을 알 수 없다. 지금 판은 ${now ? `\`at: "${now}"\`` : '(상류에서 미커밋)'} 이다.`, R('binding-at-missing'))
+    else if (bodyAt) {
+      if (d.digest && !d.digest.startsWith(bodyAt)) {
+        err(`묶은 뒤 결정이 바뀌었다 — \`at: ${b.at}\`, 지금 ${digestPin(d.digest)}`,
+          `결정·Non-goals·대안·상태 가운데 무엇이 바뀌었다. ${reread} — \`at: "${digestPin(d.digest)}"\`.`, R('binding-stale'))
+      } else if (!d.digest) {
+        warn('매니페스트에 결정 해시가 없어 `at` 을 대조하지 못했다', '이 기능 전에 끌어온 매니페스트다. `pull-adr.mjs` 로 다시 끌어온다.', R('binding-at-unverified'))
+      }
+    } else if (!/^[0-9a-f]{7,40}$/.test(b.at)) err(`\`at: ${b.at}\` 이 커밋 SHA 도 결정 해시도 아니다`, `\`body:<16진수 12자 이상>\` — 결정 내용의 해시 — 이나 상류 ADR 파일을 마지막으로 바꾼 커밋이다. \`pull-adr.mjs\` 가 출력한다${now ? ` — 지금은 \`at: "${now}"\`` : ''}.`, R('binding-at-invalid'))
     else if (d.sha && !d.sha.startsWith(b.at)) {
       err(`묶은 뒤 결정이 바뀌었다 — \`at: ${b.at.slice(0, 7)}\`, 지금 ${d.sha.slice(0, 7)}`,
-        `${manifest.source ?? seam.repo} 의 ${d.path ?? d.id} 를 다시 읽고, 경로와 확인이 여전히 맞으면 \`at\` 을 올린다.`, R('binding-stale'))
+        `${reread}.`, R('binding-stale'))
     } else if (!d.sha) {
       warn('끌어올 때 상류 ADR 이 커밋되지 않아 `at` 을 대조하지 못했다', '상류에서 커밋한 뒤 다시 끌어온다.', R('binding-at-unverified'))
+    } else if (d.digest) {
+      // Only when the SHA still matches: the binding was then written against this very text, so the
+      // digest printed is one its author has read. Suggesting it next to a stale SHA would invite
+      // raising `at` without the re-read. A note, not a warning — under `--strict` a warning would
+      // fail every consumer that bound before the content form existed.
+      later.push(`${b.id} — \`at\` 이 커밋 SHA 다. 상류의 오타·\`applies_to\`·스쿼시 병합에도 멈춘다 — \`at: "${digestPin(d.digest)}"\` 로 바꾸면 결정 내용이 바뀔 때만 멈춘다`)
     }
     if (self && !appliesHere(d, self)) {
       warn(`결정의 \`applies_to\` 에 이 레포(${self})가 없다`, `이 레포를 제약하는 결정이면 ${manifest.source ?? '상류'} 에서 \`applies_to\` 에 더한다.`, R('binding-not-applicable'))
@@ -350,29 +372,81 @@ export function checkBindings({ root, seam, from = null }, push) {
     }
   }
 
-  // Freshness needs the other repository. The checker does not use the network, so it reads a
-  // checkout when one is at hand and says so when none is — a stale manifest must not look fresh.
-  const upstream = findUpstream({ repo: manifest.source ?? seam.repo }, root, from)
-  if (!upstream) {
-    push('info', mrel, `${manifest.source ?? seam.repo} 체크아웃이 없다 — 매니페스트가 최신인지 대조하지 않았다`,
-      '`SDLC_UPSTREAM` 이나 `--from` 으로 가리키면 상류에서 바뀐 결정을 오류로 잡는다.')
-    return
+  // A manifest pulled before decisions carried a content hash is still read, and judged by commit
+  // as it always was; saying so is what keeps the old comparison from passing for the new one.
+  const legacyManifest = (manifest.decisions ?? []).some((d) => !d.digest)
+  if (legacyManifest) {
+    push('info', mrel, '매니페스트에 결정 해시(`digest`)가 없다 — 이 기능 전에 끌어왔다. 상류와는 커밋 SHA 로 대조한다',
+      '`pull-adr.mjs` 로 다시 끌어오면 결정 내용으로 대조한다 — 상류의 오타·`applies_to` 편집·스쿼시 병합에는 멈추지 않는다.')
   }
-  // The folder comes from where the pulled decisions sat, not from an upstream profile: a document
-  // repository need not run this harness at all.
-  const dirs = [...new Set((manifest.decisions ?? []).map((d) => d.path && dirname(d.path)).filter(Boolean))]
-  const onDisk = dirs.flatMap((dir) => existsSync(resolve(upstream, dir))
-    ? readdirSync(resolve(upstream, dir)).map((n) => ADR_FILENAME.exec(n)).filter(Boolean).map((m) => `ADR-${m[1]}`)
-    : [])
-  const unseen = onDisk.filter((id) => !byId.has(id))
-  if (unseen.length) push('error', mrel, `상류에 매니페스트가 모르는 결정이 있다 — ${unseen.join(' · ')}`, '`pull-adr.mjs` 로 다시 끌어온다.', undefined, R('manifest-decision-unknown'))
-  for (const d of manifest.decisions ?? []) {
-    if (!d.path) continue
-    if (!existsSync(resolve(upstream, d.path))) { push('error', mrel, `${d.id} 가 상류에서 사라졌다 — ${d.path}`, '`pull-adr.mjs` 로 다시 끌어온다.', undefined, R('manifest-decision-gone')); continue }
-    const head = headOf(upstream, d.path)
-    if (head && d.sha && head !== d.sha) {
-      push('error', mrel, `${d.id} 가 끌어온 뒤 상류에서 바뀌었다 — ${d.sha.slice(0, 7)} → ${head.slice(0, 7)}`,
-        '`pull-adr.mjs` 로 다시 끌어오고, 이 결정에 묶인 바인딩의 `at` 을 새 판을 읽은 뒤 올린다.', undefined, R('manifest-decision-changed'))
+
+  checkFreshness()
+  // The suggestion to move `at` to the content form comes last: it is advice, and a reader scanning
+  // the notes should meet first what was and was not checked.
+  for (const msg of later) push('info', brel, msg)
+
+  function checkFreshness() {
+    // Freshness needs the other repository. The checker does not use the network, so it reads a
+    // checkout when one is at hand and says so when none is — a stale manifest must not look fresh.
+    const upstream = findUpstream({ repo: manifest.source ?? seam.repo }, root, from)
+    if (!upstream) {
+      push('info', mrel, `${manifest.source ?? seam.repo} 체크아웃이 없다 — 매니페스트가 최신인지 대조하지 않았다`,
+        '`SDLC_UPSTREAM` 이나 `--from` 으로 가리키면 상류에서 바뀐 결정을 오류로 잡는다.')
+      return
+    }
+    // Only a decision that constrains this repository fails its CI: one bound here, or one whose
+    // `applies_to` — in the manifest or in the upstream file now — names it. Anything else upstream is
+    // a note. Failing on every move of a busy document repository kept each consumer red most of the
+    // time for decisions about other repositories, and a gate that is always red is read as noise —
+    // including the day it reports a decision that does bind here. Without `repo` nothing can tell what
+    // applies here, so every change stays an error, as before; the note above that `repo` is missing
+    // already says why.
+    const constrains = (id, ...lists) => !self || !!bound[String(id)] || lists.some((l) => [].concat(l ?? []).some((r) => sameRepo(r, self)))
+    const stale = (hard, msg, hint, rule) => hard
+      ? push('error', mrel, msg, hint, undefined, rule)
+      : push('info', mrel, `${msg} — 이 레포를 제약하지 않아 알리기만 한다`, hint)
+    const upDoc = (path) => { try { return loadAdr(resolve(upstream, path)) } catch { return null } }
+    // The folder comes from where the pulled decisions sat, not from an upstream profile: a document
+    // repository need not run this harness at all.
+    const dirs = [...new Set((manifest.decisions ?? []).map((d) => d.path && dirname(d.path)).filter(Boolean))]
+    for (const dir of dirs) {
+      if (!existsSync(resolve(upstream, dir))) continue
+      for (const n of readdirSync(resolve(upstream, dir)).sort()) {
+        const m = ADR_FILENAME.exec(n)
+        if (!m || byId.has(`ADR-${m[1]}`)) continue
+        const doc = upDoc(join(dir, n))
+        const id = String(doc?.fm?.id ?? `ADR-${m[1]}`)
+        if (byId.has(id)) continue
+        const hard = !doc || constrains(id, appliesToOf(doc))
+        stale(hard, `상류에 매니페스트가 모르는 결정이 있다 — ${id}`, '`pull-adr.mjs` 로 다시 끌어온다.', R('manifest-decision-unknown'))
+      }
+    }
+    for (const d of manifest.decisions ?? []) {
+      if (!d.path) continue
+      if (!existsSync(resolve(upstream, d.path))) {
+        stale(constrains(d.id, d.applies_to), `${d.id} 가 상류에서 사라졌다 — ${d.path}`, '`pull-adr.mjs` 로 다시 끌어온다.', R('manifest-decision-gone'))
+        continue
+      }
+      if (!d.digest) {
+        // The old comparison, for a manifest pulled before the content hash.
+        const head = headOf(upstream, d.path)
+        if (head && d.sha && head !== d.sha) {
+          push('error', mrel, `${d.id} 가 끌어온 뒤 상류에서 바뀌었다 — ${d.sha.slice(0, 7)} → ${head.slice(0, 7)}`,
+            '`pull-adr.mjs` 로 다시 끌어오고, 이 결정에 묶인 바인딩의 `at` 을 새 판을 읽은 뒤 올린다.', undefined, R('manifest-decision-changed'))
+        }
+        continue
+      }
+      const doc = upDoc(d.path)
+      if (!doc) continue
+      const digest = decisionHash(doc)
+      if (digest !== d.digest) {
+        stale(constrains(d.id, d.applies_to, appliesToOf(doc)),
+          `${d.id} 가 끌어온 뒤 상류에서 바뀌었다 — 결정 내용 ${digestPin(d.digest)} → ${digestPin(digest)}`,
+          '`pull-adr.mjs` 로 다시 끌어오고, 이 결정에 묶인 바인딩의 `at` 을 새 판을 읽은 뒤 올린다.', R('manifest-decision-changed'))
+      } else if (d.hash && hashOf(doc.text) !== d.hash) {
+        push('info', mrel, `${d.id} — 상류에서 문구가 바뀌었다 — 묶은 내용은 그대로다`,
+          '결정·Non-goals·대안·상태는 끌어온 때와 같다. 매니페스트는 편할 때 `pull-adr.mjs` 로 갱신한다.')
+      }
     }
   }
 }

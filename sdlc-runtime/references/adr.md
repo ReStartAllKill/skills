@@ -132,13 +132,13 @@ draft → in_review ──┬─→ accepted ──┬─→ deprecated
 
 ## Pinning decisions from an artifact set
 
-List decisions in the intent, spec, and plan frontmatter, just as `spec_version` pins an upstream document to a commit SHA.
+List decisions in the intent, spec, and plan frontmatter.
 
 ```yaml
-decisions: ["ADR-005", "acme/docs#ADR-007@a1b2c3d"]
+decisions: ["ADR-005", "acme/docs#ADR-007", "acme/other#ADR-002@a1b2c3d"]
 ```
 
-- Use only the ID for a same-repository ADR; use `<owner>/<repo>#ADR-NNN@<sha>` across repositories.
+- Use only the ID for a same-repository ADR. For a decision in `adr_repo` write `<owner>/<repo>#ADR-NNN`: the committed manifest is this repository's lock on those decisions, so the `@` suffix is optional — and checked when written. An `@body:<hex>` behind the decision's content hash warns on an open set (`decision-pin-behind`) and is a note on a closed one: the decision is still in force, and a finished set truly records the text it was done under. An `@<sha>` behind the commit pulled is a note on any set, offering the `@body:` value: a commit moves with every edit to the file and cannot tell a reworded ADR from a changed decision. A pin naming a third repository is never read against the manifest, even when the manifest has the same number. For a repository with no manifest, write `<owner>/<repo>#ADR-NNN@<sha>`; nothing there can check the pin, so the SHA is what lets someone retrace what was read.
 - When a change encounters a hard-to-reverse choice, do not decide it inside the artifact set. Pin an existing ADR or create the ADR first. A diagram, wiki, or meeting note cannot serve as the checked source of truth.
 - The checker verifies each pinned ADR's existence and status. Referencing a `superseded`, `deprecated`, or `rejected` ADR is an error.
 - An ADR named in the body must be pinned by that document, or the checker warns: a citation in prose has no status anyone watches. The one exception is history. A change that migrates to a successor names what it migrates from — «move aggregation onto ADR-005, which superseded ADR-004» — and pinning ADR-004 would be the error above. So pin the successor, and the mention of the decision it replaced is accepted: the checker follows `superseded_by` from the mentioned decision through every decision that is itself `superseded`, and if it reaches one the document pins, the mention is history. A chain ADR-004 → ADR-005 → ADR-006 with ADR-006 pinned covers both. When the successor is not pinned, the warning names it. `superseded_by` is followed and `supersedes` is not: the retired decision must name its successor and that edit goes to a person, while `supersedes` is optional and written by the successor, so a draft could otherwise excuse citing a decision still in force. Upstream the same walk reads the manifest's `superseded_by`; a chain never crosses from one ID space to the other. The `waive:` lines are not read for mentions.
@@ -156,19 +156,21 @@ When decisions live in a document repository (`adr_repo`), the link from a decis
 source: "acme/docs"
 bindings:
   ADR-012:
-    at: "a1b2c3d4e5f6"        # the upstream commit that last changed the ADR, when it was read
+    at: "body:3f9a0c7d21be"   # the decision's content hash when it was read — pull-adr prints it
     paths: ["src/vault", "src/nav"]
     confirms: ["test_Deposit_MintsAtCurrentPrice"]
     confirms_in: ["test/vault"]
   ADR-001:
-    at: "9f8e7d6c5b4a"
+    at: "9f8e7d6c5b4a"        # a commit SHA still works, and stops on every commit to the file
     paths: []
     reason: "pricing lives in the backend; nothing here computes it"
 ```
 
+  `at` names what was read when the binding was written. Its content form, `body:<hex>` (12 or more hex characters, compared by prefix), is a hash over exactly what a code repository binds to: the whole Decision section with its `### Non-goals`, every alternative's title with its chosen marker, `status`, and `superseded_by`. HTML comments are dropped and every run of whitespace counts as one space, so a reflowed paragraph is no change. Not covered: the title, `applies_to`, the other four sections, the rest of the frontmatter. A legacy ADR whose Decision section the checker cannot find is hashed over its whole body instead — stricter than needed, never blind. A typo in Context, an `applies_to` edit or a squash merge leaves the hash where it was; a changed Decision sentence, Non-goal, alternative, status or successor moves it, and the binding fails until someone re-reads the decision and raises `at`. The commit-SHA form is still accepted with the same errors, and while it is current the checker prints a note with the `body:` value to switch to; it is not a warning, because under `--strict` that would fail every repository that bound before the content form existed. The same move schema 7 made for spec pins (`references/schema.md`).
+
   `confirms_in` is optional and means what it means on an ADR: where else the `confirms` names are looked for, without widening which tasks the binding reaches. The skeleton `pull-adr` prints leaves it out.
 
-- **The decision text arrives as a manifest.** `node <sdlc_runtime>/tools/pull-adr.mjs [--from <checkout>]` writes `.claude/adr-manifest.json` — status, `applies_to` and the digest `task-brief` injects, never a path — with an integrity hash. Commit it; never edit it. It prints a binding skeleton for every accepted decision that applies here and has none.
+- **The decision text arrives as a manifest.** `node <sdlc_runtime>/tools/pull-adr.mjs [--from <checkout>]` writes `.claude/adr-manifest.json` — status, `applies_to`, the digest `task-brief` injects and, per decision, the content hash `digest` that `at` and a pin's `@body:` are compared with, never a path — with an integrity hash. Commit it; never edit it. It prints a binding skeleton, `at` in the content form, for every accepted decision that applies here and has none, and lists the bindings whose `at` is behind.
 
 `pull-adr` writes no `pulled_at`: a second pull with nothing changed upstream leaves the manifest byte-identical, so two branches that both re-pull do not conflict. When it changed is git's to say. A manifest that still carries the key stays valid and loses it on the next pull.
 
@@ -180,14 +182,22 @@ bindings:
 | Manifest edited by hand, or from another source | error |
 | Accepted decision whose `applies_to` names this repository, with no binding | warn |
 | Binding to a decision not in the manifest, or to one no longer in force | error |
-| `at` missing, or behind the decision's current commit | error — re-read it, then raise `at` |
+| `at` missing, or behind the decision — its content hash for `body:`, its commit for a SHA | error — re-read it, then raise `at` |
+| `at` is a current commit SHA and the manifest has the content hash | note — the `body:` value to switch to |
 | `paths` missing, or `paths: []` without `reason` | error |
 | A path that no longer exists, a `confirms` name not found under `paths` and `confirms_in`, a lookup cut short at its file budget, empty `confirms` | warn |
 | A `paths` or `confirms_in` entry no commit on the branch ever had | note — the directory is still to be written; the checks that need it did not run |
 | Binding to a decision superseded by one not yet accepted | the dead-binding error, with a hint that no decision is in force until the successor is accepted upstream |
-| Upstream checkout (`SDLC_UPSTREAM`, `--from`) shows the manifest is behind | error; without a checkout, a note |
+| Upstream checkout (`SDLC_UPSTREAM`, `--from`, or a sibling checkout whose `origin` is `adr_repo`) shows a decision's content hash, status or successor changed, or the decision is gone | error when the decision is bound here or its `applies_to` names this repository; otherwise a note |
+| Upstream has a decision the manifest does not list | error when its `applies_to` names this repository; otherwise a note |
+| Upstream changed a decision's file but not its content hash | note — the manifest can be refreshed at leisure |
+| No `repo` in the profile | every upstream change above is an error, as before — nothing can tell what applies here |
+| A manifest pulled before content hashes | note; it is compared with upstream by commit, as before, until it is pulled again |
+| No upstream checkout | note — freshness was not checked |
 
-The plan's task-scope check and `task-brief` match plan `files` against binding `paths`, so a rename is fixed in the PR that makes it. A pin into the manifest's repository is checked against the manifest, so `acme/docs#ADR-009@…` for a decision that does not exist is an error rather than a SHA-shape check.
+A consumer's CI fails for a decision that constrains it and for nothing else. Failing on every move of the document repository kept every consumer of a busy one red most of the time, and a gate that is always red is read as noise — including the day it reports a decision that does bind here.
+
+The plan's task-scope check and `task-brief` match plan `files` against binding `paths`, so a rename is fixed in the PR that makes it; the task-scope warning prints the pin to copy, with the current `@body:` value. A pin into the manifest's repository is checked against the manifest, so `acme/docs#ADR-009` for a decision that does not exist is an error rather than a SHA-shape check.
 
 An ADR is always schema 5, so no version can mark where the new form begins; `applies_to` does. An ADR that has `applies_to` and still names another repository's path in `scope` is an error — the same link held twice, and the upstream copy is the one nothing checks. An ADR without `applies_to` that names one is a warning: it was valid when written, and it stays readable. `pull-adr` treats the repositories such an entry names as its `applies_to` and carries its paths and `confirms` into the skeleton, so a code repository can bind before the document repository migrates.
 
@@ -200,7 +210,8 @@ The two ID spaces overlap — `ADR-005` here and `ADR-005` upstream are differen
 | Written | Names | Checked against |
 |---|---|---|
 | `ADR-005` | this repository's decision | `adr_dir` |
-| `acme/docs#ADR-005@<sha>`, where `acme/docs` is `adr_repo` | the upstream decision | the manifest |
+| `acme/docs#ADR-005`, optionally `@body:<hex>` or `@<sha>`, where `acme/docs` is `adr_repo` | the upstream decision | the manifest, suffix included |
+| `acme/other#ADR-005@<sha>` with only `adr_repo` set | a third repository | SHA shape only — never the manifest |
 | `acme/contracts#ADR-005`, where `acme/contracts` is `repo` | this repository's decision | `adr_dir` |
 | any other `<owner>/<repo>#ADR-005@<sha>` | a third repository | SHA shape only |
 

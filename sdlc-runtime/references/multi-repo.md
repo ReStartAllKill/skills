@@ -105,7 +105,8 @@ integrity and records that limitation as a note. CI checks out upstream and poin
 
 Decisions often cross repository boundaries. Giving every repository an `adr_dir` forces repeated
 decisions about where an ADR belongs and splits the numbering space. Designate one document
-repository as `adr_repo`; code repositories keep `<repo>#ADR-NNN@<sha>` pins. Organizations
+repository as `adr_repo`; code repositories pin `<repo>#ADR-NNN`, checked against the manifest
+they pull — an `@body:<hex>` or `@<sha>` suffix is optional and checked when written. Organizations
 whose decisions never cross a repository boundary may use `adr_dir` instead.
 
 The two keys are not either/or. A code repository may keep its service-local decisions in its own
@@ -116,5 +117,10 @@ and in a document repository» in `adr.md` has the rule.
 
 The ADR names the repositories it constrains (`applies_to`); each code repository names the paths
 and tests in its own `.claude/adr-bindings.yml`, next to a manifest `pull-adr.mjs` writes. A path
-belongs where it can be checked and where the PR that renames it lands. «Decisions in another
-repository» in `adr.md` has the format and the checks.
+belongs where it can be checked and where the PR that renames it lands. A binding records what it
+read as the decision's content hash (`at: "body:<hex>"`), not the commit that carried it, so an
+upstream typo, an `applies_to` edit or a squash merge does not stop the code repository; and with an
+upstream checkout at hand — `SDLC_UPSTREAM`, `--from`, or a sibling checkout found on a developer's
+machine — only a change to a decision bound here or applying here fails its CI, while the rest of
+the document repository's churn is a note. «Decisions in another repository» in `adr.md` has the
+format and the checks.

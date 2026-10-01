@@ -46,6 +46,8 @@ description: '저장소에 SDLC 프로필·승인 가드·산출물 검사·CI �
    아키텍처 결정 기록이므로 `adr_dir`을 Git 추적에서 제외하지 않는다.
    `adr_repo`를 쓰는 코드 저장소는 `repo`도 적고, `node <sdlc_runtime>/tools/pull-adr.mjs <저장소>`로
    `.claude/adr-manifest.json`을 만든 뒤 출력된 뼈대로 `.claude/adr-bindings.yml`을 작성한다.
+   `at`은 뼈대가 찍는 `body:<hex>`(결정 내용의 해시)를 그대로 쓴다 — 커밋 SHA로 적으면 상류의 오타나
+   `applies_to` 편집에도 바인딩이 멈춘다.
    경로를 확인하고 두 파일을 함께 커밋한다. 형식은 `<sdlc_runtime>/references/adr.md`의
    «Decisions in another repository»를 따른다.
    ADR을 사용하지 않기로 하면 키를 비우고, ADR 관련 검사가 비활성화된다는 점을 보고한다.

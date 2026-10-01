@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /** Pull the decisions of the `adr_repo` into `.claude/adr-manifest.json`.
  *
- * The manifest carries what this repository needs of each decision — status, `applies_to`, and the
- * digest `task-brief` injects — and never a path: paths are this repository's, in
+ * The manifest carries what this repository needs of each decision — status, `applies_to`, the
+ * digest `task-brief` injects, and `digest`, the content hash (`decisionHash`) bindings and pins are
+ * compared with — and never a path: paths are this repository's, in
  * `.claude/adr-bindings.yml`. Every decision is pulled whatever its status, because a pin to a
  * draft must read as «still a draft», not as «does not exist».
  *
@@ -14,8 +15,9 @@
  * Usage: node pull-adr.mjs [<repo-root>] [--from <upstream-checkout>] [--adr-dir <path in upstream>] */
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { resolve, join, relative, dirname } from 'node:path'
-import { ADR_FILENAME, isNull, loadAdrDir } from './artifact-parse.mjs'
-import { adrSeam, adrDigest, legacyMeta, scopeEntry } from './adr-check.mjs'
+import { ADR_FILENAME, isNull, loadAdrDir, BODY_PIN } from './artifact-parse.mjs'
+import { adrSeam } from './adr-bindings.mjs'
+import { adrDigest, legacyMeta, scopeEntry, appliesToOf, decisionHash, digestPin } from './adr-text.mjs'
 import { manifestIntegrity, loadBindings } from './adr-bindings.mjs'
 import { hashOf, headOf, findUpstream, sameRepo } from './upstream.mjs'
 
@@ -62,8 +64,6 @@ for (const doc of docs) {
   const g = adrDigest(doc)
   const id = legacy ? `ADR-${num}` : String(doc.fm.id ?? `ADR-${num}`)
   const scope = legacy ? [] : g.scope.map((s) => scopeEntry(s, seam.self))
-  const explicit = legacy ? [] : list(doc.fm.applies_to)
-  const derived = [...new Set(scope.filter((e) => e.repo).map((e) => e.repo))]
   const path = relative(upstream, doc.path)
   const text = readFileSync(doc.path, 'utf8')
   const entry = {
@@ -71,10 +71,13 @@ for (const doc of docs) {
     title: legacy ? legacy.title : g.title,
     status: legacy ? legacy.status : g.status,
     superseded_by: legacy ? null : (isNull(doc.fm.superseded_by) ? null : String(doc.fm.superseded_by)),
-    applies_to: explicit.length ? explicit : derived,
+    applies_to: appliesToOf(doc),
     path,
     sha: headOf(upstream, path),
     hash: hashOf(text),
+    // What a binding's `at: "body:…"` and a pin's `@body:…` are compared with; `hash` above stays the
+    // whole file, so the checker can still tell a wording change from no change at all.
+    digest: decisionHash(doc),
     decision: g.decision,
     non_goals: g.nonGoals,
     rejected: g.rejected,
@@ -83,7 +86,7 @@ for (const doc of docs) {
   // Only an old-form ADR still carries this repository's paths upstream; hand them across.
   const mine = scope.filter((e) => e.repo && e.mine).map((e) => e.path)
   if (entry.status === 'accepted' && seam.self && entry.applies_to.some((r) => sameRepo(r, seam.self))) {
-    skeleton.push({ id, title: entry.title, sha: entry.sha, paths: mine, confirms: mine.length ? list(doc.fm.confirms) : [] })
+    skeleton.push({ id, title: entry.title, digest: entry.digest, paths: mine, confirms: mine.length ? list(doc.fm.confirms) : [] })
   }
 }
 
@@ -110,22 +113,30 @@ if (!seam.self) console.log('\n  프로필에 `repo` 가 없다 — 어느 결�
 
 const bindings = loadBindings(seam.bindings)
 const unbound = skeleton.filter((s) => !bindings?.bindings[s.id])
-const moved = decisions.filter((d) => {
-  const b = bindings?.bindings[d.id]
-  return b?.at && d.sha && !d.sha.startsWith(b.at)
-})
+// Each binding is compared in the form it was written in: a content-hash `at` against the digest,
+// a commit `at` against the SHA, as the checker does.
+const behind = (d) => {
+  const at = bindings?.bindings[d.id]?.at
+  if (!at) return null
+  const body = BODY_PIN.exec(at)?.[1]?.toLowerCase()
+  if (body) return d.digest.startsWith(body) ? null : { from: at, to: digestPin(d.digest) }
+  return d.sha && !d.sha.startsWith(at) ? { from: at.slice(0, 7), to: d.sha.slice(0, 12) } : null
+}
+const moved = decisions.filter(behind)
 if (unbound.length) {
   console.log(`\n  바인딩이 없는 결정 ${unbound.length}개 — ${relative(ROOT, seam.bindings)} 에 옮겨 적고 경로를 확인한다:\n`)
   if (!bindings) console.log(`source: "${seam.repo}"\nbindings:`)
   for (const s of unbound) {
     console.log(`  ${s.id}:   # ${s.title}`)
-    console.log(`    at: "${s.sha ? s.sha.slice(0, 12) : '<상류에서 커밋한 뒤 다시 끌어온다>'}"`)
+    // The content form: it moves only when the decision's text, Non-goals, alternatives or status
+    // do, so a typo or an `applies_to` edit upstream does not stop this repository's CI.
+    console.log(`    at: "${digestPin(s.digest)}"`)
     console.log(`    paths: [${s.paths.map((p) => `"${p}"`).join(', ')}]${s.paths.length ? '' : '   # 닿는 코드가 없으면 reason: 을 적는다'}`)
     console.log(`    confirms: [${s.confirms.map((c) => `"${c}"`).join(', ')}]`)
   }
 }
 if (moved.length) {
   console.log(`\n  묶은 뒤 바뀐 결정 ${moved.length}개 — 다시 읽고 \`at\` 을 올린다:`)
-  for (const d of moved) console.log(`    ${d.id}  ${bindings.bindings[d.id].at.slice(0, 7)} → ${d.sha.slice(0, 12)}  ${d.path}`)
+  for (const d of moved) { const m = behind(d); console.log(`    ${d.id}  ${m.from} → ${m.to}  ${d.path}`) }
 }
 console.log(`\n  ${relative(ROOT, seam.manifest)} 를 커밋한다. 손으로 고치지 않는다 — 고칠 일은 ${seam.repo} 에서 하고 다시 끌어온다.`)

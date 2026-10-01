@@ -244,11 +244,12 @@ ignores the key and keeps warning, which misreads nothing, so `waive:` has no sc
 
 | Rule | Level | Waivable | Meaning |
 |---|---|---|---|
-| `decision-pin-unreadable` | error | no | A `decisions:` entry is not `ADR-NNN` or `<owner>/<repo>#ADR-NNN@<sha>`. |
+| `decision-pin-unreadable` | error | no | A `decisions:` entry is not `ADR-NNN` or `<owner>/<repo>#ADR-NNN[@<sha> \| @body:<hex>]`, or puts `@body:` on a pin to this repository. |
 | `decision-pin-sha-missing` | warn | no | A pin to another repository's decision carries no `@<sha>`. |
 | `decision-pin-unknown` | error | no | A pinned ADR does not exist. |
 | `pin-dead` | error | no | A pinned ADR is deprecated, superseded or rejected. |
 | `decision-pin-unaccepted` | warn | no | A pinned ADR is still draft or in review. |
+| `decision-pin-behind` | warn | no | An open set pins a manifest decision `@body:<hex>` and the decision's content has since changed (a stale `@<sha>`, or a closed set, is a note). |
 | `adr-mention-unpinned` | warn | no | The body names an ADR that `decisions:` does not pin, and no pinned ADR replaced it through `superseded_by`. |
 | `task-adr-unpinned` | warn | no | A task touches the scope of an accepted ADR the set does not pin. |
 
@@ -267,9 +268,9 @@ ignores the key and keeps warning, which misreads nothing, so `waive:` has no sc
 | `binding-dead` | error | no | A binding holds code to a deprecated, superseded or rejected decision. |
 | `binding-unaccepted` | warn | no | A binding holds code to a decision not yet accepted. |
 | `binding-at-missing` | error | no | A binding has no `at`. |
-| `binding-at-invalid` | error | no | A binding's `at` is not a commit SHA. |
-| `binding-stale` | error | no | The decision changed after it was bound. |
-| `binding-at-unverified` | warn | no | The upstream ADR was uncommitted when pulled, so `at` could not be compared. |
+| `binding-at-invalid` | error | no | A binding's `at` is neither a commit SHA nor `body:<hex>`. |
+| `binding-stale` | error | no | The decision changed after it was bound — its content hash for `at: "body:…"`, its commit for a SHA `at`. |
+| `binding-at-unverified` | warn | no | `at` could not be compared — the upstream ADR was uncommitted when pulled, or the manifest predates content hashes. |
 | `binding-not-applicable` | warn | no | A bound decision's `applies_to` does not name this repository. |
 | `binding-paths-missing` | error | no | A binding has no `paths`. |
 | `binding-reason-missing` | error | no | `paths: []` without a `reason`. |
@@ -278,9 +279,9 @@ ignores the key and keeps warning, which misreads nothing, so `waive:` has no sc
 | `binding-confirms-not-found` | warn | no | A bound `confirms` name is not found under `paths` or `confirms_in`. |
 | `binding-confirms-in-missing-path` | warn | no | A binding's `confirms_in` path does not exist and was there before. |
 | `binding-confirms-search-cut` | warn | no | The bound `confirms` search stopped at its file budget before finding a name. |
-| `manifest-decision-unknown` | error | no | Upstream has decisions the manifest does not list. |
-| `manifest-decision-gone` | error | no | A manifest decision is gone upstream. |
-| `manifest-decision-changed` | error | no | A manifest decision changed upstream after it was pulled. |
+| `manifest-decision-unknown` | error | no | Upstream has a decision the manifest does not list whose `applies_to` names this repository (any, without `repo`). |
+| `manifest-decision-gone` | error | no | A manifest decision bound here or applying here is gone upstream. |
+| `manifest-decision-changed` | error | no | A manifest decision bound here or applying here changed upstream after it was pulled — its content hash, or its commit in a manifest without one. |
 
 ### Waivers
 

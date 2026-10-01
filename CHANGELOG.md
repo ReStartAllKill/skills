@@ -43,6 +43,39 @@
 
 ### Fixed
 
+- **A code repository no longer goes red whenever its document repository moves — only when a
+  decision that constrains it changes.** Everything that tied a consumer to an upstream decision
+  was keyed on the commit that last touched the ADR file, and `findUpstream` finds a sibling
+  checkout on its own, so this hit developer machines as well as CI with `SDLC_UPSTREAM`. A typo in
+  the Context section failed `check-all` («끌어온 뒤 상류에서 바뀌었다»), then the binding after a
+  re-pull («묶은 뒤 결정이 바뀌었다»); so did a frontmatter-only edit adding another repository to
+  `applies_to`, a squash merge that rewrote the SHA under identical text, and any new decision for
+  another repository («매니페스트가 모르는 결정»). Meanwhile the `@sha` on a pin like
+  `acme/docs#ADR-012@b79d214` was never checked, and the task-scope hint told authors to write
+  `@<sha>` without saying which. `pull-adr` now writes a content hash per decision (`digest`) over
+  exactly what a code repository binds to — the Decision section with its Non-goals, the
+  alternatives' titles, `status`, `superseded_by`, comments dropped and whitespace collapsed; a
+  legacy ADR with no recognisable Decision section is hashed over its whole body. A binding's `at`
+  accepts that hash as `body:<hex>`, which the skeleton now prints; the commit form keeps working
+  with the same errors, and while it is current a note offers the `body:` value — a warning was
+  rejected because every existing consumer would then fail under `--strict`. With an upstream
+  checkout, freshness compares content: a wording change that leaves the hash alone is a note; a
+  changed hash, a retired or vanished decision, or an unknown upstream decision is an error only
+  when the decision is bound here or its `applies_to` names this repository, and a note otherwise.
+  Without `repo` in the profile nothing can tell what applies here, so those stay errors. A manifest
+  pulled before this change still loads, is compared by commit as before, and says that a re-pull
+  turns on the content comparison. For a pin into the manifest's repository the `@` suffix is now
+  optional — the committed manifest is the lock — and checked when written: `@body:` against the
+  hash, `@<sha>` against the commit pulled. Only an `@body:` behind the decision on an open set
+  warns (`decision-pin-behind`); the same on a finished set is a note, since the decision is still in
+  force and the set truly records the text it was done under; and a stale `@<sha>` is a note on any
+  set, offering the `@body:` value — a SHA moves with every commit and cannot tell a reworded ADR
+  from a changed decision, so warning on it would bring the churn back through every pin written
+  in the documented form. No existing chain turns red. The task-scope hint prints the value to
+  copy. A pin into a repository with no manifest is still asked for its SHA, and with only
+  `adr_repo` set a pin naming a third repository (`acme/other#ADR-001`) is no longer read against
+  the manifest's decision of the same number.
+
 - **A decision written before its code no longer turns CI red; a path a commit took away still
   does.** `references/adr.md` tells authors to create the ADR first, but an accepted ADR whose
   `scope` named the directory its plan would create warned «`scope` 의 … 가 없다», and `check-all`

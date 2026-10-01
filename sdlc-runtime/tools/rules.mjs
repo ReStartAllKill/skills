@@ -171,11 +171,12 @@ export const RULES = {
   'adr-comment-left': W('Template guidance comments remain in a submitted ADR.'),
 
   // ── Decision pins (`decisions:`) and plan scope ────────────────────────────────────────────
-  'decision-pin-unreadable': E('A `decisions:` entry is not `ADR-NNN` or `<owner>/<repo>#ADR-NNN@<sha>`.'),
+  'decision-pin-unreadable': E('A `decisions:` entry is not `ADR-NNN` or `<owner>/<repo>#ADR-NNN[@<sha> | @body:<hex>]`, or puts `@body:` on a pin to this repository.'),
   'decision-pin-sha-missing': W('A pin to another repository\'s decision carries no `@<sha>`.'),
   'decision-pin-unknown': E('A pinned ADR does not exist.'),
   'pin-dead': E('A pinned ADR is deprecated, superseded or rejected.'),
   'decision-pin-unaccepted': W('A pinned ADR is still draft or in review.'),
+  'decision-pin-behind': W('An open set pins a manifest decision `@body:<hex>` and the decision\'s content has since changed (a stale `@<sha>`, or a closed set, is a note).'),
   'adr-mention-unpinned': W('The body names an ADR that `decisions:` does not pin, and no pinned ADR replaced it through `superseded_by`.'),
   'task-adr-unpinned': W('A task touches the scope of an accepted ADR the set does not pin.'),
 
@@ -193,9 +194,9 @@ export const RULES = {
   'binding-dead': E('A binding holds code to a deprecated, superseded or rejected decision.'),
   'binding-unaccepted': W('A binding holds code to a decision not yet accepted.'),
   'binding-at-missing': E('A binding has no `at`.'),
-  'binding-at-invalid': E('A binding\'s `at` is not a commit SHA.'),
-  'binding-stale': E('The decision changed after it was bound.'),
-  'binding-at-unverified': W('The upstream ADR was uncommitted when pulled, so `at` could not be compared.'),
+  'binding-at-invalid': E('A binding\'s `at` is neither a commit SHA nor `body:<hex>`.'),
+  'binding-stale': E('The decision changed after it was bound — its content hash for `at: "body:…"`, its commit for a SHA `at`.'),
+  'binding-at-unverified': W('`at` could not be compared — the upstream ADR was uncommitted when pulled, or the manifest predates content hashes.'),
   'binding-not-applicable': W('A bound decision\'s `applies_to` does not name this repository.'),
   'binding-paths-missing': E('A binding has no `paths`.'),
   'binding-reason-missing': E('`paths: []` without a `reason`.'),
@@ -204,9 +205,9 @@ export const RULES = {
   'binding-confirms-not-found': W('A bound `confirms` name is not found under `paths` or `confirms_in`.'),
   'binding-confirms-in-missing-path': W('A binding\'s `confirms_in` path does not exist and was there before.'),
   'binding-confirms-search-cut': W('The bound `confirms` search stopped at its file budget before finding a name.'),
-  'manifest-decision-unknown': E('Upstream has decisions the manifest does not list.'),
-  'manifest-decision-gone': E('A manifest decision is gone upstream.'),
-  'manifest-decision-changed': E('A manifest decision changed upstream after it was pulled.'),
+  'manifest-decision-unknown': E('Upstream has a decision the manifest does not list whose `applies_to` names this repository (any, without `repo`).'),
+  'manifest-decision-gone': E('A manifest decision bound here or applying here is gone upstream.'),
+  'manifest-decision-changed': E('A manifest decision bound here or applying here changed upstream after it was pulled — its content hash, or its commit in a manifest without one.'),
 
   // ── Waivers ────────────────────────────────────────────────────────────────────────────────
   'waiver-rule-unknown': E('A waiver names a rule ID the registry does not have.'),

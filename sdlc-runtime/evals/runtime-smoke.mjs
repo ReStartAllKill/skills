@@ -2270,7 +2270,8 @@ decisions: [${pins}]
   put(join(set, 'plan.md'), plan(''))
   let r = run(process.execPath, [tool('check-artifacts.mjs'), set, '--json'])
   assert(/WP-001 의 files 가 ADR-001.*바인딩 paths 를 만지는데/.test(r.out), `the plan touched a bound decision unpinned, unnoticed:\n${r.out}`)
-  assert(/acme\/docs#ADR-001@<sha>/.test(r.out), `the pin hint did not name the other repository:\n${r.out}`)
+  // The hint names the value to copy — the decision's content hash — rather than a `<sha>` to look up.
+  assert(/acme\/docs#ADR-001@body:[0-9a-f]{12}\b/.test(r.out), `the pin hint did not name the other repository with a copyable value:\n${r.out}`)
 
   r = run(process.execPath, [tool('task-brief.mjs'), set, 'WP-001'])
   assert(/Price at 1:1 on the first epoch/.test(r.out) && /Administrator sets the price/.test(r.out) && /Fee schedules/.test(r.out),
@@ -2314,6 +2315,196 @@ await test('pull-adr twice with nothing changed upstream leaves the manifest byt
   assert(rep.counts.errors === 0 && rep.counts.warnings === 0, `a manifest written before pulled_at was dropped no longer passes:\n${rep.raw}`)
   assert(run(process.execPath, [tool('pull-adr.mjs'), d, '--from', up]).code === 0, 're-pull over an old manifest failed')
   assert(readFileSync(mpath, 'utf8') === first, 'a re-pull did not drop pulled_at from an old manifest')
+})
+
+// A binding and a pin are tied to what the decision says — its content hash — not to the commit that
+// last touched the file. Keyed on the commit, every consumer went red on an upstream typo, an
+// `applies_to` edit or a squash merge, and on any decision added for another repository.
+const manifestOf = (d) => JSON.parse(readFileSync(join(d, '.claude/adr-manifest.json'), 'utf8'))
+const bodyAt = (d, id) => `body:${manifestOf(d).decisions.find((x) => x.id === id).digest.slice(0, 12)}`
+const bodyBindings = (d) => `source: "acme/docs"
+bindings:
+  ADR-001:
+    at: "${bodyAt(d, 'ADR-001')}"
+    paths: ["src/vault"]
+    confirms: ["test_PoolPricesAtGenesis"]
+  ADR-002:
+    at: "${bodyAt(d, 'ADR-002')}"
+    paths: ["src/nav"]
+    confirms: ["test_NavIsFresh"]
+`
+const allChecks = (d, up) => run(process.execPath, [tool('check-all.mjs'), d], { env: { ...process.env, SDLC_UPSTREAM: up } })
+const noted = (rep, re) => rep.notes.some((n) => re.test(n))
+const clean = (rep) => rep.counts.errors === 0 && rep.counts.warnings === 0
+
+await test('a content-hash binding survives an upstream typo, an applies_to edit and a squash merge, with a note', () => {
+  const up = bindUpstream(), d = bindConsumer()
+  let r = run(process.execPath, [tool('pull-adr.mjs'), d, '--from', up])
+  assert(r.code === 0 && /at: "body:[0-9a-f]{12}"/.test(r.out), `the skeleton did not print the content form:\n${r.out}`)
+  assert(manifestOf(d).decisions.every((x) => /^[0-9a-f]{64}$/.test(x.digest ?? '')), 'pull-adr wrote no content hash')
+  put(join(d, '.claude/adr-bindings.yml'), bodyBindings(d))
+  let rep = bindCheck(d, up)
+  assert(clean(rep), `a fresh content-hash binding did not pass:\n${rep.raw}`)
+
+  const adr = join(up, 'docs/adr/ADR-001-vault-pricing.md')
+  put(adr, readFileSync(adr, 'utf8').replace('Pricing drift.', 'Pricing drifts.'))
+  git(up, 'commit', '-qam', 'typo outside the decision')
+  rep = bindCheck(d, up)
+  assert(clean(rep) && noted(rep, /ADR-001 — 상류에서 문구가 바뀌었다 — 묶은 내용은 그대로다/), `a typo outside the bound parts failed the consumer, or went unsaid:\n${rep.raw}`)
+  r = allChecks(d, up)
+  assert(r.code === 0, `check-all failed the consumer over an upstream typo:\n${r.out}`)
+
+  put(adr, readFileSync(adr, 'utf8').replace('applies_to: ["acme/contracts"]', 'applies_to: ["acme/contracts", "acme/web"]'))
+  git(up, 'commit', '-qam', 'also applies to web')
+  rep = bindCheck(d, up)
+  assert(clean(rep) && noted(rep, /ADR-001 — 상류에서 문구가 바뀌었다/), `a frontmatter-only edit failed the consumer:\n${rep.raw}`)
+  assert(run(process.execPath, [tool('pull-adr.mjs'), d, '--from', up]).code === 0, 're-pull failed')
+  rep = bindCheck(d, up)
+  assert(clean(rep), `after re-pulling a frontmatter-only edit the content-hash binding went stale:\n${rep.raw}`)
+  assert(allChecks(d, up).code === 0, 'check-all failed after a re-pull that changed nothing bound')
+
+  // A draft pulled from a feature branch, then squash-merged: a new commit, the same text.
+  const main = git(up, 'rev-parse', '--abbrev-ref', 'HEAD')
+  git(up, 'checkout', '-qb', 'adr-003')
+  put(join(up, 'docs/adr/ADR-003-retention.md'), bindAdr('ADR-003', 'Retention', 'applies_to: ["acme/contracts"]\nscope: []\nconfirms: []').replace('status: accepted', 'status: in_review'))
+  git(up, 'add', '-A'); git(up, 'commit', '-qm', 'draft ADR-003')
+  assert(run(process.execPath, [tool('pull-adr.mjs'), d, '--from', up]).code === 0, 'pull from the feature branch failed')
+  const branchSha = manifestOf(d).decisions.find((x) => x.id === 'ADR-003').sha
+  git(up, 'checkout', '-q', main); git(up, 'merge', '-q', '--squash', 'adr-003'); git(up, 'commit', '-qm', 'ADR-003 (squashed)')
+  assert(git(up, 'log', '-1', '--format=%H', '--', 'docs/adr/ADR-003-retention.md') !== branchSha, 'the squash kept the SHA — the fixture tests nothing')
+  rep = bindCheck(d, up)
+  assert(rep.counts.errors === 0 && !said(rep, /ADR-003 가 끌어온 뒤/), `a squash merge with identical text failed the consumer:\n${rep.raw}`)
+})
+
+await test('a content-hash binding goes stale when the Decision sentence changes, with the re-read hint', () => {
+  const up = bindUpstream(), d = bindConsumer()
+  assert(run(process.execPath, [tool('pull-adr.mjs'), d, '--from', up]).code === 0, 'pull-adr failed')
+  put(join(d, '.claude/adr-bindings.yml'), bodyBindings(d))
+  const before = bodyAt(d, 'ADR-001')
+  const adr = join(up, 'docs/adr/ADR-001-vault-pricing.md')
+  put(adr, readFileSync(adr, 'utf8').replace('Price at 1:1 on the first epoch.', 'Price at 1:1.01 on the first epoch.'))
+  git(up, 'commit', '-qam', 'change the decision')
+  let rep = bindCheck(d, up)
+  assert(rep.problems.some((p) => p.rule === 'manifest-decision-changed' && /ADR-001 가 끌어온 뒤 상류에서 바뀌었다/.test(p.msg)), `a changed decision bound here passed next to a checkout:\n${rep.raw}`)
+  assert(run(process.execPath, [tool('pull-adr.mjs'), d, '--from', up]).code === 0, 're-pull failed')
+  rep = bindCheck(d, up)
+  const after = bodyAt(d, 'ADR-001')
+  const stale = rep.problems.find((p) => p.rule === 'binding-stale' && /^ADR-001 — 묶은 뒤 결정이 바뀌었다/.test(p.msg))
+  assert(after !== before && stale && /다시 읽고/.test(stale.hint) && stale.hint.includes(`at: "${after}"`), `a binding read at an older decision passed, or the hint named no value:\n${rep.raw}`)
+  assert(!said(rep, /ADR-002 — 묶은 뒤/), `the unchanged decision went stale too:\n${rep.raw}`)
+})
+
+await test('a commit-SHA binding behaves as before and suggests the content form only while it is current', () => {
+  const up = bindUpstream(), d = bindConsumer()
+  assert(run(process.execPath, [tool('pull-adr.mjs'), d, '--from', up]).code === 0, 'pull-adr failed')
+  put(join(d, '.claude/adr-bindings.yml'), bindingsYml(git(up, 'rev-parse', 'HEAD')))
+  let rep = bindCheck(d, up)
+  assert(clean(rep) && noted(rep, new RegExp(`ADR-001 — \`at\` 이 커밋 SHA 다.*at: "${bodyAt(d, 'ADR-001')}"`)), `no suggestion of the content form, or it failed:\n${rep.raw}`)
+  const adr = join(up, 'docs/adr/ADR-001-vault-pricing.md')
+  put(adr, readFileSync(adr, 'utf8').replace('Pricing drift.', 'Pricing drifts.'))
+  git(up, 'commit', '-qam', 'typo')
+  assert(run(process.execPath, [tool('pull-adr.mjs'), d, '--from', up]).code === 0, 're-pull failed')
+  rep = bindCheck(d, up)
+  assert(said(rep, /ADR-001 — 묶은 뒤 결정이 바뀌었다 — `at: [0-9a-f]{7}`/) && !noted(rep, /ADR-001 — `at` 이 커밋 SHA 다/), `a stale SHA binding passed, or was offered a hash nobody re-read:\n${rep.raw}`)
+})
+
+await test('an upstream decision the manifest does not know fails only when it applies here', () => {
+  const up = bindUpstream(), d = bindConsumer()
+  assert(run(process.execPath, [tool('pull-adr.mjs'), d, '--from', up]).code === 0, 'pull-adr failed')
+  put(join(d, '.claude/adr-bindings.yml'), bodyBindings(d))
+  put(join(up, 'docs/adr/ADR-003-web-cache.md'), bindAdr('ADR-003', 'Web cache', 'applies_to: ["acme/web"]\nscope: []\nconfirms: []'))
+  git(up, 'add', '-A'); git(up, 'commit', '-qm', 'ADR-003 for web')
+  let rep = bindCheck(d, up)
+  assert(clean(rep) && noted(rep, /매니페스트가 모르는 결정이 있다 — ADR-003 — 이 레포를 제약하지 않아/), `a decision for another repository failed this one, or went unsaid:\n${rep.raw}`)
+
+  // Known, then changed: still another repository's business.
+  assert(run(process.execPath, [tool('pull-adr.mjs'), d, '--from', up]).code === 0, 're-pull failed')
+  const adr3 = join(up, 'docs/adr/ADR-003-web-cache.md')
+  put(adr3, readFileSync(adr3, 'utf8').replace('Price at 1:1', 'Cache for a day'))
+  git(up, 'commit', '-qam', 'change ADR-003')
+  rep = bindCheck(d, up)
+  assert(clean(rep) && noted(rep, /ADR-003 가 끌어온 뒤 상류에서 바뀌었다.*이 레포를 제약하지 않아/), `a change to another repository's decision failed this one:\n${rep.raw}`)
+
+  put(join(up, 'docs/adr/ADR-004-vault-fees.md'), bindAdr('ADR-004', 'Vault fees', 'applies_to: ["acme/contracts"]\nscope: []\nconfirms: []'))
+  git(up, 'add', '-A'); git(up, 'commit', '-qm', 'ADR-004 for contracts')
+  rep = bindCheck(d, up)
+  assert(rep.problems.some((p) => p.level === 'error' && p.rule === 'manifest-decision-unknown' && /ADR-004/.test(p.msg)), `a new decision for this repository passed:\n${rep.raw}`)
+
+  // Without `repo` nothing can tell what applies here, so every change stays an error.
+  put(join(d, '.claude/spec-profile.yml'), `sdlc_version: 7\nsdlc_runtime: "${ROOT}"\nspec_dir: ".sdlc/specs"\nadr_repo: "acme/docs"\n`)
+  rep = bindCheck(d, up)
+  assert(rep.problems.some((p) => p.rule === 'manifest-decision-changed' && /ADR-003/.test(p.msg)), `without repo a change upstream was read as not applying:\n${rep.raw}`)
+})
+
+await test('a manifest pulled before content hashes loads and is checked by commit, with a note', async () => {
+  const { manifestIntegrity } = await import('../tools/adr-bindings.mjs')
+  const up = bindUpstream(), d = bindConsumer()
+  assert(run(process.execPath, [tool('pull-adr.mjs'), d, '--from', up]).code === 0, 'pull-adr failed')
+  const m = manifestOf(d)
+  const decisions = m.decisions.map(({ digest, ...rest }) => rest)
+  put(join(d, '.claude/adr-manifest.json'), JSON.stringify({ ...m, decisions, integrity: manifestIntegrity(decisions) }, null, 2) + '\n')
+  put(join(d, '.claude/adr-bindings.yml'), bindingsYml(git(up, 'rev-parse', 'HEAD')))
+  let rep = bindCheck(d, up)
+  assert(clean(rep) && noted(rep, /결정 해시\(`digest`\)가 없다/), `an old manifest did not load cleanly, or did not say how it was compared:\n${rep.raw}`)
+  const adr = join(up, 'docs/adr/ADR-001-vault-pricing.md')
+  put(adr, readFileSync(adr, 'utf8').replace('Pricing drift.', 'Pricing drifts.'))
+  git(up, 'commit', '-qam', 'typo')
+  rep = bindCheck(d, up)
+  assert(said(rep, /ADR-001 가 끌어온 뒤 상류에서 바뀌었다 — [0-9a-f]{7} → [0-9a-f]{7}/), `an old manifest was not compared by commit:\n${rep.raw}`)
+})
+
+await test('the @ suffix of a pin into the manifest repository is optional, and checked at the level it can tell', () => {
+  const up = bindUpstream(), d = bindConsumer()
+  assert(run(process.execPath, [tool('pull-adr.mjs'), d, '--from', up]).code === 0, 'pull-adr failed')
+  put(join(d, '.claude/adr-bindings.yml'), bodyBindings(d))
+  const oldSha = manifestOf(d).decisions.find((x) => x.id === 'ADR-001').sha.slice(0, 7)
+  const set = join(d, '.sdlc/specs/pool')
+  const pinned = (pin, status = 'draft') => {
+    put(join(set, 'plan.md'), `---\nartifact: plan\nschema_version: 7\nstatus: ${status}\ndecisions: ["${pin}"]\n---\n\n# Plan\n\n## 작업\n\n- [ ] **WP-001 — 첫 에포크 가격**\n  - files: \`src/vault/Pool.sol\`\n  - depends: 없음\n  - covers: FR-001 (AC-001)\n  - tests: 첫 에포크는 1:1 이다\n  - verify: true\n`)
+    const out = run(process.execPath, [tool('check-artifacts.mjs'), set, '--json']).out
+    try { return { ...JSON.parse(out), raw: out } } catch { throw new Error(`check-artifacts did not print JSON:\n${out}`) }
+  }
+  const pinProblems = (rep) => rep.problems.filter((p) => /^(decision-pin|pin-dead|task-adr-unpinned)/.test(p.rule ?? ''))
+  let rep = pinned('acme/docs#ADR-001')
+  assert(!pinProblems(rep).length, `a pin without a suffix into the manifest's repository was questioned:\n${rep.raw}`)
+  rep = pinned(`acme/docs#ADR-001@${bodyAt(d, 'ADR-001')}`)
+  assert(!pinProblems(rep).length, `a matching @body: pin was questioned:\n${rep.raw}`)
+  rep = pinned(`acme/docs#ADR-001@${oldSha}`)
+  assert(!pinProblems(rep).length, `a current @sha pin was questioned:\n${rep.raw}`)
+
+  const adr = join(up, 'docs/adr/ADR-001-vault-pricing.md')
+  put(adr, readFileSync(adr, 'utf8').replace('Price at 1:1 on the first epoch.', 'Price at 1:1.01 on the first epoch.'))
+  git(up, 'commit', '-qam', 'change the decision')
+  const oldBody = bodyAt(d, 'ADR-001')
+  assert(run(process.execPath, [tool('pull-adr.mjs'), d, '--from', up]).code === 0, 're-pull failed')
+  const now = bodyAt(d, 'ADR-001')
+  // A content hash behind on an open set: the decision now says something else — a warning.
+  rep = pinned(`acme/docs#ADR-001@${oldBody}`)
+  const w = rep.problems.find((p) => p.rule === 'decision-pin-behind')
+  assert(w && w.level === 'warn' && w.msg.includes(`acme/docs#ADR-001@${now}`), `a stale @body: pin on an open set passed, or did not name the current value:\n${rep.raw}`)
+  // The same pin on a finished set is history: a note.
+  rep = pinned(`acme/docs#ADR-001@${oldBody}`, 'completed')
+  assert(!pinProblems(rep).length && rep.notes.some((n) => /끝난 세트는 그때의 결정문 아래에서 끝났다/.test(n) && n.includes(now)),
+    `a stale @body: pin turned a finished set red, or went unsaid:\n${rep.raw}`)
+  // A SHA cannot tell a reworded file from a changed decision, so behind is a note on any set.
+  for (const status of ['draft', 'completed']) {
+    rep = pinned(`acme/docs#ADR-001@${oldSha}`, status)
+    assert(!pinProblems(rep).length && rep.notes.some((n) => /SHA 는 파일의 어느 커밋에나 움직여/.test(n) && n.includes(`acme/docs#ADR-001@${now}`)),
+      `a stale @sha pin on a ${status} set warned, or did not offer the @body: value:\n${rep.raw}`)
+  }
+  rep = pinned(`acme/docs#ADR-001@${now}`)
+  assert(!pinProblems(rep).length, `a current @body: pin was questioned after the re-pull:\n${rep.raw}`)
+  // A repository with no manifest is still asked for its SHA.
+  rep = pinned('acme/other#ADR-009')
+  assert(rep.problems.some((p) => p.rule === 'decision-pin-sha-missing'), `a pin into an unknown repository lost its SHA check:\n${rep.raw}`)
+  // A third repository's pin is not read against the manifest, even when the manifest has the number:
+  // with ADR-001 draft upstream, the status of acme/docs#ADR-001 must not be pinned on acme/other.
+  put(adr, readFileSync(adr, 'utf8').replace('status: accepted', 'status: draft'))
+  git(up, 'commit', '-qam', 'back to draft')
+  assert(run(process.execPath, [tool('pull-adr.mjs'), d, '--from', up]).code === 0, 're-pull failed')
+  rep = pinned('acme/other#ADR-001')
+  assert(rep.problems.some((p) => p.rule === 'decision-pin-sha-missing') && !rep.problems.some((p) => p.rule === 'decision-pin-unaccepted'),
+    `a pin into a third repository was read against the manifest of another:\n${rep.raw}`)
 })
 
 // Service-local decisions next to the code, organisation-wide ones in a document repository. Both
@@ -2395,7 +2586,7 @@ await test('a repository with its own ADRs and an upstream adr_repo checks both,
   assert(rep.problems.some((p) => p.level === 'error' && /핀한 ADR-999 가 없다/.test(p.msg)), `a pin to a missing upstream decision passed on its SHA's shape:\n${rep.raw}`)
 
   rep = planCheck('')
-  assert(/"acme\/docs#ADR-001@<sha>"/.test(upWarn(rep)?.hint ?? ''), `a task on a bound upstream path went unpinned without the prefixed pin form:\n${rep.raw}`)
+  assert(/"acme\/docs#ADR-001@body:[0-9a-f]{12}"/.test(upWarn(rep)?.hint ?? ''), `a task on a bound upstream path went unpinned without the prefixed pin form:\n${rep.raw}`)
   assert(/decisions: \["ADR-001"\]/.test(localWarn(rep)?.hint ?? ''), `a task in a local ADR's scope went unpinned without the bare pin form:\n${rep.raw}`)
 
   rep = planCheck('"ADR-001"')

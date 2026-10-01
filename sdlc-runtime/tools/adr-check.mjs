@@ -2,56 +2,20 @@ import { existsSync, realpathSync } from 'node:fs'
 import { resolve, relative, dirname } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { ADR_FILENAME, idsIn, stripComments, isNull, loadAdrDir, wpFiles, frontmatter, outsideCode, waiveLines } from './artifact-parse.mjs'
-import { SECTION, CHOSEN, hasAlias, canonical, ADR_STATUS_ALIASES, LEGACY_STATUS_ROW } from './keywords.mjs'
+import { SECTION } from './keywords.mjs'
 import { locale } from './locale.mjs'
 import { ADR_DEAD, adrSeam, loadManifest, loadBindings, boundForFiles, touches, lookFor, pathPast, pastUnknown, successorGap, showGap, SEARCH_BUDGET } from './adr-bindings.mjs'
+import { alternativesOf, scopeEntry, legacyMeta, adrDigest, sectionText, titleIn, digestPin } from './adr-text.mjs'
 import { sameRepo } from './upstream.mjs'
 import { R } from './rules.mjs'
 export { ADR_DEAD, adrSeam, loadManifest }
-const CHOSEN_RE = new RegExp(`\\((?:${CHOSEN.join('|')})\\)`, 'i')
+export { alternativesOf, scopeEntry, legacyMeta, adrDigest }
 
 export const ADR_STATUS = ['draft', 'in_review', 'accepted', 'deprecated', 'superseded', 'rejected']
 const SECTION_KEYS = ['decision', 'forces', 'alternatives', 'consequences', 'revisit']
 const SECTIONS = SECTION_KEYS.map((k) => SECTION[k][1])
-const titleIn = (doc, key) => SECTION[key].find((t) => sectionText(doc, t) != null) ?? SECTION[key][1]
-const sameTitle = (a, b) => a.replace(/\s*및\s*/g, '과').replace(/\s+/g, '').toLowerCase() === b.replace(/\s*및\s*/g, '과').replace(/\s+/g, '').toLowerCase()
-
-export function alternativesOf(doc) {
-  const heads = [...doc.ents.values()].filter((e) => e.id.startsWith('ALT-'))
-    .map((e) => ({ id: e.id, title: e.title, chosen: CHOSEN_RE.test(e.title) }))
-  if (heads.length) return heads
-  const sec = sectionText(doc, titleIn(doc, 'alternatives'))
-  if (!sec) return []
-  const row = sec.text.split('\n').map((l) => l.trim()).find((l) => l.startsWith('|'))
-  if (!row) return []
-  const cells = row.split('|').slice(1, -1).map((c) => c.trim()).filter(Boolean)
-  return cells.slice(1).map((t, i) => ({ id: `표 ${i + 1}번째 열`, title: t, chosen: CHOSEN_RE.test(t) }))
-}
-
-export function scopeEntry(raw, self) {
-  const s = String(raw).trim()
-  const m = /^([A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)?):(.+)$/.exec(s)
-  if (!m) return { repo: null, path: s, mine: true }
-  const tail = (x) => String(x).split('/').pop()
-  return { repo: m[1], path: m[2].trim(), mine: !!self && tail(m[1]) === tail(self) }
-}
-
-const sectionText = (doc, title) => {
-  const h = doc.hs.find((x) => x.depth === 2 && sameTitle(x.title.replace(/`\[[^\]]*\]`/g, '').trim(), title))
-  return h ? { h, text: stripComments(doc.lines.slice(h.line + 1, h.allEnd).join('\n')) } : null
-}
 
 const RESIDUE = [/\{NNN\}/, /<[^<>\n]{2,60}>/]
-
-export function legacyMeta(doc) {
-  if (/^---\r?\n/.test(doc.text)) return null
-  const h1 = /^#\s+(.+?)\s*$/m.exec(doc.text)?.[1] ?? ''
-  const title = h1.replace(/^ADR-\d{3,4}\s*[—–:-]?\s*/, '').trim()
-  const row = LEGACY_STATUS_ROW.exec(doc.text)?.[1] ?? ''
-  const raw = row.replace(/\(.*$/, '').trim()
-  const known = canonical(raw, ADR_STATUS_ALIASES)
-  return { title, status: known ?? '', rawStatus: raw, legacy: true }
-}
 
 export function checkAdr(doc, { seam, siblings = [] }, push) {
   const fm = doc.fm ?? {}
@@ -245,7 +209,10 @@ export function checkAdr(doc, { seam, siblings = [] }, push) {
 }
 
 
-const PIN = /^(?:(?<owner>[\w.-]+)\/(?<repo>[\w.-]+)#)?(?<id>ADR-\d{3,4})(?:@(?<sha>[0-9a-f]{7,40}))?$/
+/** `@` takes a commit SHA or, for the manifest's repository, the decision's content hash
+ *  (`@body:<hex>`, `decisionHash`). The two groups are separate so a pin into a repository with no
+ *  manifest is still asked for its SHA, as it always was: `body:` is only checkable against one. */
+const PIN = /^(?:(?<owner>[\w.-]+)\/(?<repo>[\w.-]+)#)?(?<id>ADR-\d{3,4})(?:@(?:body:(?<body>[0-9a-f]{12,64})|(?<sha>[0-9a-f]{7,40})))?$/
 
 /** A set that has finished — a completed plan, or a set someone replaced or turned down — is a
  *  record of work done under the decisions in force at the time. Judging it against today's
@@ -329,7 +296,7 @@ function idSpaces(seam) {
     where: seam.dir ? relative(seam.root ?? '', seam.dir) : '',
   }
   const up = {
-    byId: new Map((manifest?.decisions ?? []).map((d) => [String(d.id), { status: String(d.status ?? ''), superseded_by: d.superseded_by }])),
+    byId: new Map((manifest?.decisions ?? []).map((d) => [String(d.id), { status: String(d.status ?? ''), superseded_by: d.superseded_by, sha: d.sha ?? null, digest: d.digest ?? null }])),
     have: manifest != null,
     where: manifest?.source ?? '매니페스트',
   }
@@ -339,6 +306,10 @@ function idSpaces(seam) {
   const spaceOf = (g) => {
     const prefix = g.repo ? `${g.owner}/${g.repo}` : null
     const toUp = !!prefix && !!upRepo && sameRepo(prefix, upRepo)
+    // With only `adr_repo` the one space is the manifest's, and a pin naming a third repository —
+    // neither `adr_repo` nor this one — is not in it: reading it there took the status of whatever
+    // decision the manifest had under the same number. It goes to the unknown-repository branch.
+    if (!dual && !seam.dir && prefix && !toUp && !(seam.self && sameRepo(prefix, seam.self))) return { space: null, explicit: false }
     if (!dual) return { space: seam.dir ? 'local' : 'up', explicit: toUp && !!manifest?.source }
     if (!prefix) return { space: 'local', explicit: true }
     if (toUp) return { space: 'up', explicit: true }
@@ -395,11 +366,15 @@ export function checkPins(docs, { seam }, push) {
 
     for (const raw of pins) {
       const m = PIN.exec(raw.trim())
-      if (!m) { err(`\`decisions: ${raw}\` 를 읽을 수 없다`, '같은 레포면 `ADR-005`, 다른 레포면 `<owner>/<repo>#ADR-005@<sha>` 다.', R('decision-pin-unreadable')); continue }
+      const unreadable = '같은 레포면 `ADR-005`, `adr_repo` 의 결정이면 `<owner>/<repo>#ADR-005` (`@body:<hex>` 나 `@<sha>` 는 붙여도 되고 붙이면 대조한다), 매니페스트가 없는 다른 레포면 `<owner>/<repo>#ADR-005@<sha>` 다.'
+      if (!m) { err(`\`decisions: ${raw}\` 를 읽을 수 없다`, unreadable, R('decision-pin-unreadable')); continue }
       // A pin into the repository the manifest came from is checked against it. Only a pin into a
       // repository this one has no manifest for is left at the SHA-shape check.
       const { space, explicit } = ids.spaceOf(m.groups)
       const src = space ? ids[space] : null
+      // A content hash is only comparable against a manifest. On a local pin it once failed to parse;
+      // accepting it there unchecked would make a typo'd pin look verified, so it stays an error.
+      if (m.groups.body && space === 'local') { err(`\`decisions: ${raw}\` 를 읽을 수 없다`, unreadable, R('decision-pin-unreadable')); continue }
       if (m.groups.repo && (!src || (!src.byId.has(m.groups.id) && !explicit))) {
         if (!m.groups.sha) warn(`\`${raw}\` 에 SHA 가 없다`, '다른 레포의 결정은 움직인다. `@<sha>` 로 고정해야 나중에 무엇을 읽고 정했는지 되짚을 수 있다.', R('decision-pin-sha-missing'))
         continue
@@ -407,6 +382,46 @@ export function checkPins(docs, { seam }, push) {
       if (!src.have) continue
       const target = src.byId.get(m.groups.id)
       if (!target) { err(`핀한 ${m.groups.id} 가 없다`, `${src.where} 에서 못 찾았다. 오타이거나, 소비 레포라면 매니페스트가 낡았다.`, R('decision-pin-unknown')); continue }
+      // The committed manifest is this repository's lock on upstream decisions, as `upstream.lock.json`
+      // is for specs, so the `@` suffix adds nothing the manifest does not already pin and is optional.
+      // Written, it is a claim about which text the set was planned against — and a claim nothing
+      // checked went on saying the old SHA after the decision changed and was pulled again. So it is
+      // checked, at a level that follows what the suffix can tell:
+      // - `@<sha>` behind is a note. A commit moves with every edit to the file — a typo, an
+      //   `applies_to` line — so it cannot tell a wording change from a changed decision, and a warning
+      //   would put back, through every SHA pin written in the documented form, the churn the content
+      //   hash took out of bindings. The note offers the `@body:` value to switch to.
+      // - `@body:` behind is a warning on an open set: the content hash moved, so the decision the set
+      //   is designing against now says something else.
+      // - `@body:` behind on a closed set is a note, and «closed» alone is enough — no git lookup. The
+      //   argument that keeps `pin-dead` from being excused by closing is that work must not land under
+      //   a decision no longer in force; here the decision is still in force, only reworded or amended
+      //   since the set read it. The set is not rewritten, and the pin then states truly what the work
+      //   was done under — the same record `pin-dead` keeps as history once the git check clears it.
+      //   While the set was open the warning was on every run; a set closed in the same change that
+      //   pulled the new text loses that prompt, and that is the price accepted for not turning
+      //   finished history red.
+      // A retired decision has its own error below, and «raise the pin» would point at a dead text.
+      if (space === 'up' && (m.groups.body || m.groups.sha) && !ADR_DEAD.includes(String(target.status ?? ''))) {
+        const want = m.groups.body ?? m.groups.sha
+        const have = m.groups.body ? target.digest : target.sha
+        const prefix = m.groups.repo ? `${m.groups.owner}/${m.groups.repo}#` : ''
+        const now = target.digest ? `${prefix}${m.groups.id}@${digestPin(target.digest)}` : target.sha ? `${prefix}${m.groups.id}@${target.sha.slice(0, 7)}` : `${prefix}${m.groups.id}`
+        const closed = [docs.plan, docs.intent].some((x) => CLOSED.includes(String(x?.fm?.status ?? '')))
+        if (have && !have.startsWith(want) && m.groups.sha) {
+          push('info', d.name, `\`${raw}\` 의 SHA 가 매니페스트의 ${target.sha.slice(0, 7)} 보다 뒤다 — SHA 는 파일의 어느 커밋에나 움직여 문구 수정과 결정 변경을 가리지 못한다${target.digest ? ` — 결정 내용으로 고정하면 \`${now}\`` : ''}`,
+            target.digest ? `그 값은 결정문·Non-goals·대안·상태가 바뀔 때만 움직인다. \`@…\` 를 지워도 된다 — 매니페스트가 이 레포의 잠금이다.` : '`@…` 를 지워도 된다 — 매니페스트가 이 레포의 잠금이다.')
+        } else if (have && !have.startsWith(want) && closed) {
+          push('info', d.name, `끝난 세트는 그때의 결정문 아래에서 끝났다 — \`${raw}\` 뒤로 결정 내용이 바뀌었다(지금 \`${now}\`)`,
+            '이 세트는 고쳐 쓰지 않는다. 이어 가는 작업은 새 세트를 쓰고 지금의 결정을 핀한다.')
+        } else if (have && !have.startsWith(want)) {
+          warn(`\`${raw}\` 는 지금보다 앞선 판을 읽고 핀했다 — 지금은 \`${now}\``,
+            `결정문·Non-goals·대안·상태 가운데 무엇이 핀한 뒤 바뀌었다. 다시 읽고 이 세트가 여전히 그 안에 있으면 핀을 \`${now}\` 로 올린다. \`@…\` 는 지워도 된다 — 매니페스트가 이 레포의 잠금이다.`, R('decision-pin-behind'))
+        } else if (!have) {
+          push('info', d.name, `\`${raw}\` 의 \`@…\` 를 대조하지 못했다 — 매니페스트에 ${m.groups.body ? '결정 해시가 없다(이 기능 전에 끌어왔다)' : '커밋 SHA 가 없다(상류에서 미커밋)'}`,
+            '`pull-adr.mjs` 로 다시 끌어오면 대조한다.')
+        }
+      }
       const st = String(target.status ?? '')
       const history = ADR_DEAD.includes(st) ? historyOf(docs, seam) : null
       const then = history ? history.statusAt(m.groups.id, target.path) : null
@@ -482,7 +497,7 @@ export function checkTaskScope(docs, { seam }, push) {
     const files = wpFiles(w)
     const hits = [
       ...adrsForFiles(local, files, seam.self).map((d) => ({ space: 'local', id: String(d.fm?.id ?? d.name), title: String(d.fm?.title ?? ''), path: d.path })),
-      ...boundForFiles(manifest, bindings, files).map((d) => ({ space: 'up', id: String(d.id), title: String(d.title ?? '') })),
+      ...boundForFiles(manifest, bindings, files).map((d) => ({ space: 'up', id: String(d.id), title: String(d.title ?? ''), sha: d.sha ?? null, digest: d.digest ?? null })),
     ]
     for (const a of hits) {
       const key = `${a.space}:${a.id}`
@@ -506,33 +521,14 @@ export function checkTaskScope(docs, { seam }, push) {
     }
   }
   for (const a of byAdr.values()) {
-    // A decision in another repository moves; the pin form there carries the commit it was read at.
+    // The upstream pin is printed with the value it would be checked against, so it can be copied as
+    // is: `@<sha>` named no SHA, and the one an author then looked up — the repository's HEAD — was
+    // usually not the commit that last touched the ADR. The content hash first, since it survives a
+    // re-pull that changed nothing the decision says; the SHA for a manifest pulled before it existed.
     const isLocal = a.space === 'local'
-    const pin = isLocal ? `"${a.id}"` : `"${manifest.source ?? '<owner>/<repo>'}#${a.id}@<sha>"`
+    const pin = isLocal ? `"${a.id}"` : `"${manifest.source ?? '<owner>/<repo>'}#${a.id}${a.digest ? `@${digestPin(a.digest)}` : a.sha ? `@${a.sha.slice(0, 12)}` : ''}"`
     push('warn', 'plan.md', `${a.wps.join('·')} 의 files 가 ${shown(a)}(«${a.title}») 의 ${isLocal ? 'scope' : '바인딩 paths'} 를 만지는데 \`decisions:\` 에 없다`,
       `결정을 읽고 그 안에서 설계했으면 \`decisions: [${pin}]\` 로 핀한다 — 핀이 있어야 검사기가 그 결정의 상태를 보고, 대체된 결정 위에 선 계획을 잡는다. 결정에서 벗어나는 설계면 TD-* 에 적지 말고 그 ADR 을 대체하는 새 ADR 을 먼저 쓴다.`, R('task-adr-unpinned'))
-  }
-}
-
-export function adrDigest(doc) {
-  const dec = sectionText(doc, titleIn(doc, 'decision'))
-  const alts = alternativesOf(doc)
-  const decBody = dec ? dec.text.split(/^###\s/m)[0].trim() : ''
-  const ng = doc.hs.find((h) => h.depth === 3 && /^Non-goals$/i.test(h.title))
-  const nonGoals = ng
-    ? stripComments(doc.lines.slice(ng.line + 1, ng.allEnd).join('\n')).split('\n')
-        .map((l) => l.trim()).filter((l) => /^[-*]\s+/.test(l)).map((l) => l.replace(/^[-*]\s+/, ''))
-    : []
-  return {
-    id: String(doc.fm?.id ?? doc.name),
-    title: String(doc.fm?.title ?? ''),
-    file: doc.name,
-    status: String(doc.fm?.status ?? ''),
-    scope: [].concat(doc.fm?.scope ?? []).map(String).filter((v) => !isNull(v)),
-    decision: decBody,
-    nonGoals,
-    chosen: alts.filter((a) => a.chosen).map((a) => a.title.replace(CHOSEN_RE, '').trim()),
-    rejected: alts.filter((a) => !a.chosen).map((a) => a.title),
   }
 }
 
