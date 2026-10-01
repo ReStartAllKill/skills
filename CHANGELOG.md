@@ -4,6 +4,33 @@
 
 ### Fixed
 
+- **Pulling decisions or specs twice with nothing changed upstream leaves the file untouched.**
+  `pull-adr.mjs` wrote `pulled_at: <now>` into `.claude/adr-manifest.json` and `pull-spec.mjs` into
+  `upstream.lock.json`, so every re-pull was a diff and two branches that both re-pulled conflicted
+  on that one line. It was a derivable fact written down — the reason v7 removed `created` and
+  `updated` from artifacts — and nothing read it. Neither tool writes it now; everything left in
+  either file is a function of the upstream commit, and decisions are listed in sorted file order.
+  A manifest or lock that still carries the key stays valid, since neither `loadLock`,
+  `readManifest` nor the manifest's integrity hash (which covers `decisions` only) looks at it, and
+  the next pull drops it. Keeping the timestamp and skipping the write when nothing else changed
+  was rejected: the field would then say when the content last changed, which `git log` already
+  answers.
+
+- **A repository with its own `adr_dir` and an upstream `adr_repo` now has both checked.**
+  `pull-adr.mjs` supported the combination, but everything after it dropped the upstream half
+  without a word: `check-all` chained the two with `else if`, so the binding check never ran;
+  `checkPins` ignored the manifest whenever `adr_dir` was set, so `acme/docs#ADR-999@abcdef1` passed
+  on its SHA's shape and a pin to a superseded upstream decision passed too; the task-scope check
+  and `task-brief` matched only local `scope`. Now `check-all` prints a «결정 기록» and a «결정
+  바인딩» verdict, and pins, the task-scope check and injection consider both sources. The two ID
+  spaces overlap, so every place that reduced a pin to its bare ID now keys it by source: a bare
+  `ADR-005`, in a pin or in prose, is this repository's; `<adr_repo>#ADR-005` is the upstream one;
+  a local pin no longer satisfies an upstream requirement or the reverse, and each missing-pin
+  warning suggests the form for its source. `adr_manifest` now defaults whenever `adr_repo` is set,
+  as `adr_bindings` did, instead of `pull-adr` refusing to run until it was spelled out. Reading a
+  bare prose mention as «either space» was rejected — an upstream pin would then silence the
+  citation of a local decision. A profile with only one of the two keys behaves as before.
+
 - **A verify log that does not count as completion evidence now says which condition it failed.**
   A log is evidence only when a list of conditions all hold, and every way of failing that list
   read the same: `plan-check mark` refused with «verify 기록이 없다 … verify-run 을 먼저 돌린다»,

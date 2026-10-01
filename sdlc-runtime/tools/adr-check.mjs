@@ -283,14 +283,51 @@ const historyOf = (docs, seam) => {
   return histories.get(docs)
 }
 
+/** The ID spaces a pin can name. With only `adr_dir` or only `adr_repo` there is one, and every pin
+ *  reads against it as it always did. With both there are two, and they overlap — `ADR-005` here
+ *  and `ADR-005` upstream are different decisions — so a pin is read by its form: bare means this
+ *  repository's folder, `<owner>/<repo>#` the manifest's repository (or this repository, when it
+ *  names `repo`). Reducing a pin to its bare ID, as every caller once did, let a local pin satisfy
+ *  an upstream requirement and checked an upstream pin against the local folder. */
+function idSpaces(seam) {
+  const localDocs = seam.dir ? loadAdrDir(seam.dir).docs : []
+  const manifest = seam.repo ? loadManifest(seam.manifest) : null
+  const dual = !!(seam.dir && seam.repo)
+  const local = {
+    byId: new Map(localDocs.map((d) => [String(d.fm?.id ?? ''), { status: String(d.fm?.status ?? ''), superseded_by: d.fm?.superseded_by, path: d.path }])),
+    have: localDocs.length > 0,
+    where: seam.dir ? relative(seam.root ?? '', seam.dir) : '',
+  }
+  const up = {
+    byId: new Map((manifest?.decisions ?? []).map((d) => [String(d.id), { status: String(d.status ?? ''), superseded_by: d.superseded_by }])),
+    have: manifest != null,
+    where: manifest?.source ?? '매니페스트',
+  }
+  const upRepo = manifest?.source ?? seam.repo
+  /** 'local' · 'up' · null (a repository this one knows nothing of). `explicit` is whether the
+   *  prefix itself named the space, which turns a missing ID into an error rather than a shape check. */
+  const spaceOf = (g) => {
+    const prefix = g.repo ? `${g.owner}/${g.repo}` : null
+    const toUp = !!prefix && !!upRepo && sameRepo(prefix, upRepo)
+    if (!dual) return { space: seam.dir ? 'local' : 'up', explicit: toUp && !!manifest?.source }
+    if (!prefix) return { space: 'local', explicit: true }
+    if (toUp) return { space: 'up', explicit: true }
+    if (seam.self && sameRepo(prefix, seam.self)) return { space: 'local', explicit: true }
+    return { space: null, explicit: false }
+  }
+  const keyOf = (g) => {
+    const s = spaceOf(g).space
+    return s ? `${s}:${g.id}` : `${g.owner}/${g.repo}#${g.id}`
+  }
+  return { local, up, manifest, dual, upRepo, spaceOf, keyOf }
+}
+const pinKeys = (ids, docs) => new Set(Object.values(docs)
+  .flatMap((d) => [].concat(d.fm?.decisions ?? []).map(String))
+  .map((p) => PIN.exec(p.trim())?.groups).filter(Boolean).map(ids.keyOf))
+
 export function checkPins(docs, { seam }, push) {
   if (!seam?.configured) return
-  const local = seam.dir ? loadAdrDir(seam.dir).docs : []
-  const manifest = seam.dir ? null : loadManifest(seam.manifest)
-  const byId = new Map(local.length
-    ? local.map((d) => [String(d.fm?.id ?? ''), { status: String(d.fm?.status ?? ''), superseded_by: d.fm?.superseded_by, path: d.path }])
-    : (manifest?.decisions ?? []).map((d) => [String(d.id), { status: String(d.status ?? ''), superseded_by: d.superseded_by }]))
-  const haveSource = local.length > 0 || manifest != null
+  const ids = idSpaces(seam)
 
   for (const d of Object.values(docs)) {
     const pins = [].concat(d.fm?.decisions ?? []).map(String).filter((v) => !isNull(v))
@@ -302,14 +339,15 @@ export function checkPins(docs, { seam }, push) {
       if (!m) { err(`\`decisions: ${raw}\` 를 읽을 수 없다`, '같은 레포면 `ADR-005`, 다른 레포면 `<owner>/<repo>#ADR-005@<sha>` 다.'); continue }
       // A pin into the repository the manifest came from is checked against it. Only a pin into a
       // repository this one has no manifest for is left at the SHA-shape check.
-      const known = m.groups.repo && manifest?.source && sameRepo(`${m.groups.owner}/${m.groups.repo}`, manifest.source)
-      if (m.groups.repo && !byId.has(m.groups.id) && !known) {
+      const { space, explicit } = ids.spaceOf(m.groups)
+      const src = space ? ids[space] : null
+      if (m.groups.repo && (!src || (!src.byId.has(m.groups.id) && !explicit))) {
         if (!m.groups.sha) warn(`\`${raw}\` 에 SHA 가 없다`, '다른 레포의 결정은 움직인다. `@<sha>` 로 고정해야 나중에 무엇을 읽고 정했는지 되짚을 수 있다.')
         continue
       }
-      if (!haveSource) continue
-      const target = byId.get(m.groups.id)
-      if (!target) { err(`핀한 ${m.groups.id} 가 없다`, `${seam.dir ? relative(seam.root ?? '', seam.dir) : (manifest?.source ?? '매니페스트')} 에서 못 찾았다. 오타이거나, 소비 레포라면 매니페스트가 낡았다.`); continue }
+      if (!src.have) continue
+      const target = src.byId.get(m.groups.id)
+      if (!target) { err(`핀한 ${m.groups.id} 가 없다`, `${src.where} 에서 못 찾았다. 오타이거나, 소비 레포라면 매니페스트가 낡았다.`); continue }
       const st = String(target.status ?? '')
       const history = ADR_DEAD.includes(st) ? historyOf(docs, seam) : null
       const then = history ? history.statusAt(m.groups.id, target.path) : null
@@ -329,11 +367,17 @@ export function checkPins(docs, { seam }, push) {
       }
     }
 
-    const pinned = new Set(pins.map((p) => PIN.exec(p.trim())?.groups?.id).filter(Boolean))
-    const mentioned = new Set([...stripComments(d.text).matchAll(/\bADR-\d{3,4}\b/g)].map((x) => x[0]))
-    for (const id of mentioned) {
-      if (pinned.has(id)) continue
-      warn(`본문이 ${id} 를 부르는데 \`decisions:\` 에 없다`, '핀이 있어야 검사기가 그 결정의 상태를 본다 — 대체된 결정을 인용한 채로 도는 것을 산문만으로는 아무도 못 잡는다.')
+    // A mention is read as a pin of the same form would be: with two ID spaces a bare `ADR-005` in
+    // prose is this repository's, and the upstream one is written `<owner>/<repo>#ADR-005`. Reading a
+    // bare mention as «either» was rejected — it lets an upstream pin silence a local citation, the
+    // same conflation the pin check refuses.
+    const pinned = pinKeys(ids, { d })
+    const mentioned = new Map([...stripComments(d.text).matchAll(/(?:\b(?<owner>[\w.-]+)\/(?<repo>[\w.-]+)#)?\b(?<id>ADR-\d{3,4})\b/g)]
+      .map((x) => [ids.keyOf(ids.dual ? x.groups : { id: x.groups.id }), ids.dual ? x[0] : x.groups.id]))
+    for (const [key, shown] of mentioned) {
+      if (pinned.has(key)) continue
+      warn(`본문이 ${shown} 를 부르는데 \`decisions:\` 에 없다`, '핀이 있어야 검사기가 그 결정의 상태를 본다 — 대체된 결정을 인용한 채로 도는 것을 산문만으로는 아무도 못 잡는다.' +
+        (ids.dual && !shown.includes('#') ? ` 앞에 레포가 없는 ID 는 이 레포의 ${ids.local.where} 로 읽는다 — ${ids.upRepo} 의 결정이면 \`${ids.upRepo}#${shown}\` 로 쓴다.` : ''))
     }
   }
 }
@@ -347,42 +391,49 @@ export function checkTaskScope(docs, { seam }, push) {
   if (!seam?.configured || !docs.plan) return
   const wps = [...docs.plan.ents.values()].filter((e) => e.kind === 'wp')
   if (!wps.length) return
-  const pinned = new Set(Object.values(docs)
-    .flatMap((d) => [].concat(d.fm?.decisions ?? []).map(String))
-    .map((p) => PIN.exec(p.trim())?.groups?.id).filter(Boolean))
-  const local = seam.dir ? loadAdrDir(seam.dir).docs : null
-  const manifest = seam.dir ? null : loadManifest(seam.manifest)
-  if (!local?.length && !manifest) return
+  const ids = idSpaces(seam)
+  const pinned = pinKeys(ids, docs)
+  const local = seam.dir ? loadAdrDir(seam.dir).docs : []
+  const manifest = ids.manifest
+  if (!local.length && !manifest) return
   // Across repositories the paths are this repository's bindings, not the decision's scope.
   // Without a bindings file nothing matches here; `adr-bindings.mjs` is what says so, per decision.
-  const bindings = local ? null : loadBindings(seam.bindings)
+  // With both keys set both sources are matched, each under its own key, so a local pin of
+  // `ADR-005` cannot stand in for the upstream `ADR-005` a task also touches.
+  const bindings = manifest ? loadBindings(seam.bindings) : null
   const byAdr = new Map()
   for (const w of wps) {
     const files = wpFiles(w)
-    const hits = local
-      ? adrsForFiles(local, files, seam.self).map((d) => ({ id: String(d.fm?.id ?? d.name), title: String(d.fm?.title ?? ''), path: d.path }))
-      : boundForFiles(manifest, bindings, files).map((d) => ({ id: String(d.id), title: String(d.title ?? '') }))
+    const hits = [
+      ...adrsForFiles(local, files, seam.self).map((d) => ({ space: 'local', id: String(d.fm?.id ?? d.name), title: String(d.fm?.title ?? ''), path: d.path })),
+      ...boundForFiles(manifest, bindings, files).map((d) => ({ space: 'up', id: String(d.id), title: String(d.title ?? '') })),
+    ]
     for (const a of hits) {
-      if (pinned.has(a.id)) continue
-      ;(byAdr.get(a.id) ?? byAdr.set(a.id, { ...a, wps: [] }).get(a.id)).wps.push(w.id)
+      const key = `${a.space}:${a.id}`
+      if (pinned.has(key)) continue
+      ;(byAdr.get(key) ?? byAdr.set(key, { ...a, wps: [] }).get(key)).wps.push(w.id)
     }
   }
   // A closed plan's files meeting a decision that was not yet in force when the set closed is code
   // that predates the decision, not a plan that skipped it. Only that case becomes a note: a
   // decision already in force at closing was there to be read, and the warning stands.
   const history = byAdr.size ? historyOf(docs, seam) : null
-  for (const a of [...byAdr.values()]) {
+  // With two ID spaces the upstream decision is named with its repository, or two warnings about
+  // «ADR-005» would read as one decision said twice.
+  const shown = (a) => a.space === 'up' && ids.dual ? `${manifest.source ?? ids.upRepo}#${a.id}` : a.id
+  for (const [key, a] of [...byAdr]) {
     const then = history?.commit ? history.statusAt(a.id, a.path) : null
     if (history?.commit && then !== 'accepted') {
-      push('info', 'plan.md', `${a.wps.join('·')} 의 files 가 ${a.id} 의 범위에 들지만, 세트를 닫은 ${history.commit.slice(0, 7)} 에서 그 결정은 ${then ? `\`${then}\` 였다` : '없었다'}`,
+      push('info', 'plan.md', `${a.wps.join('·')} 의 files 가 ${shown(a)} 의 범위에 들지만, 세트를 닫은 ${history.commit.slice(0, 7)} 에서 그 결정은 ${then ? `\`${then}\` 였다` : '없었다'}`,
         '끝난 계획보다 뒤에 선 결정이다. 이 코드를 다시 고치는 새 세트가 그 결정을 핀한다.')
-      byAdr.delete(a.id)
+      byAdr.delete(key)
     }
   }
   for (const a of byAdr.values()) {
     // A decision in another repository moves; the pin form there carries the commit it was read at.
-    const pin = local ? `"${a.id}"` : `"${manifest.source ?? '<owner>/<repo>'}#${a.id}@<sha>"`
-    push('warn', 'plan.md', `${a.wps.join('·')} 의 files 가 ${a.id}(«${a.title}») 의 ${local ? 'scope' : '바인딩 paths'} 를 만지는데 \`decisions:\` 에 없다`,
+    const isLocal = a.space === 'local'
+    const pin = isLocal ? `"${a.id}"` : `"${manifest.source ?? '<owner>/<repo>'}#${a.id}@<sha>"`
+    push('warn', 'plan.md', `${a.wps.join('·')} 의 files 가 ${shown(a)}(«${a.title}») 의 ${isLocal ? 'scope' : '바인딩 paths'} 를 만지는데 \`decisions:\` 에 없다`,
       `결정을 읽고 그 안에서 설계했으면 \`decisions: [${pin}]\` 로 핀한다 — 핀이 있어야 검사기가 그 결정의 상태를 보고, 대체된 결정 위에 선 계획을 잡는다. 결정에서 벗어나는 설계면 TD-* 에 적지 말고 그 ADR 을 대체하는 새 ADR 을 먼저 쓴다.`)
   }
 }

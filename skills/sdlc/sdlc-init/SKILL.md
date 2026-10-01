@@ -41,7 +41,8 @@ description: '저장소에 SDLC 프로필·승인 가드·산출물 검사·CI �
    `upstream.lock.json`이 커밋돼야 상류 핀이 성립한다.
 
 3. **ADR 저장 위치:** 되돌리기 어려운 결정을 기록할 위치를 확인하고 `adr_dir`(기본 `docs/adr`)을 적는다.
-   다른 저장소에서 관리하면 `adr_dir` 대신 `adr_repo`를 사용한다. ADR은 변경 이후에도 유지하는
+   다른 저장소에서 관리하면 `adr_dir` 대신 `adr_repo`를 사용한다. 서비스 안의 결정은 여기에, 조직 전체의
+   결정은 문서 저장소에 두면 두 키를 함께 적는다 — 둘 다 검사된다. ADR은 변경 이후에도 유지하는
    아키텍처 결정 기록이므로 `adr_dir`을 Git 추적에서 제외하지 않는다.
    `adr_repo`를 쓰는 코드 저장소는 `repo`도 적고, `node <sdlc_runtime>/tools/pull-adr.mjs <저장소>`로
    `.claude/adr-manifest.json`을 만든 뒤 출력된 뼈대로 `.claude/adr-bindings.yml`을 작성한다.

@@ -164,7 +164,9 @@ bindings:
 
 - **The decision text arrives as a manifest.** `node <sdlc_runtime>/tools/pull-adr.mjs [--from <checkout>]` writes `.claude/adr-manifest.json` — status, `applies_to` and the digest `task-brief` injects, never a path — with an integrity hash. Commit it; never edit it. It prints a binding skeleton for every accepted decision that applies here and has none.
 
-`adr-bindings.mjs`, which `check-all` runs when the profile has `adr_repo`, checks in the code repository:
+`pull-adr` writes no `pulled_at`: a second pull with nothing changed upstream leaves the manifest byte-identical, so two branches that both re-pull do not conflict. When it changed is git's to say. A manifest that still carries the key stays valid and loses it on the next pull.
+
+`adr-bindings.mjs`, which `check-all` runs whenever the profile has `adr_repo` — with or without `adr_dir` — checks in the code repository:
 
 | Condition | Level |
 |---|---|
@@ -181,13 +183,28 @@ The plan's task-scope check and `task-brief` match plan `files` against binding 
 
 An ADR is always schema 5, so no version can mark where the new form begins; `applies_to` does. An ADR that has `applies_to` and still names another repository's path in `scope` is an error — the same link held twice, and the upstream copy is the one nothing checks. An ADR without `applies_to` that names one is a warning: it was valid when written, and it stays readable. `pull-adr` treats the repositories such an entry names as its `applies_to` and carries its paths and `confirms` into the skeleton, so a code repository can bind before the document repository migrates.
 
+### Both: decisions here and in a document repository
+
+A repository may set `adr_dir` **and** `adr_repo` — service-local decisions next to the code, organisation-wide ones in a document repository. Then both halves run: `check-all` prints a «결정 기록» line for the folder and a «결정 바인딩» line for the manifest and bindings, each with its own verdict, and the task-scope check and `task-brief` match a task's `files` against local `scope` and against binding `paths` alike. `adr_manifest` defaults as `adr_bindings` does; `pull-adr` once refused to run until it was spelled out next to `adr_dir`, and the checker then ignored the manifest anyway.
+
+The two ID spaces overlap — `ADR-005` here and `ADR-005` upstream are different decisions — so a pin is read by its form:
+
+| Written | Names | Checked against |
+|---|---|---|
+| `ADR-005` | this repository's decision | `adr_dir` |
+| `acme/docs#ADR-005@<sha>`, where `acme/docs` is `adr_repo` | the upstream decision | the manifest |
+| `acme/contracts#ADR-005`, where `acme/contracts` is `repo` | this repository's decision | `adr_dir` |
+| any other `<owner>/<repo>#ADR-005@<sha>` | a third repository | SHA shape only |
+
+A local pin never satisfies an upstream requirement or the reverse, and the warning for a missing pin suggests the form for its source. A prose mention follows the same rule: a bare `ADR-005` in the body is this repository's decision, and the upstream one is written `acme/docs#ADR-005`. Reading a bare mention as «either» was rejected; it would let an upstream pin silence the citation of a local decision. With only one of the two keys there is one space, and every pin reads against it as before.
+
 ## Profile seam
 
 ```yaml
 adr_dir: "docs/adr"              # Omit when this repository has no ADRs
-adr_repo: "acme/docs"            # Optional; decisions live in another repository
+adr_repo: "acme/docs"            # Optional; decisions live in another repository — may sit beside adr_dir
 adr_index: "docs/adr/index.md"   # Default: <adr_dir>/index.md
-adr_manifest: ".claude/adr-manifest.json"  # Default when adr_repo is set without adr_dir
+adr_manifest: ".claude/adr-manifest.json"  # Default when adr_repo is set
 adr_bindings: ".claude/adr-bindings.yml"   # Default when adr_repo is set
 ```
 

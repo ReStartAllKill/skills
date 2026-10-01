@@ -149,7 +149,11 @@ if (adrDir) {
       if (REQUIRED) failed.push({ rel, out: msg })
     }
   }
-} else if (yml('adr_repo', profile)) {
+}
+// Not `else`: a repository may keep its own decisions in `adr_dir` and bind an organisation's from
+// `adr_repo`. Chaining the two dropped the binding check whenever `adr_dir` was set, with no line
+// saying so — a check that is off reading as one that passed.
+if (yml('adr_repo', profile)) {
   // The decisions live elsewhere; what lives here is the manifest pulled from them and the paths
   // this repository bound them to. Those are checked here because only here are the paths visible.
   const rel = yml('adr_bindings', profile) || '.claude/adr-bindings.yml'

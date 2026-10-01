@@ -25,9 +25,9 @@ Global skills define the method. Repository facts and the applicable SDLC versio
 | `upstream_repo` | Documentation repository supplying intent and spec | None; single-repository mode |
 | `spec_consumers` | Code repositories consuming this repository's specs | None; this is not an upstream repository |
 | `adr_dir` | Decision-record directory | None; ADR checks are skipped |
-| `adr_repo` | `<owner>/<repo>` when decisions live elsewhere | None; same repository |
+| `adr_repo` | `<owner>/<repo>` when decisions live elsewhere; may be set beside `adr_dir`, and both are then checked | None; same repository |
 | `adr_index` | Generated decision index | `<adr_dir>/index.md` |
-| `adr_manifest` | Decisions pulled from `adr_repo` by `pull-adr.mjs` | `.claude/adr-manifest.json` |
+| `adr_manifest` | Decisions pulled from `adr_repo` by `pull-adr.mjs` | `.claude/adr-manifest.json` whenever `adr_repo` is set, with or without `adr_dir` |
 | `adr_bindings` | This repository's paths and tests for those decisions | `.claude/adr-bindings.yml` |
 | `pr_base` | Default base branch for `/create-pr` | `main` |
 | `pr_workspace_dirs` | Top-level directories used to group changes | Top-level directory names only |

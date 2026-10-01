@@ -51,7 +51,7 @@ v5 introduces the fifth artifact, `adr`. An ADR always uses `schema_version: 5`;
 
 `decisions:` pins are optional in v4 and checked in v5, so untouched v4 sets continue to pass. In a v5 set, the checker verifies that every pinned ADR exists and has an acceptable status.
 
-When the profile has no `adr_dir`, the repository is treated as having no ADRs and all related checks are skipped. With `adr_repo`, the checks move to the manifest and bindings described in `adr.md`.
+When the profile has no `adr_dir`, the repository is treated as having no ADRs and all related checks are skipped. With `adr_repo`, the manifest and bindings described in `adr.md` are checked — instead of a folder without `adr_dir`, beside it with one.
 
 Because an ADR is always schema 5, `applies_to` rather than a version marks the cross-repository form: an ADR that has it may not also name another repository's path in `scope` (an error), and one without it that does gets a warning, so an ADR written before bindings stays green below `--strict`.
 

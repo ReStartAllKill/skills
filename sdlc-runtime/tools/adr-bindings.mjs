@@ -32,7 +32,11 @@ export function adrSeam(repoRoot) {
     .replace(/\s+#.*$/, '').replace(/^["']|["']$/g, '').trim()
   const dir = yml('adr_dir')
   const repo = yml('adr_repo')
-  const manifest = yml('adr_manifest') || (repo && !dir ? MANIFEST_FILE : '')
+  // The manifest defaults whenever `adr_repo` is set, as the bindings file does. It once defaulted
+  // only without `adr_dir`, so a profile with both keys had no manifest unless it said so, and the
+  // checker then quietly read only the local folder; a repository keeping its own decisions next to
+  // an organisation's is the ordinary case, not one to opt into twice.
+  const manifest = yml('adr_manifest') || (repo ? MANIFEST_FILE : '')
   if (!dir && !repo) return { configured: false, self: yml('repo') || null }
   return {
     configured: true,

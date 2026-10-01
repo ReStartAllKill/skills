@@ -41,7 +41,8 @@ description: '승인된 spec.md를 바탕으로 구현 계획과 작업 목록�
    버전을 고정해 참조한 ADR은 `task-brief`가 구현 에이전트에게 전달한다.
    **작업의 `files` 가 승인된 ADR 의 `scope` 에 들어가면 그 ADR 을 읽고 `decisions:` 에 핀한다.** 결정이
    다른 레포(`adr_repo`)에 있으면 `scope` 대신 이 레포의 `.claude/adr-bindings.yml` 의 `paths` 로 겹침을
-   보고, `<owner>/<repo>#ADR-NNN@<sha>` 로 핀한다. 검사기가
+   보고, `<owner>/<repo>#ADR-NNN@<sha>` 로 핀한다. `adr_dir` 과 `adr_repo` 가 함께 있으면 번호가 겹친다 —
+   앞에 레포가 없는 `ADR-NNN` 은 핀이든 본문이든 이 레포의 결정이고, 상류 결정은 레포를 붙여 쓴다. 검사기가
    핀 없는 겹침을 경고한다 — 핀이 있어야 대체된 결정 위에 선 계획을 잡는다. 결정 안에서 설계했으면 핀으로
    끝이고, 결정에서 벗어나야 하면 `TD-*` 에 적지 말고 그 ADR 을 대체하는 새 ADR 을 먼저 쓴다.
 7. 공통 절차에 따라 검사하고 승인을 처리한다. 구현은 `/implement-spec <경로>`로 시작한다.

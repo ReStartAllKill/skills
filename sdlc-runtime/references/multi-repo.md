@@ -43,7 +43,10 @@ plan review has no effect. The checker warns when an upstream document repositor
 
 Manual copying leaves provenance only in someone's memory. `pull-spec.mjs` retrieves approved
 upstream documents and records the **upstream path, upstream commit, and content hash** in
-`upstream.lock.json`. It serves the same role as a package lockfile.
+`upstream.lock.json`. It serves the same role as a package lockfile, and like one it holds no
+timestamp: a second pull with nothing changed upstream leaves it byte-identical, so two branches
+that both re-pull do not conflict. A lock that still carries `pulled_at` stays valid and loses the
+key on the next pull.
 
 ```sh
 node <sdlc_runtime>/tools/pull-spec.mjs <artifact-directory> [--from <upstream-checkout>]
@@ -104,6 +107,12 @@ Decisions often cross repository boundaries. Giving every repository an `adr_dir
 decisions about where an ADR belongs and splits the numbering space. Designate one document
 repository as `adr_repo`; code repositories keep `<repo>#ADR-NNN@<sha>` pins. Organizations
 whose decisions never cross a repository boundary may use `adr_dir` instead.
+
+The two keys are not either/or. A code repository may keep its service-local decisions in its own
+`adr_dir` and bind the organisation's from `adr_repo`; both are then checked, each on its own
+`check-all` line. The numbering spaces overlap, so a bare `ADR-005` — in a pin or in prose — is
+always this repository's, and the upstream one is always `<repo>#ADR-005`. «Both: decisions here
+and in a document repository» in `adr.md` has the rule.
 
 The ADR names the repositories it constrains (`applies_to`); each code repository names the paths
 and tests in its own `.claude/adr-bindings.yml`, next to a manifest `pull-adr.mjs` writes. A path

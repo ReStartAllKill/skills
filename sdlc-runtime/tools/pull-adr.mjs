@@ -32,7 +32,6 @@ if (!ROOT) die('프로필을 찾지 못했다 — `.claude/spec-profile.yml` 이
 
 const seam = adrSeam(ROOT)
 if (!seam.repo) die('프로필에 `adr_repo` 가 없다 — 결정이 사는 레포를 `adr_repo: "<owner>/<repo>"` 로 적는다.')
-if (!seam.manifest) die('`adr_dir` 과 `adr_repo` 를 함께 쓰면 매니페스트 경로를 `adr_manifest:` 로 적는다.')
 
 const upstream = findUpstream({ repo: seam.repo }, ROOT, flag('--from'))
 if (!upstream) {
@@ -88,10 +87,13 @@ for (const doc of docs) {
   }
 }
 
+// No `pulled_at`: a second pull with nothing changed upstream must leave the file byte-identical,
+// or every re-pull is a diff and two branches that both re-pull conflict on that one line. When
+// the file changed is git's to say — the same reason artifacts dropped `created`/`updated` in v7.
+// Everything left is a function of the upstream commit, and `loadAdrDir` lists files sorted.
 const manifest = {
   source: seam.repo,
   commit: headOf(upstream, adrDir),
-  pulled_at: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
   decisions,
   integrity: manifestIntegrity(decisions),
 }

@@ -94,6 +94,8 @@ const adrLines = []
 if (seam.configured && seam.dir) {
   const all = loadAdrDir(seam.dir).docs
   const hit = adrsForFiles(all, files, seam.self)
+  // Bare pins only: a `<owner>/<repo>#ADR-NNN` pin names another repository's decision, never one
+  // in this folder, even when the number is the same.
   const pinned = new Set(Object.values(docs).flatMap((d) => [].concat(d.fm?.decisions ?? []).map(String))
     .filter((p) => !p.includes('#'))
     .map((p) => /(ADR-\d{3,4})/.exec(p)?.[1]).filter(Boolean))
@@ -107,7 +109,10 @@ if (seam.configured && seam.dir) {
   }
   const missed = [...pinned].filter((id) => !hit.some((d) => String(d.fm?.id) === id))
   if (missed.length) console.error(`· 산출물 세트가 핀한 ${missed.join(' · ')} 는 이 작업의 files 에 안 걸려 싣지 않았다`)
-} else if (seam.configured && seam.repo) {
+}
+// Not `else`: with both `adr_dir` and `adr_repo` the writer needs this repository's decisions and
+// the organisation's, and chaining the two injected only the first.
+if (seam.configured && seam.repo) {
   // The decision lives in another repository: the paths come from this repository's bindings and
   // the text from the pulled manifest. Either missing turns injection off, so say which.
   const manifest = loadManifest(seam.manifest)
@@ -115,7 +120,8 @@ if (seam.configured && seam.dir) {
   if (!manifest) console.error(`· ${seam.repo} 의 결정 매니페스트가 없다 — 결정을 싣지 못했다. pull-adr.mjs 로 끌어온다`)
   else if (!bindings) console.error(`· ${relative(ROOT, seam.bindings)} 가 없다 — ${seam.repo} 의 결정을 이 작업의 files 와 대조하지 못했다`)
   for (const d of boundForFiles(manifest, bindings, files)) {
-    adrLines.push(`### ${d.id} — ${d.title ?? ''}`)
+    // The two ID spaces overlap, so beside local decisions the upstream one carries its repository.
+    adrLines.push(`### ${seam.dir ? `${manifest.source ?? seam.repo}#` : ''}${d.id} — ${d.title ?? ''}`)
     if (d.decision) adrLines.push('', d.decision)
     if (d.non_goals?.length) adrLines.push('', '정하지 않은 것 (이 작업의 범위가 아니다):', ...d.non_goals.map((n) => `- ${n}`))
     if (d.rejected?.length) adrLines.push('', `이미 기각한 안 — 다시 고르지 마라: ${d.rejected.join(' · ')}`)

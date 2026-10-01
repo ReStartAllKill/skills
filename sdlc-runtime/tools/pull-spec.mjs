@@ -85,12 +85,10 @@ for (const name of VENDORED) {
 
 if (!pulled.length) die(`끌어올 문서가 없다 — ${relative(process.cwd(), srcDir)} 에 ${VENDORED.join(' · ')} 가 없다.`)
 
-const lock = {
-  repo,
-  slug,
-  pulled_at: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
-  files,
-}
+// No `pulled_at`: a re-pull with nothing changed upstream must leave the lock byte-identical, or
+// two branches that both re-pull conflict on it. git records when the lock changed. A lock that
+// still carries the key stays valid — `loadLock` never read it — and loses it on the next pull.
+const lock = { repo, slug, files }
 writeFileSync(join(DIR, LOCK_FILE), JSON.stringify(lock, null, 2) + '\n')
 
 console.log(`${repo}#${slug} → ${relative(process.cwd(), DIR)}`)

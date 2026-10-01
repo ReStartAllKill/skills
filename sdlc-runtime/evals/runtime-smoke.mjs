@@ -1006,6 +1006,29 @@ await test('hashes reject manual copy edits and the checker detects newer upstre
   assert(stale.code !== 0 && stale.out.includes('상류가 이 사본보다 앞서 있다'), `상류 드리프트를 놓쳤다:\n${stale.out}`)
 })
 
+// The lock once carried `pulled_at`, so every re-pull was a diff and two branches that both
+// re-pulled conflicted on it. git already records when the lock changed.
+await test('pull-spec twice with nothing changed upstream leaves the lock byte-identical, and an old lock with pulled_at still passes', () => {
+  const { up, chain } = twoRepos()
+  const lockPath = join(chain, 'upstream.lock.json')
+  assert(run(process.execPath, [tool('pull-spec.mjs'), chain, '--from', up]).code === 0, 'first pull failed')
+  const first = readFileSync(lockPath, 'utf8')
+  assert(!/pulled_at/.test(first), `the lock still records when it was pulled:\n${first}`)
+  assert(run(process.execPath, [tool('pull-spec.mjs'), chain, '--from', up]).code === 0, 'second pull failed')
+  assert(readFileSync(lockPath, 'utf8') === first, `a re-pull with nothing changed upstream rewrote the lock:\n${first}\n---\n${readFileSync(lockPath, 'utf8')}`)
+
+  const lock = JSON.parse(first)
+  cpSync(join(CASES, 'plan.md'), join(chain, 'plan.md'))
+  edit(join(chain, 'plan.md'), (s) => s.replace('schema_version: 3', 'schema_version: 6')
+    .replace('@SPEC_SHA@', lock.files['spec.md'].sha.slice(0, 7))
+    .replace('covers: FR-001 (AC-001, AC-002)', 'covers: AC-001'))
+  writeFileSync(lockPath, JSON.stringify({ repo: lock.repo, slug: lock.slug, pulled_at: '2026-09-01T00:00:00Z', files: lock.files }, null, 2) + '\n')
+  const r = check(chain, up)
+  assert(r.code === 0, `a lock written before pulled_at was dropped no longer passes:\n${r.out}`)
+  assert(run(process.execPath, [tool('pull-spec.mjs'), chain, '--from', up]).code === 0, 're-pull over an old lock failed')
+  assert(readFileSync(lockPath, 'utf8') === first, 'a re-pull did not drop pulled_at from an old lock')
+})
+
 // A schema-7 upstream has no lock, so /create-spec pins the intent by body hash. The consumer
 // pulls that pair verbatim; the lock must not turn the pin inside the pair into an error.
 function v7Consumer() {
@@ -2041,6 +2064,126 @@ decisions: [${pins}]
   put(mpath, readFileSync(mpath, 'utf8').replace('"accepted"', '"draft"'))
   rep = bindCheck(d, up)
   assert(said(rep, /매니페스트가 `pull-adr` 가 쓴 것과 다르다/), `a hand-edited manifest passed:\n${rep.raw}`)
+})
+
+await test('pull-adr twice with nothing changed upstream leaves the manifest byte-identical, and an old manifest with pulled_at still passes', () => {
+  const up = bindUpstream(), d = bindConsumer()
+  const mpath = join(d, '.claude/adr-manifest.json')
+  assert(run(process.execPath, [tool('pull-adr.mjs'), d, '--from', up]).code === 0, 'first pull failed')
+  const first = readFileSync(mpath, 'utf8')
+  assert(!/pulled_at/.test(first), `the manifest still records when it was pulled:\n${first}`)
+  assert(run(process.execPath, [tool('pull-adr.mjs'), d, '--from', up]).code === 0, 'second pull failed')
+  assert(readFileSync(mpath, 'utf8') === first, `a re-pull with nothing changed upstream rewrote the manifest:\n${first}\n---\n${readFileSync(mpath, 'utf8')}`)
+
+  put(join(d, '.claude/adr-bindings.yml'), bindingsYml(git(up, 'rev-parse', 'HEAD')))
+  const m = JSON.parse(first)
+  put(mpath, JSON.stringify({ source: m.source, commit: m.commit, pulled_at: '2026-09-01T00:00:00Z', decisions: m.decisions, integrity: m.integrity }, null, 2) + '\n')
+  const rep = bindCheck(d, up)
+  assert(rep.counts.errors === 0 && rep.counts.warnings === 0, `a manifest written before pulled_at was dropped no longer passes:\n${rep.raw}`)
+  assert(run(process.execPath, [tool('pull-adr.mjs'), d, '--from', up]).code === 0, 're-pull over an old manifest failed')
+  assert(readFileSync(mpath, 'utf8') === first, 'a re-pull did not drop pulled_at from an old manifest')
+})
+
+// Service-local decisions next to the code, organisation-wide ones in a document repository. Both
+// keys were accepted, and everything past pull-adr then read only the local folder: the binding
+// check never ran and an upstream pin was judged by its SHA's shape alone. The local ADR-001 and the
+// upstream ADR-001 are different decisions on purpose — the two ID spaces overlap.
+function dualConsumer() {
+  const d = bindConsumer()
+  put(join(d, '.claude/spec-profile.yml'), `sdlc_version: 7\nsdlc_runtime: "${ROOT}"\nspec_dir: ".sdlc/specs"\nrepo: "acme/contracts"\nadr_dir: "docs/adr"\nadr_repo: "acme/docs"\n`)
+  put(join(d, 'src/local/store.ts'), 'export const store = 1 // test_LocalStore\n')
+  put(join(d, 'docs/adr/ADR-001-local-store.md'), bindAdr('ADR-001', 'Local store', 'scope: ["src/local"]\nconfirms: ["test_LocalStore"]')
+    .replace('Price at 1:1 on the first epoch.', 'Keep the store in process.'))
+  assert(run(process.execPath, [tool('adr-index.mjs'), d]).code === 0, 'adr-index failed')
+  git(d, 'add', '-A'); git(d, 'commit', '-qm', 'local decision')
+  return d
+}
+const dualPlan = (pins, prose = '') => `---
+artifact: plan
+schema_version: 7
+status: draft
+decisions: [${pins}]
+---
+
+# Plan
+${prose}
+## 작업
+
+- [ ] **WP-001 — 첫 에포크 가격**
+  - files: \`src/vault/Pool.sol\`
+  - depends: 없음
+  - covers: FR-001 (AC-001)
+  - tests: 첫 에포크는 1:1 이다
+  - verify: true
+
+- [ ] **WP-002 — 로컬 저장**
+  - files: \`src/local/store.ts\`
+  - depends: 없음
+  - covers: FR-001 (AC-001)
+  - tests: 로컬에 저장한다
+  - verify: true
+
+- [ ] **WP-003 — 둘 다**
+  - files: \`src/vault/Pool.sol\`, \`src/local/store.ts\`
+  - depends: WP-001, WP-002
+  - covers: FR-001 (AC-001)
+  - tests: 둘 다 지킨다
+  - verify: true
+`
+
+await test('a repository with its own ADRs and an upstream adr_repo checks both, each in its own ID space', () => {
+  const up = bindUpstream(), d = dualConsumer()
+  let r = run(process.execPath, [tool('pull-adr.mjs'), d, '--from', up])
+  assert(r.code === 0 && existsSync(join(d, '.claude/adr-manifest.json')), `pull-adr wanted adr_manifest spelled out next to adr_dir:\n${r.out}`)
+  put(join(d, '.claude/adr-bindings.yml'), bindingsYml(git(up, 'rev-parse', 'HEAD')))
+  git(d, 'add', '-A'); git(d, 'commit', '-qm', 'pull decisions')
+
+  r = run(process.execPath, [tool('check-all.mjs'), d], { env: { ...process.env, SDLC_UPSTREAM: up } })
+  assert(/결정 기록 통과/.test(r.out) && /결정 바인딩 통과/.test(r.out) && r.code === 0, `check-all did not run both decision checks:\n${r.out}`)
+  put(join(d, '.claude/adr-bindings.yml'), bindingsYml(git(up, 'rev-parse', 'HEAD'), 'src/gone'))
+  r = run(process.execPath, [tool('check-all.mjs'), d], { env: { ...process.env, SDLC_UPSTREAM: up } })
+  assert(/결정 기록 통과/.test(r.out) && /결정 바인딩 실패/.test(r.out) && r.code !== 0, `a broken binding hid behind the local folder:\n${r.out}`)
+  put(join(d, '.claude/adr-bindings.yml'), bindingsYml(git(up, 'rev-parse', 'HEAD')))
+
+  const set = join(d, '.sdlc/specs/pool')
+  const sha = git(up, 'rev-parse', 'HEAD').slice(0, 7)
+  const planCheck = (pins, prose) => {
+    put(join(set, 'plan.md'), dualPlan(pins, prose))
+    const out = run(process.execPath, [tool('check-artifacts.mjs'), set, '--json']).out
+    try { return { ...JSON.parse(out), raw: out } } catch { throw new Error(`check-artifacts did not print JSON:\n${out}`) }
+  }
+  const scopeWarn = (rep, re) => rep.problems.find((p) => p.level === 'warn' && re.test(p.msg))
+  const upWarn = (rep) => scopeWarn(rep, /WP-001·WP-003 의 files 가 acme\/docs#ADR-001\(«Vault pricing»\) 의 바인딩 paths/)
+  const localWarn = (rep) => scopeWarn(rep, /WP-002·WP-003 의 files 가 ADR-001\(«Local store»\) 의 scope/)
+
+  let rep = planCheck('"acme/docs#ADR-999@abcdef1"')
+  assert(rep.problems.some((p) => p.level === 'error' && /핀한 ADR-999 가 없다/.test(p.msg)), `a pin to a missing upstream decision passed on its SHA's shape:\n${rep.raw}`)
+
+  rep = planCheck('')
+  assert(/"acme\/docs#ADR-001@<sha>"/.test(upWarn(rep)?.hint ?? ''), `a task on a bound upstream path went unpinned without the prefixed pin form:\n${rep.raw}`)
+  assert(/decisions: \["ADR-001"\]/.test(localWarn(rep)?.hint ?? ''), `a task in a local ADR's scope went unpinned without the bare pin form:\n${rep.raw}`)
+
+  rep = planCheck('"ADR-001"')
+  assert(!localWarn(rep) && upWarn(rep), `a local ADR-001 pin stood in for the upstream ADR-001:\n${rep.raw}`)
+  rep = planCheck(`"acme/docs#ADR-001@${sha}"`, '\nThis plan follows ADR-001.\n')
+  assert(localWarn(rep) && !upWarn(rep), `an upstream ADR-001 pin stood in for the local ADR-001:\n${rep.raw}`)
+  assert(rep.problems.some((p) => p.level === 'warn' && /본문이 ADR-001 를 부르는데/.test(p.msg) && /acme\/docs#ADR-001/.test(p.hint ?? '')),
+    `a bare mention was satisfied by the upstream pin of the same number:\n${rep.raw}`)
+  rep = planCheck(`"ADR-001", "acme/docs#ADR-001@${sha}"`, '\nThis plan follows ADR-001 and acme/docs#ADR-001.\n')
+  // The plan is a bare fixture, so it has errors of its own; none may be about a decision.
+  assert(!localWarn(rep) && !upWarn(rep) && !rep.problems.some((p) => /ADR-|본문이/.test(p.msg)), `both pins did not satisfy both decisions:\n${rep.raw}`)
+
+  r = run(process.execPath, [tool('task-brief.mjs'), set, 'WP-003'])
+  assert(/### ADR-001 — Local store\n\nKeep the store in process\./.test(r.out) && /### acme\/docs#ADR-001 — Vault pricing\n\nPrice at 1:1/.test(r.out),
+    `the writer did not get both the local and the upstream decision:\n${r.out}`)
+
+  // A superseded upstream decision, pulled honestly, is an error to pin — not a shape check.
+  const adr2 = join(up, 'docs/adr/ADR-002-nav-freshness.md')
+  put(adr2, readFileSync(adr2, 'utf8').replace('status: accepted', 'status: superseded').replace('superseded_by: null', 'superseded_by: "ADR-001"'))
+  git(up, 'commit', '-qam', 'supersede')
+  assert(run(process.execPath, [tool('pull-adr.mjs'), d, '--from', up]).code === 0, 're-pull failed')
+  rep = planCheck(`"ADR-001", "acme/docs#ADR-001@${sha}", "acme/docs#ADR-002@${sha}"`)
+  assert(rep.problems.some((p) => p.level === 'error' && /핀한 ADR-002 의 상태가 `superseded`/.test(p.msg)), `a pin to a superseded upstream decision passed:\n${rep.raw}`)
 })
 
 // A finished set is judged against the decisions in force when it closed, read from git: the edit
