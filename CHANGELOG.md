@@ -1,52 +1,6 @@
 # Changelog
 
-## Unreleased
-
-### Fixed
-
-- **A completed set no longer fails CI on main after a squash merge or a rebase merge.**
-  For a completed plan, a verify log counted only if its HEAD was an ancestor of the commit that
-  closed the plan, contained every task commit, and the whole-repository fingerprint at that commit
-  matched. Squash and rebase merges, the default on many hosts, rewrite every commit of the branch,
-  so all three failed on main the moment a finished set landed — «검증한 HEAD 가 지금 이력에 없다»
-  — and only verifying again after the merge cured it. Now, for a committed completed plan whose
-  log HEAD is not in that history, `plan-progress` checks what can still be shown: the log is intact
-  and passing, a commit attributed to the task (including the squash-joined trailer) is in the
-  history, and the task-file fingerprint recomputed at the closing commit, with the log's algorithm,
-  equals the recorded one. The set then passes with one info note, `history-rewritten`, which says
-  the history check did not run and whether the whole-repository fingerprint matched; `check-all`
-  now runs `plan-progress` in `--json` and prints this note, and only this one of its info notes,
-  under the pass line. A main that changed a task file, or a merge that resolved a conflict in one,
-  still fails, with a reason, `rewritten-task-changed`, naming both causes. An active plan keeps
-  `head-gone`, and scoped logs are unchanged. Rejected: a profile switch that accepts squashed sets
-  silently, because a check that did not run must not read as one that passed; and dropping the note
-  when the whole repository matches, because the ancestry of the verified HEAD is still unshown.
-
-- **Checking a completed set no longer costs time in proportion to the size of the repository.**
-  The repository fingerprint hashed every file through the task fingerprint, which at a commit ran
-  `git ls-tree` and `git cat-file` once per file. `plan-progress` recomputes it at a commit for
-  every completed set and for the HEAD of every scoped log, and `check-all`, `plan-check mark` and
-  `commit` and `plan-resume` all run `plan-progress`: in a repository of 1,500 tracked files one
-  completed set took 151 s to check, and marking one task took minutes. In the working tree it read
-  every byte of the repository through SHA-256 in JavaScript, three times per `verify-run`. Version
-  2 of the fingerprint hashes the sorted list of path, mode and git object id, and git supplies the
-  ids: one `git ls-tree -r` at a commit, one `git ls-files` and one `git hash-object --stdin-paths`
-  in the working tree, whatever the number of files. `hash-object` runs with the path's attributes,
-  so a working tree hashes exactly as its commit will — a CRLF file under a `text` rule hashed one
-  way on disk and another way once committed under version 1, and such a set could never verify
-  from its commit. Symlinks are hashed by their target string, as git stores them, and a submodule
-  by its staged commit, as before. `verify-run` now writes `fingerprint: 2` into the log header, and
-  `plan-progress` recomputes each log with the algorithm the log names; a log without the key is
-  version 1 and is checked exactly as before — slowly, but a completed set is never re-verified, and
-  rewriting or reinterpreting its logs would have taken its evidence away. Re-running `verify`
-  writes a version 2 log. A log naming a version this code does not know is refused with its own
-  reason, `fingerprint-version`, rather than recomputed with the wrong algorithm and reported as a
-  change. Within one run each repository fingerprint is computed once per algorithm and commit, and
-  still only when a log reaches that check. What counts as evidence is unchanged, with one
-  consequence of matching against git's own listing: a git-ignored file named in a task's `files`
-  is now absent on both sides instead of hashed from disk and missing from the commit.
-  Rejected: caching fingerprints on disk, which would be one more thing a log could disagree with;
-  and `hash-object --no-filters`, which is faster to reason about and breaks the equality above.
+## 0.12.0 — 2026-10-01
 
 ### Added
 
@@ -121,6 +75,49 @@
 
 ### Fixed
 
+- **A completed set no longer fails CI on main after a squash merge or a rebase merge.**
+  For a completed plan, a verify log counted only if its HEAD was an ancestor of the commit that
+  closed the plan, contained every task commit, and the whole-repository fingerprint at that commit
+  matched. Squash and rebase merges, the default on many hosts, rewrite every commit of the branch,
+  so all three failed on main the moment a finished set landed — «검증한 HEAD 가 지금 이력에 없다»
+  — and only verifying again after the merge cured it. Now, for a committed completed plan whose
+  log HEAD is not in that history, `plan-progress` checks what can still be shown: the log is intact
+  and passing, a commit attributed to the task (including the squash-joined trailer) is in the
+  history, and the task-file fingerprint recomputed at the closing commit, with the log's algorithm,
+  equals the recorded one. The set then passes with one info note, `history-rewritten`, which says
+  the history check did not run and whether the whole-repository fingerprint matched; `check-all`
+  now runs `plan-progress` in `--json` and prints this note, and only this one of its info notes,
+  under the pass line. A main that changed a task file, or a merge that resolved a conflict in one,
+  still fails, with a reason, `rewritten-task-changed`, naming both causes. An active plan keeps
+  `head-gone`, and scoped logs are unchanged. Rejected: a profile switch that accepts squashed sets
+  silently, because a check that did not run must not read as one that passed; and dropping the note
+  when the whole repository matches, because the ancestry of the verified HEAD is still unshown.
+
+- **Checking a completed set no longer costs time in proportion to the size of the repository.**
+  The repository fingerprint hashed every file through the task fingerprint, which at a commit ran
+  `git ls-tree` and `git cat-file` once per file. `plan-progress` recomputes it at a commit for
+  every completed set and for the HEAD of every scoped log, and `check-all`, `plan-check mark` and
+  `commit` and `plan-resume` all run `plan-progress`: in a repository of 1,500 tracked files one
+  completed set took 151 s to check, and marking one task took minutes. In the working tree it read
+  every byte of the repository through SHA-256 in JavaScript, three times per `verify-run`. Version
+  2 of the fingerprint hashes the sorted list of path, mode and git object id, and git supplies the
+  ids: one `git ls-tree -r` at a commit, one `git ls-files` and one `git hash-object --stdin-paths`
+  in the working tree, whatever the number of files. `hash-object` runs with the path's attributes,
+  so a working tree hashes exactly as its commit will — a CRLF file under a `text` rule hashed one
+  way on disk and another way once committed under version 1, and such a set could never verify
+  from its commit. Symlinks are hashed by their target string, as git stores them, and a submodule
+  by its staged commit, as before. `verify-run` now writes `fingerprint: 2` into the log header, and
+  `plan-progress` recomputes each log with the algorithm the log names; a log without the key is
+  version 1 and is checked exactly as before — slowly, but a completed set is never re-verified, and
+  rewriting or reinterpreting its logs would have taken its evidence away. Re-running `verify`
+  writes a version 2 log. A log naming a version this code does not know is refused with its own
+  reason, `fingerprint-version`, rather than recomputed with the wrong algorithm and reported as a
+  change. Within one run each repository fingerprint is computed once per algorithm and commit, and
+  still only when a log reaches that check. What counts as evidence is unchanged, with one
+  consequence of matching against git's own listing: a git-ignored file named in a task's `files`
+  is now absent on both sides instead of hashed from disk and missing from the commit.
+  Rejected: caching fingerprints on disk, which would be one more thing a log could disagree with;
+  and `hash-object --no-filters`, which is faster to reason about and breaks the equality above.
 - **A code repository no longer goes red whenever its document repository moves — only when a
   decision that constrains it changes.** Everything that tied a consumer to an upstream decision
   was keyed on the commit that last touched the ADR file, and `findUpstream` finds a sibling
@@ -232,9 +229,6 @@
   citing `ADR-027` warned that the body named an unpinned decision, and one citing a research ID
   that does not exist failed — the waiver's own justification raised new problems, as it once did
   for the ID-reference and source-path scans.
-
-### Fixed
-
 - **Every section a skill or a tool message tells you to read now exists under that name.**
   When the reference documents were translated to English, ten skill citations kept the old
   Korean titles — adr.md's «판정», profile.md's «커밋과 사람», the conventions' «변경이 여러 레포에
