@@ -249,7 +249,7 @@ ignores the key and keeps warning, which misreads nothing, so `waive:` has no sc
 | `decision-pin-unknown` | error | no | A pinned ADR does not exist. |
 | `pin-dead` | error | no | A pinned ADR is deprecated, superseded or rejected. |
 | `decision-pin-unaccepted` | warn | no | A pinned ADR is still draft or in review. |
-| `adr-mention-unpinned` | warn | no | The body names an ADR that `decisions:` does not pin. |
+| `adr-mention-unpinned` | warn | no | The body names an ADR that `decisions:` does not pin, and no pinned ADR replaced it through `superseded_by`. |
 | `task-adr-unpinned` | warn | no | A task touches the scope of an accepted ADR the set does not pin. |
 
 ### Decision bindings

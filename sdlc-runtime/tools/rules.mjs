@@ -176,7 +176,7 @@ export const RULES = {
   'decision-pin-unknown': E('A pinned ADR does not exist.'),
   'pin-dead': E('A pinned ADR is deprecated, superseded or rejected.'),
   'decision-pin-unaccepted': W('A pinned ADR is still draft or in review.'),
-  'adr-mention-unpinned': W('The body names an ADR that `decisions:` does not pin.'),
+  'adr-mention-unpinned': W('The body names an ADR that `decisions:` does not pin, and no pinned ADR replaced it through `superseded_by`.'),
   'task-adr-unpinned': W('A task touches the scope of an accepted ADR the set does not pin.'),
 
   // ── Decision bindings (`adr-bindings.mjs`) ─────────────────────────────────────────────────

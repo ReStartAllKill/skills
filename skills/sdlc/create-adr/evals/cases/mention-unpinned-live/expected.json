@@ -1,0 +1,12 @@
+{
+  "kind": "seeded · 핀",
+  "why": "**효력 있는 결정을 핀 없이 부르는 경우** — 본문이 ADR-031 에 기대는데 `decisions:` 가 비었다. ADR-031 은 대체되지 않았으니 대체 사슬로 풀리는 언급이 아니고, 핀이 없으면 그 결정이 나중에 대체돼도 아무도 이 세트를 깨우지 않는다. 경고는 예전 그대로여야 하고, 대체된 결정에만 붙는 «무엇이 대체했다» 안내는 붙지 않아야 한다. pinned-superseded 에서 핀과 그 한 문장만 다르다.",
+  "cmd": "산출물 디렉터리 `<case>/docs/specs/2026-09-05-multi-store-upload` 에 돌린다 — pinned-superseded 와 같다.",
+  "check": {
+    "errors": 0, "warns": 1,
+    "matches": ["본문이 ADR-031 를 부르는데 `decisions:` 에 없다"],
+    "forbidden": ["대체했다"]
+  },
+  "lint": { "errors": 0, "warns": 0 },
+  "target": "specs/2026-09-05-multi-store-upload"
+}

@@ -99,6 +99,29 @@
   accepted one, was rejected: `/iterate-spec` now reverts the status alone first, which keeps the
   meaning change to a single dialog, the re-approval.
 
+- **A document can name the decision it is migrating away from.** A change that moves code onto
+  ADR-005 has to say «ADR-004 를 대체한 ADR-005 에 맞춰 …», and that sentence could not be written:
+  mentioned without a pin, ADR-004 warned `adr-mention-unpinned` and failed CI under `--strict`;
+  pinned to silence it, it was a pin to a superseded decision and an error. A document that pins
+  the successor is not resting on the predecessor, and the checker can see that. The mention check
+  now follows `superseded_by` from the mentioned decision through every decision that is itself
+  `superseded`, guarded against cycles, and a mention that reaches a decision the same document pins
+  is accepted as history — two or more steps included. Any other unpinned mention warns as before;
+  one of a superseded decision whose successor is not pinned now says in its hint what replaced it,
+  which successor is in force, and that pinning the successor is the fix. `superseded_by` is the
+  field followed, not the successor's `supersedes`: the retired decision must name its successor
+  and that edit goes to a person, while `supersedes` is optional and written by the successor, so a
+  draft claiming to replace a decision still in force would otherwise excuse citing it; when the
+  two disagree, `adr-supersede-unreciprocated` already warns. Upstream decisions work the same way
+  with no manifest change — every manifest `pull-adr` has written carries `superseded_by`, and one
+  without it simply cannot excuse the mention. With both `adr_dir` and `adr_repo` the chain stays in
+  the mentioned decision's ID space, so a local pin of ADR-001 does not excuse an upstream decision
+  the upstream ADR-001 replaced. Pinning a dead decision stays an error. Separately, the lines of a
+  `waive:` basis are no longer read by the mention check or by the research-citation check: a basis
+  citing `ADR-027` warned that the body named an unpinned decision, and one citing a research ID
+  that does not exist failed — the waiver's own justification raised new problems, as it once did
+  for the ID-reference and source-path scans.
+
 ### Fixed
 
 - **Every section a skill or a tool message tells you to read now exists under that name.**

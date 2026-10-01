@@ -24,8 +24,9 @@ description: '변경의 목적·목표·범위를 intent.md로 작성한다. 구
 4. `assets/<lang>/intent-template.md`를 사용해 `<spec_dir>/<YYYY-MM-DD>-<slug>/intent.md`에 쓴다.
    `OUT-*`에는 관찰 가능한 결과와 `확인:` 방법을 적는다. Must 결과는 후속 명세의 요구사항과 연결한다.
 5. 되돌리기 어려운 결정은 `<sdlc_runtime>/references/adr.md`의 「What qualifies as an ADR」 기준에 따라 ADR로 관리한다.
-   기존 ADR을 `decisions:`에 버전을 고정해 참조한다. ADR이 없으면 `/create-adr`로 먼저 작성하고
-   이 단계는 중단한다.
+   기존 ADR을 `decisions:`에 버전을 고정해 참조한다. 대체된 ADR은 핀하지 않고 그것을 대체한 ADR을
+   핀한다 — 그러면 본문에서 옛 ADR을 이관 경위로 불러도 검사기가 이력으로 읽는다.
+   ADR이 없으면 `/create-adr`로 먼저 작성하고 이 단계는 중단한다.
 6. 공통 절차에 따라 검사하고 승인을 처리한다. 다음 단계는 `/create-spec <경로>`다.
 
 구현 구조·파일·라이브러리·작업 순서는 plan에 둔다. 외부 인터페이스의 동작은 spec에 둔다.

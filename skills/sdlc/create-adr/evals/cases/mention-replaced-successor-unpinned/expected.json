@@ -1,0 +1,15 @@
+{
+  "kind": "seeded · 핀",
+  "why": "**대체된 결정을 부르면서 후속은 핀하지 않은 경우** — 본문이 ADR-027 을 근거로 부르는데 세트는 아무 결정도 핀하지 않았다. 대체를 따라가 핀한 결정에 닿지 않으므로 언급 경고는 그대로다. 다만 고칠 길은 하나뿐이다 — ADR-027 을 핀하면 대체된 결정의 핀이라 오류다 — 그러니 힌트가 무엇이 대체했는지(ADR-031)와 지금 효력 있는 끝(ADR-035)을 이름으로 대고, 후속을 핀하는 것이 해법이라고 말해야 한다. ADR 은 mention-replaced-chain-pinned 와 같다.",
+  "cmd": "산출물 디렉터리 `<case>/docs/specs/2026-09-05-multi-store-upload` 에 돌린다 — pinned-superseded 와 같다.",
+  "check": {
+    "errors": 0, "warns": 1,
+    "matches": [
+      "본문이 ADR-027 를 부르는데 `decisions:` 에 없다",
+      "ADR-027 는 ADR-031 가 대체했다 — 지금 효력은 ADR-035",
+      "대체한 결정을 `decisions:` 에 핀하면"
+    ]
+  },
+  "lint": { "errors": 0, "warns": 0 },
+  "target": "specs/2026-09-05-multi-store-upload"
+}

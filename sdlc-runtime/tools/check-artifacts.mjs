@@ -92,8 +92,11 @@ function checkResearchCitations(list) {
   const cites = []
   for (const d of list) {
     const own = String(d.fm?.id ?? '').trim()
+    // A waiver's basis may name the research behind the opt-out; it is not a citation the document
+    // makes, and checking it would turn a stale basis into an error the waiver cannot answer.
+    const waiving = waiveLines(d.lines)
     d.lines.forEach((line, i) => {
-      if (!d.live[i]) return
+      if (!d.live[i] || waiving.has(i)) return
       for (const m of stripComments(line).matchAll(RE_RESEARCH_CITE)) {
         const id = `RSH-${m[1]}-${m[2]}`
         if (id === own) continue   // 자기 id 는 인용이 아니다.

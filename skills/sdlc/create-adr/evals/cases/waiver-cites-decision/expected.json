@@ -1,0 +1,11 @@
+{
+  "kind": "negative-control · 면제",
+  "why": "**면제의 근거가 결정과 조사를 이름으로 부르는 경우** — `waive:` 의 근거 한 줄이 ADR-027 과 RSH-2026-099 를 댄다. 근거는 옵트아웃을 정당화하는 글이지 문서가 기대는 결정이나 인용이 아니다. 예전에는 언급 검사가 프런트매터째 읽어 «본문이 ADR-027 를 부르는데» 경고를, 조사 인용 검사가 없는 RSH-2026-099 를 오류로 냈다 — 면제를 적은 줄이 새 지적을 만든 셈이다. 두 검사 모두 면제 줄을 건너뛰어 0/0 이어야 한다. 이 면제는 걸리는 경고가 없으므로 «쓰이지 않은 면제» 노트만 남는다. 본문은 ADR 을 부르지 않는다.",
+  "cmd": "산출물 디렉터리 `<case>/docs/specs/2026-09-05-multi-store-upload` 에 돌린다 — pinned-superseded 와 같다.",
+  "check": {
+    "errors": 0, "warns": 0,
+    "notes": ["쓰이지 않은 면제 `source-path-in-intent`"]
+  },
+  "lint": { "errors": 0, "warns": 0 },
+  "target": "specs/2026-09-05-multi-store-upload"
+}

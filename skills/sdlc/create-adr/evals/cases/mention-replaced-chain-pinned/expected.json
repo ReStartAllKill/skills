@@ -1,0 +1,8 @@
+{
+  "kind": "negative-control · 핀",
+  "why": "**대체가 두 번 이어진 결정을 이력으로 부르는 경우** — ADR-027 → ADR-031 → ADR-035 이고 세트는 효력 있는 끝인 ADR-035 만 핀했다. 본문은 앞의 둘을 이관의 경위로 부른다. 언급 검사가 `superseded_by` 를 한 단계만 따라가면 ADR-027 은 핀하지 않은 ADR-031 에서 멈춰 경고가 남는다 — 사슬을 끝까지 따라가 두 언급이 모두 이력으로 읽혀 0/0 이어야 한다. mention-replaced-successor-pinned 에 ADR-035 를 더하고 ADR-031 을 superseded 로 돌린 것이다.",
+  "cmd": "산출물 디렉터리 `<case>/docs/specs/2026-09-05-multi-store-upload` 에 돌린다 — pinned-superseded 와 같다.",
+  "check": { "errors": 0, "warns": 0 },
+  "lint": { "errors": 0, "warns": 0 },
+  "target": "specs/2026-09-05-multi-store-upload"
+}

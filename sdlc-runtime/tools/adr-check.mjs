@@ -1,7 +1,7 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve, relative, dirname } from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { ADR_FILENAME, idsIn, stripComments, isNull, loadAdrDir, wpFiles, frontmatter, outsideCode } from './artifact-parse.mjs'
+import { ADR_FILENAME, idsIn, stripComments, isNull, loadAdrDir, wpFiles, frontmatter, outsideCode, waiveLines } from './artifact-parse.mjs'
 import { SECTION, CHOSEN, hasAlias, canonical, ADR_STATUS_ALIASES, LEGACY_STATUS_ROW } from './keywords.mjs'
 import { locale } from './locale.mjs'
 import { ADR_DEAD, adrSeam, loadManifest, loadBindings, boundForFiles, touches, lookFor, pathPast, pastUnknown, successorGap, showGap, SEARCH_BUDGET } from './adr-bindings.mjs'
@@ -355,6 +355,35 @@ const pinKeys = (ids, docs) => new Set(Object.values(docs)
   .flatMap((d) => [].concat(d.fm?.decisions ?? []).map(String))
   .map((p) => PIN.exec(p.trim())?.groups).filter(Boolean).map(ids.keyOf))
 
+/** The decisions that replaced the one under `key`, nearest first, following `superseded_by` through
+ *  every decision that is itself `superseded`; `{ space, ids }`, or null when the key's space is
+ *  unknown. `superseded_by` is read and `supersedes` is not: the retired decision must name its
+ *  successor (`superseded-by-missing` is an error) and that edit goes through the approval dialog,
+ *  while `supersedes` is optional and written by the successor — a draft claiming to replace a
+ *  decision still in force would otherwise excuse citing it. It is also the one field the upstream
+ *  manifest has always carried, so the same walk serves both spaces with no manifest change, and an
+ *  old manifest reads the same. When the two disagree, `adr-supersede-unreciprocated` warns on the
+ *  folder. Only bare IDs are followed: a successor written `<owner>/<repo>#ADR-NNN` lives in another
+ *  space, and the chain does not cross spaces. */
+function successorsOf(ids, key) {
+  const at = key.indexOf(':')
+  const space = at > 0 ? key.slice(0, at) : null
+  const src = space ? ids[space] : null
+  if (!src?.byId) return null
+  const out = []
+  const seen = new Set([key.slice(at + 1)])
+  const walk = (id) => {
+    const t = src.byId.get(id)
+    if (!t || t.status !== 'superseded') return
+    for (const n of [].concat(t.superseded_by ?? []).map((v) => String(v).trim()).filter((v) => /^ADR-\d{3,4}$/.test(v))) {
+      if (seen.has(n)) continue
+      seen.add(n); out.push(n); walk(n)
+    }
+  }
+  walk(key.slice(at + 1))
+  return { space, ids: out }
+}
+
 export function checkPins(docs, { seam }, push) {
   if (!seam?.configured) return
   const ids = idSpaces(seam)
@@ -401,12 +430,29 @@ export function checkPins(docs, { seam }, push) {
     // prose is this repository's, and the upstream one is written `<owner>/<repo>#ADR-005`. Reading a
     // bare mention as «either» was rejected — it lets an upstream pin silence a local citation, the
     // same conflation the pin check refuses.
+    // A waiver's basis justifies an opt-out and is not the document resting on anything it names, as
+    // the ID-reference scan in check-artifacts already reads it. The rest of the frontmatter stays
+    // in: `decisions:` only names what is pinned, and `title` or `generated_from` naming a decision
+    // is the writer citing it.
     const pinned = pinKeys(ids, { d })
-    const mentioned = new Map([...stripComments(d.text).matchAll(/(?:\b(?<owner>[\w.-]+)\/(?<repo>[\w.-]+)#)?\b(?<id>ADR-\d{3,4})\b/g)]
+    const waiving = waiveLines(d.lines)
+    const text = stripComments(d.lines.map((l, i) => (waiving.has(i) ? '' : l)).join('\n'))
+    const mentioned = new Map([...text.matchAll(/(?:\b(?<owner>[\w.-]+)\/(?<repo>[\w.-]+)#)?\b(?<id>ADR-\d{3,4})\b/g)]
       .map((x) => [ids.keyOf(ids.dual ? x.groups : { id: x.groups.id }), ids.dual ? x[0] : x.groups.id]))
     for (const [key, shown] of mentioned) {
       if (pinned.has(key)) continue
-      warn(`본문이 ${shown} 를 부르는데 \`decisions:\` 에 없다`, '핀이 있어야 검사기가 그 결정의 상태를 본다 — 대체된 결정을 인용한 채로 도는 것을 산문만으로는 아무도 못 잡는다.' +
+      // Naming the decision a change migrates away from is history, not reliance, once the document
+      // pins what replaced it: the pin's status is watched, and the old one cannot come back into
+      // force without its successor going through the same approval. Without this the migration
+      // sentence could not be written — unpinned it warns, pinned it is a dead pin.
+      const succ = successorsOf(ids, key)
+      if (succ?.ids.some((n) => pinned.has(`${succ.space}:${n}`))) continue
+      const showUp = (n) => (succ?.space === 'up' && ids.dual ? `${ids.upRepo}#${n}` : n)
+      const live = succ?.ids.find((n) => ids[succ.space].byId.get(n)?.status === 'accepted')
+      const replaced = succ?.ids.length
+        ? ` ${shown} 는 ${showUp(succ.ids[0])} 가 대체했다${live && live !== succ.ids[0] ? ` — 지금 효력은 ${showUp(live)}` : ''}. 대체한 결정을 \`decisions:\` 에 핀하면 이 언급은 그 결정의 이력으로 읽힌다 — 대체된 결정을 핀하는 것은 오류다.`
+        : ''
+      warn(`본문이 ${shown} 를 부르는데 \`decisions:\` 에 없다`, '핀이 있어야 검사기가 그 결정의 상태를 본다 — 대체된 결정을 인용한 채로 도는 것을 산문만으로는 아무도 못 잡는다.' + replaced +
         (ids.dual && !shown.includes('#') ? ` 앞에 레포가 없는 ID 는 이 레포의 ${ids.local.where} 로 읽는다 — ${ids.upRepo} 의 결정이면 \`${ids.upRepo}#${shown}\` 로 쓴다.` : ''), R('adr-mention-unpinned'))
     }
   }

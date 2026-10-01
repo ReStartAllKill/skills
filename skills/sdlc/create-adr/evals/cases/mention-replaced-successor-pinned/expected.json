@@ -1,0 +1,8 @@
+{
+  "kind": "negative-control · 핀",
+  "why": "**옮겨 가는 변경이 옛 결정을 이름으로 부르는 경우** — «ADR-027 을 대체한 ADR-031 에 맞춰» 는 이관을 설명하는 문장이고, 이 세트가 기대는 결정은 핀한 ADR-031 이다. 예전에는 이 문장을 쓸 수 없었다: 핀 없이 부르면 경고(`--strict` 에서 CI 실패), 경고를 끄려고 ADR-027 을 핀하면 대체된 결정의 핀이라 오류였다. ADR-027 의 `superseded_by` 가 핀한 ADR-031 에 닿으므로 언급은 이력으로 읽혀 0/0 이어야 한다. pinned-superseded 에서 핀과 그 한 문장만 다르다.",
+  "cmd": "산출물 디렉터리 `<case>/docs/specs/2026-09-05-multi-store-upload` 에 돌린다 — pinned-superseded 와 같다.",
+  "check": { "errors": 0, "warns": 0 },
+  "lint": { "errors": 0, "warns": 0 },
+  "target": "specs/2026-09-05-multi-store-upload"
+}

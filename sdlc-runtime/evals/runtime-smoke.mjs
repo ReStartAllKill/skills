@@ -2421,6 +2421,48 @@ await test('a repository with its own ADRs and an upstream adr_repo checks both,
   assert(rep.problems.some((p) => p.level === 'error' && /핀한 ADR-002 의 상태가 `superseded`/.test(p.msg)), `a pin to a superseded upstream decision passed:\n${rep.raw}`)
 })
 
+// A change that migrates to a successor has to say what it migrates from. Upstream the chain comes
+// from the manifest's `superseded_by`, which every manifest pull-adr has written carries; and with
+// two ID spaces a local pin of the same number must not stand in for the upstream successor.
+await test('a set that pins the successor may name the upstream decision it replaced, within one ID space', () => {
+  const up = bindUpstream()
+  const adr2 = join(up, 'docs/adr/ADR-002-nav-freshness.md')
+  put(adr2, readFileSync(adr2, 'utf8').replace('status: accepted', 'status: superseded').replace('superseded_by: null', 'superseded_by: "ADR-001"'))
+  git(up, 'commit', '-qam', 'supersede')
+  const sha = git(up, 'rev-parse', 'HEAD').slice(0, 7)
+  const mentionWarn = (rep, re) => rep.problems.find((p) => p.level === 'warn' && /본문이 .* 를 부르는데/.test(p.msg) && re.test(p.msg))
+  const check = (d, pins, prose) => {
+    put(join(d, '.sdlc/specs/pool/plan.md'), dualPlan(pins, prose))
+    const out = run(process.execPath, [tool('check-artifacts.mjs'), join(d, '.sdlc/specs/pool'), '--json']).out
+    try { return { ...JSON.parse(out), raw: out } } catch { throw new Error(`check-artifacts did not print JSON:\n${out}`) }
+  }
+
+  const d = bindConsumer()
+  assert(run(process.execPath, [tool('pull-adr.mjs'), d, '--from', up]).code === 0, 'pull-adr failed')
+  const prose = '\nThe vault moves to ADR-001, which replaced ADR-002.\n'
+  let rep = check(d, `"acme/docs#ADR-001@${sha}"`, prose)
+  assert(!mentionWarn(rep, /ADR-002/), `naming the decision the pinned successor replaced still warned:\n${rep.raw}`)
+  rep = check(d, '', prose)
+  const w = mentionWarn(rep, /ADR-002/)
+  assert(w && /ADR-002 는 ADR-001 가 대체했다/.test(w.hint ?? ''), `the warning did not name the upstream successor to pin:\n${rep.raw}`)
+
+  // A manifest without `superseded_by` cannot excuse the mention; it does not fail to load either.
+  const mpath = join(d, '.claude/adr-manifest.json')
+  const m = JSON.parse(readFileSync(mpath, 'utf8'))
+  put(mpath, JSON.stringify({ ...m, decisions: m.decisions.map(({ superseded_by, ...rest }) => rest) }, null, 2) + '\n')
+  rep = check(d, `"acme/docs#ADR-001@${sha}"`, prose)
+  assert(mentionWarn(rep, /ADR-002/) && !rep.problems.some((p) => /ADR-001/.test(p.msg) && p.level === 'error'),
+    `a manifest with no superseded_by excused the mention, or stopped reading:\n${rep.raw}`)
+
+  const dual = dualConsumer()
+  assert(run(process.execPath, [tool('pull-adr.mjs'), dual, '--from', up]).code === 0, 'pull-adr failed')
+  const upProse = '\nThe vault moves to acme/docs#ADR-001, which replaced acme/docs#ADR-002.\n'
+  rep = check(dual, '"ADR-001"', upProse)
+  assert(mentionWarn(rep, /acme\/docs#ADR-002/), `a local ADR-001 pin excused the upstream decision the upstream ADR-001 replaced:\n${rep.raw}`)
+  rep = check(dual, `"ADR-001", "acme/docs#ADR-001@${sha}"`, upProse)
+  assert(!rep.problems.some((p) => /본문이/.test(p.msg)), `the upstream successor pin did not excuse its predecessor in the dual layout:\n${rep.raw}`)
+})
+
 // A finished set is judged against the decisions in force when it closed, read from git: the edit
 // that writes `completed` is checked with `completed` already in it, so «closed» alone would let a
 // set close on top of a dead decision.
