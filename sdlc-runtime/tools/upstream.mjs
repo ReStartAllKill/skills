@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { join, resolve, basename } from 'node:path'
+import { R } from './rules.mjs'
 
 export const LOCK_FILE = 'upstream.lock.json'
 /** Documents pulled from upstream. Plans always belong to the consumer repository. */
@@ -60,18 +61,18 @@ export function verifyLock(dir, lock) {
   for (const [name, e] of Object.entries(lock.files)) {
     const local = join(dir, name)
     if (!existsSync(local)) {
-      out.push({ level: 'error', doc: LOCK_FILE, msg: `\`${name}\` 이 락에 있는데 폴더에 없다`,
+      out.push({ level: 'error', doc: LOCK_FILE, rule: R('lock-file-missing'), msg: `\`${name}\` 이 락에 있는데 폴더에 없다`,
         hint: '`pull-spec.mjs` 로 다시 끌어온다. 지웠으면 락에서도 빼야 한다.' })
       continue
     }
     if (!e || !e.hash) {
-      out.push({ level: 'error', doc: LOCK_FILE, msg: `\`${name}\` 항목에 \`hash\` 가 없다`,
+      out.push({ level: 'error', doc: LOCK_FILE, rule: R('lock-hash-missing'), msg: `\`${name}\` 항목에 \`hash\` 가 없다`,
         hint: '손으로 쓴 락이다. `pull-spec.mjs` 가 만들게 한다.' })
       continue
     }
     const actual = hashOf(readFileSync(local, 'utf8'))
     if (actual === e.hash) continue
-    out.push({ level: 'error', doc: name, msg: '벤더한 사본이 락의 해시와 다르다',
+    out.push({ level: 'error', doc: name, rule: R('vendored-copy-modified'), msg: '벤더한 사본이 락의 해시와 다르다',
       hint: `이 파일은 ${lock.repo} 가 정본이고 여기서는 읽기 전용이다. 고칠 일은 상류에서 \`/iterate-spec\` 으로 하고 \`pull-spec.mjs\` 로 다시 끌어온다.` })
   }
   return out

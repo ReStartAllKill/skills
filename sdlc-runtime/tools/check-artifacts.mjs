@@ -8,7 +8,7 @@ import {
   loadDir, isTemplate, report, SDLC_VERSION, schemaNote,
   SUPPORTED_SCHEMA_VERSIONS, schemaVersion, BODY_PIN, bodyHash, bodyPin,
   levelsOf, wpFiles, wpDeps, ADR_FILENAME, loadAdrDir, CHAIN_FILES, scopeOf,
-  RESEARCH_SCHEMA, RE_RESEARCH_CITE, loadResearchIndex, outsideCode, prefixTypo } from './artifact-parse.mjs'
+  RESEARCH_SCHEMA, RE_RESEARCH_CITE, loadResearchIndex, outsideCode, prefixTypo, waiveLines } from './artifact-parse.mjs'
 import { adrSeam, checkAdr, checkPins, checkTaskScope } from './adr-check.mjs'
 import { LOCK_FILE, upstreamSeam, loadLock, verifyLock, findUpstream, headOf, sameRepo } from './upstream.mjs'
 import { loadBands, revisedBy } from './bands.mjs'
@@ -16,6 +16,7 @@ import { historicalPolicy } from './policy-history.mjs'
 import { loadPolicy, routeActive, STAGES } from './autonomy.mjs'
 import { FIELD, MARKER, BLOCKED, SECTION, hasAlias, sectionBlock, RE_NA, RE_NA_WITH_BASIS, RE_BAND_NO_CHANGE } from './keywords.mjs'
 import { useLocale } from './locale.mjs'
+import { R, applyWaivers } from './rules.mjs'
 import { isMust, consumerSelf, inScope, owes } from './owed.mjs'
 
 const argv = process.argv.slice(2)
@@ -61,8 +62,8 @@ const TRIGGERS = ['band_breach', 'scheduled_scan', 'ticket', 'channel', 'manual'
 const AUTONOMY = ['log', 'diagnose', 'propose']
 
 const problems = []
-const err = (doc, msg, hint) => problems.push({ level: 'error', doc, msg, hint })
-const warn = (doc, msg, hint) => problems.push({ level: 'warn', doc, msg, hint })
+const err = (doc, msg, hint, rule) => problems.push({ level: 'error', doc, rule, msg, hint })
+const warn = (doc, msg, hint, rule) => problems.push({ level: 'warn', doc, rule, msg, hint })
 const notes = []
 
 const REPO_ROOT = (() => {
@@ -87,7 +88,7 @@ const SPEC_DIR = (() => {
  *  있어야 한다. 프런트매터 키를 따로 두지 않는 것은 인용이 문장 안에 서야 «무엇을 근거로 그렇게
  *  말했나» 가 그 자리에서 읽히기 때문이다. 대조하지 못하면 조용히 넘기지 않고 남긴다 — 안 본 인용과
  *  통과한 인용이 같은 글자로 보이면 인용은 장식이 된다. */
-function checkResearchCitations(list, push) {
+function checkResearchCitations(list) {
   const cites = []
   for (const d of list) {
     const own = String(d.fm?.id ?? '').trim()
@@ -109,13 +110,13 @@ function checkResearchCitations(list, push) {
   for (const c of cites) {
     const target = index.get(c.id)
     if (!target) {
-      push(c.doc.name, `${c.id} 을 인용하는데 그 조사 문서가 없다`,
-        `${join(SPEC_DIR, 'research')} 밑에서 \`id: ${c.id}\` 인 research.md 를 못 찾았다. 오타이거나, 조사를 아직 커밋하지 않았다. 위치: ${c.doc.name}:${c.line + 1}`)
+      err(c.doc.name, `${c.id} 을 인용하는데 그 조사 문서가 없다`,
+        `${join(SPEC_DIR, 'research')} 밑에서 \`id: ${c.id}\` 인 research.md 를 못 찾았다. 오타이거나, 조사를 아직 커밋하지 않았다. 위치: ${c.doc.name}:${c.line + 1}`, R('research-citation-missing'))
       continue
     }
     if (c.item && !target.ents.has(c.item)) {
-      push(c.doc.name, `${c.id} 에 ${c.item} 이 없다`,
-        `${target.path} 에 \`### ${c.item} — 제목\` 이 없다. 항목 번호는 재사용하지 않으므로 지워진 항목을 가리키는 인용은 그대로 두면 다른 것을 가리키게 된다. 위치: ${c.doc.name}:${c.line + 1}`)
+      err(c.doc.name, `${c.id} 에 ${c.item} 이 없다`,
+        `${target.path} 에 \`### ${c.item} — 제목\` 이 없다. 항목 번호는 재사용하지 않으므로 지워진 항목을 가리키는 인용은 그대로 두면 다른 것을 가리키게 된다. 위치: ${c.doc.name}:${c.line + 1}`, R('research-citation-item-missing'))
     }
   }
 }
@@ -131,32 +132,33 @@ const ADR_TARGETS = (() => {
 
 if (ADR_TARGETS) {
   const { docs: all, malformed } = loadAdrDir(ADR_TARGETS.dir, (d, dup, first) =>
-    err(d.name, `${dup.id} 이 두 번 정의됐다`, `먼저: ${d.name}:${first.line + 1}`))
+    err(d.name, `${dup.id} 이 두 번 정의됐다`, `먼저: ${d.name}:${first.line + 1}`, R('id-duplicate')))
   for (const name of malformed) {
-    err(name, '파일 이름이 ADR 규칙과 다르다', 'ADR-{세 자리}-{kebab-slug}.md 다. 이름이 번호를 물지 않으면 번호가 한 문서를 가리키지 못한다.')
+    err(name, '파일 이름이 ADR 규칙과 다르다', 'ADR-{세 자리}-{kebab-slug}.md 다. 이름이 번호를 물지 않으면 번호가 한 문서를 가리키지 못한다.', R('adr-filename'))
   }
   const targets = ADR_TARGETS.only ? all.filter((d) => d.name === ADR_TARGETS.only) : all
   if (!targets.length && !malformed.length) {
-    if (argv.includes('--json')) process.exit(report({ title: '', problems: [{ level: 'error', doc: DIR, rule: 'artifacts-missing', msg: `결정 기록이 없다 — ${DIR}` }], json: true }))
+    if (argv.includes('--json')) process.exit(report({ title: '', problems: [{ level: 'error', doc: DIR, rule: R('artifacts-missing'), msg: `결정 기록이 없다 — ${DIR}` }], json: true }))
     console.error(`결정 기록이 없다 — ${DIR}`)
     process.exit(1)
   }
   for (const d of targets) {
-    checkAdr(d, { seam: SEAM, siblings: all }, (level, msg, hint) =>
-      level === 'info' ? notes.push(`${d.name} — ${msg}`) : problems.push({ level, doc: d.name, msg, hint }))
+    checkAdr(d, { seam: SEAM, siblings: all }, (level, msg, hint, rule) =>
+      level === 'info' ? notes.push(`${d.name} — ${msg}`) : problems.push({ level, doc: d.name, rule, msg, hint }))
   }
-  checkResearchCitations(targets, err)
+  checkResearchCitations(targets)
   if (!SEAM.configured) notes.push('프로필에 `adr_dir` 이 없다 — 등재하면 산출물 세트의 `decisions:` 핀 검사도 실행한다')
+  const w = applyWaivers(problems, targets)
   process.exit(report({
     json: argv.includes('--json'),
     title: `결정 기록 검사 — ${targets.length}장${malformed.length ? ` (이름 규칙 위반 ${malformed.length}개)` : ''}`,
-    notes, problems, strict: STRICT, ruleDoc: '`references/adr.md` 에 있다.',
+    notes: [...notes, ...w.notes], problems: w.problems, waived: w.waived, strict: STRICT, ruleDoc: '`references/adr.md` 에 있다.',
   }))
 }
 
 
 const docs = loadDir(DIR, (d, dup, first) =>
-  err(d.name, `${dup.id} 이 두 번 정의됐다`, `먼저: ${d.name}:${first.line + 1}`))
+  err(d.name, `${dup.id} 이 두 번 정의됐다`, `먼저: ${d.name}:${first.line + 1}`, R('id-duplicate')))
 // Read-only candidate validation used before a digest-bound light-set approval.
 const approveAt = argv.indexOf('--approve-as')
 if (approveAt >= 0) {
@@ -169,12 +171,12 @@ if (approveAt >= 0) {
 const TEMPLATE = isTemplate(docs)
 
 if (Object.keys(docs).length === 0) {
-  if (argv.includes('--json')) process.exit(report({ title: '', problems: [{ level: 'error', doc: DIR, rule: 'artifacts-missing', msg: `산출물이 없다 — ${DIR} 에 intent.md / spec.md / plan.md / finding.md / research.md 가 하나도 없다.` }], json: true }))
+  if (argv.includes('--json')) process.exit(report({ title: '', problems: [{ level: 'error', doc: DIR, rule: R('artifacts-missing'), msg: `산출물이 없다 — ${DIR} 에 intent.md / spec.md / plan.md / finding.md / research.md 가 하나도 없다.` }], json: true }))
   console.error(`산출물이 없다 — ${DIR} 에 intent.md / spec.md / plan.md / finding.md / research.md 가 하나도 없다.`)
   process.exit(1)
 }
 if (!TEMPLATE && !docs.intent && (docs.spec || docs.plan)) {
-  err('(폴더)', 'intent.md 가 없다', '산출물 세트는 intent에서 시작한다. spec·plan만으로는 변경 이유를 추적할 수 없다.')
+  err('(폴더)', 'intent.md 가 없다', '산출물 세트는 intent에서 시작한다. spec·plan만으로는 변경 이유를 추적할 수 없다.', R('intent-missing'))
 }
 
 if (TEMPLATE) notes.push('템플릿 원본으로 판정했다(id 가 아직 `…-YYYY-NNN`) — 내용·상태·버전·층 검사는 건너뛰고 구조와 ID 그래프만 본다.')
@@ -189,16 +191,16 @@ const field = (e, ...names) => { for (const n of names) if (e.fields.has(n)) ret
 for (const d of Object.values(docs)) {
   const schema = schemaVersion(d.fm)
   if (schema == null) {
-    err(d.name, `\`schema_version: ${d.fm.schema_version}\` 을 읽을 수 없다`, '정수를 쓴다. 무버전 문서는 v1 로 읽힌다.')
+    err(d.name, `\`schema_version: ${d.fm.schema_version}\` 을 읽을 수 없다`, '정수를 쓴다. 무버전 문서는 v1 로 읽힌다.', R('schema-version-unreadable'))
   } else if (!SUPPORTED_SCHEMA_VERSIONS.includes(schema)) {
-    err(d.name, `지원하지 않는 schema_version \`${schema}\``, `이 런타임(${SDLC_VERSION})이 읽는 버전: ${SUPPORTED_SCHEMA_VERSIONS.join(' · ')}`)
+    err(d.name, `지원하지 않는 schema_version \`${schema}\``, `이 런타임(${SDLC_VERSION})이 읽는 버전: ${SUPPORTED_SCHEMA_VERSIONS.join(' · ')}`, R('schema-version-unsupported'))
   }
-  for (const k of REQUIRED_FM[d.kind]) if (isNull(d.fm[k])) err(d.name, `프런트매터에 \`${k}\` 가 없다`, `${d.kind} 에 필수인 키다.`)
-  if (d.fm.artifact !== d.kind) err(d.name, `\`artifact: ${d.fm.artifact}\` — 파일 이름과 다르다`, `\`${d.kind}\` 여야 한다.`)
-  if (d.fm.status && !STATUS[d.kind].includes(d.fm.status)) err(d.name, `허용되지 않는 status \`${d.fm.status}\``, `쓸 수 있는 값: ${STATUS[d.kind].join(' · ')}`)
-  if (d.fm.tier && !TIERS.includes(d.fm.tier)) err(d.name, `허용되지 않는 tier \`${d.fm.tier}\``, `${TIERS.join(' · ')} 중 하나여야 한다.`)
+  for (const k of REQUIRED_FM[d.kind]) if (isNull(d.fm[k])) err(d.name, `프런트매터에 \`${k}\` 가 없다`, `${d.kind} 에 필수인 키다.`, R('frontmatter-missing-key'))
+  if (d.fm.artifact !== d.kind) err(d.name, `\`artifact: ${d.fm.artifact}\` — 파일 이름과 다르다`, `\`${d.kind}\` 여야 한다.`, R('artifact-kind-mismatch'))
+  if (d.fm.status && !STATUS[d.kind].includes(d.fm.status)) err(d.name, `허용되지 않는 status \`${d.fm.status}\``, `쓸 수 있는 값: ${STATUS[d.kind].join(' · ')}`, R('status-unknown'))
+  if (d.fm.tier && !TIERS.includes(d.fm.tier)) err(d.name, `허용되지 않는 tier \`${d.fm.tier}\``, `${TIERS.join(' · ')} 중 하나여야 한다.`, R('tier-unknown'))
   if (d.fm.status === 'superseded' && isNull(d.fm.superseded_by)) {
-    err(d.name, '`superseded` 인데 `superseded_by` 가 비었다', '적지 않으면 이전 문서만 추적할 수 있고 현재 대체 문서를 찾을 수 없다.')
+    err(d.name, '`superseded` 인데 `superseded_by` 가 비었다', '적지 않으면 이전 문서만 추적할 수 있고 현재 대체 문서를 찾을 수 없다.', R('superseded-by-missing'))
   }
 }
 
@@ -221,17 +223,17 @@ if (docs.finding && !TEMPLATE) {
   if (f.fm.trigger === 'band_breach') {
     if (!band) {
       err(f.name, '`trigger: band_breach` 인데 `band` 가 비었다',
-        '어느 밴드가 깨졌는지 없으면 «무엇이 정상인가» 가 이 문서 밖에 없다. 등록부의 밴드 id 를 적는다.')
+        '어느 밴드가 깨졌는지 없으면 «무엇이 정상인가» 가 이 문서 밖에 없다. 등록부의 밴드 id 를 적는다.', R('finding-band-missing'))
     } else if (reg.missing) {
       warn(f.name, `밴드 등록부가 없어 \`band: ${band}\` 를 대조하지 못했다`,
-        '탐지가 결정론으로 남으려면 «무엇이 정상인가» 가 파일에 있어야 한다. `.claude/bands.yml` 을 만든다.')
+        '탐지가 결정론으로 남으려면 «무엇이 정상인가» 가 파일에 있어야 한다. `.claude/bands.yml` 을 만든다.', R('band-registry-missing'))
     } else if (!reg.bands[band]) {
       err(f.name, `\`band: ${band}\` 이 등록부에 없다`,
-        `등록부에 있는 밴드: ${Object.keys(reg.bands).join(' · ') || '(없음)'}. 오타이거나, 밴드를 먼저 등록부에 더해야 한다.`)
+        `등록부에 있는 밴드: ${Object.keys(reg.bands).join(' · ') || '(없음)'}. 오타이거나, 밴드를 먼저 등록부에 더해야 한다.`, R('band-unknown'))
     } else if (f.fm.autonomy_tier && reg.bands[band].autonomy_tier &&
                f.fm.autonomy_tier !== reg.bands[band].autonomy_tier) {
       err(f.name, `\`autonomy_tier: ${f.fm.autonomy_tier}\` 가 등록부의 \`${band}\`(\`${reg.bands[band].autonomy_tier}\`) 와 다르다`,
-        '무엇을 해도 되는지는 밴드가 정한다. 넓혀야 하면 등록부를 먼저 고친다.')
+        '무엇을 해도 되는지는 밴드가 정한다. 넓혀야 하면 등록부를 먼저 고친다.', R('band-autonomy-mismatch'))
     }
   }
 
@@ -241,13 +243,13 @@ if (docs.finding && !TEMPLATE) {
     if (!noChange) {
       if (!band) {
         err(f.name, '기각인데 `band` 도 «조정 없음» 도 없다',
-          '기각은 둘 중 하나로 닫힌다 — 밴드를 조정하거나, «조정 없음 — <근거>» 라고 적거나. 안 그러면 같은 신호가 다음 실행에서 새 발견으로 다시 선다.')
+          '기각은 둘 중 하나로 닫힌다 — 밴드를 조정하거나, «조정 없음 — <근거>» 라고 적거나. 안 그러면 같은 신호가 다음 실행에서 새 발견으로 다시 선다.', R('finding-rejected-unclosed'))
       } else if (reg.missing) {
         warn(f.name, '밴드 등록부가 없어 조정이 반영됐는지 대조하지 못했다',
-          '기각이 루프를 닫으려면 조정이 등록부에 남아야 한다.')
+          '기각이 루프를 닫으려면 조정이 등록부에 남아야 한다.', R('band-registry-missing'))
       } else if (!revisedBy(reg, band, String(f.fm.id ?? '').trim())) {
         err(f.name, `기각인데 등록부의 \`${band}\` 에 이 발견(${f.fm.id})의 조정 기록이 없다`,
-          `\`.claude/bands.yml\` 의 \`${band}\` 밑 \`revised:\` 에 \`- <날짜> ${f.fm.id} — <무엇을 어떻게>\` 를 더한다. 문서 안의 산문만으로는 다음 실행이 그것을 읽지 못한다.`)
+          `\`.claude/bands.yml\` 의 \`${band}\` 밑 \`revised:\` 에 \`- <날짜> ${f.fm.id} — <무엇을 어떻게>\` 를 더한다. 문서 안의 산문만으로는 다음 실행이 그것을 읽지 못한다.`, R('band-revision-missing'))
       }
     }
   }
@@ -261,7 +263,7 @@ if (!TEMPLATE) {
     if ((RANK[d.fm.status] ?? 0) < 2) continue
     if (isNull(d.fm.approved_by)) {
       err(d.name, `\`${d.fm.status}\` 인데 \`approved_by\` 가 비었다`,
-        '승인은 사람이 하는 결정이다. 승인한 사람을 적지 않으면 이 상태는 «누가 받아들였나» 에 답하지 못하고, 그러면 관문이 아니라 자기선언이다.')
+        '승인은 사람이 하는 결정이다. 승인한 사람을 적지 않으면 이 상태는 «누가 받아들였나» 에 답하지 못하고, 그러면 관문이 아니라 자기선언이다.', R('approved-by-missing'))
       continue
     }
     const by = String(d.fm.approved_by).trim()
@@ -283,26 +285,26 @@ if (!TEMPLATE) {
 
       if (pol.missing) {
         err(d.name, `\`approved_by: ${by}\` 인데 자율 실행 정책이 없다`,
-          '정책 승인은 커밋된 `.claude/autonomy.yml` 이 뒤를 받쳐야 성립한다. 없으면 이 승인은 아무도 가리키지 않는다.')
+          '정책 승인은 커밋된 `.claude/autonomy.yml` 이 뒤를 받쳐야 성립한다. 없으면 이 승인은 아무도 가리키지 않는다.', R('policy-missing'))
       } else if (!route) {
         err(d.name, `\`${by}\` 가 가리키는 자율 경로가 정책에 없다`,
-          `정책에 있는 경로: ${Object.keys(pol.routes).join(' · ') || '(없음)'}. 오타이거나, 경로가 지워진 뒤 문서만 남았다.`)
+          `정책에 있는 경로: ${Object.keys(pol.routes).join(' · ') || '(없음)'}. 오타이거나, 경로가 지워진 뒤 문서만 남았다.`, R('policy-route-unknown'))
       } else if (!routeActive(route, history?.at ?? new Date())) {
         err(d.name, `\`${by}\` 의 자율 경로가 만료됐다 (${route.expires ?? '만료일 없음'})`,
-          '유효한 위임으로 승인된 Git 기록이 없다. 새 승인은 현재 유효한 정책이나 사람의 승인이 필요하다.')
+          '유효한 위임으로 승인된 Git 기록이 없다. 새 승인은 현재 유효한 정책이나 사람의 승인이 필요하다.', R('policy-route-expired'))
       } else if (d.fm.tier && TIERS.indexOf(String(d.fm.tier)) > TIERS.indexOf(String(route.max_tier))) {
         err(d.name, `\`tier: ${d.fm.tier}\` 가 자율 경로 \`${routeId}\` 의 \`max_tier: ${route.max_tier}\` 를 넘는다`,
-          '위임한 것보다 위험한 변경이 그 위임으로 통과했다. 사람이 직접 승인하거나 정책을 먼저 넓힌다.')
+          '위임한 것보다 위험한 변경이 그 위임으로 통과했다. 사람이 직접 승인하거나 정책을 먼저 넓힌다.', R('policy-tier-exceeded'))
       } else if (STAGES.indexOf(d.name.replace(/\.md$/, '')) > STAGES.indexOf(String(route.advance_to))) {
         err(d.name, `자율 경로 \`${routeId}\` 은 \`${route.advance_to}\` 까지 맡았는데 ${d.name} 를 승인했다`,
-          `이 위임의 경계 밖이다. 사람이 직접 승인하거나, 정책의 \`advance_to\` 를 먼저 넓힌다 — 넓히는 것은 사람이 하는 결정이다.`)
+          `이 위임의 경계 밖이다. 사람이 직접 승인하거나, 정책의 \`advance_to\` 를 먼저 넓힌다 — 넓히는 것은 사람이 하는 결정이다.`, R('policy-stage-exceeded'))
       }
       continue
     }
 
     if (gen && by.toLowerCase() === gen.toLowerCase()) {
       err(d.name, `\`approved_by\` 가 \`generated_by\` 와 같다 (\`${by}\`)`,
-        '쓴 것이 승인할 수 없다. 문서를 만든 주체와 그것을 받아들인 주체가 같으면 검토가 일어나지 않았다는 뜻이다.')
+        '쓴 것이 승인할 수 없다. 문서를 만든 주체와 그것을 받아들인 주체가 같으면 검토가 일어나지 않았다는 뜻이다.', R('self-approval'))
     }
   }
 }
@@ -324,7 +326,7 @@ for (const d of chain.slice(1)) {
   const schema = schemaVersion(d.fm)
   if (schema != null && chainSchema != null && schema !== chainSchema) {
     err(d.name, `schema_version 이 ${chain[0].name} 와 다르다 (\`${schema}\` != \`${chainSchema}\`)`,
-      '한 산출물 세트는 한 스키마 버전만 쓴다. 기존 산출물 세트는 통째로 마이그레이션하거나 현재 버전을 유지한다.')
+      '한 산출물 세트는 한 스키마 버전만 쓴다. 기존 산출물 세트는 통째로 마이그레이션하거나 현재 버전을 유지한다.', R('schema-version-mixed'))
   }
 }
 const loneDoc = docs.finding ?? docs.research
@@ -334,31 +336,31 @@ if (shownSchema != null) notes.push(schemaNote(shownSchema))
 const TIER = docs.intent?.fm?.tier ?? docs.finding?.fm?.tier ?? 'standard'
 for (const d of [docs.spec, docs.plan].filter(Boolean)) {
   if (d.fm.tier && d.fm.tier !== TIER) {
-    err(d.name, `tier 가 intent 와 다르다 (\`${d.fm.tier}\` != \`${TIER}\`)`, '무게는 의도 층에서 한 번 정하고 하위가 상속한다. 올려야 하면 intent 부터 올린다.')
+    err(d.name, `tier 가 intent 와 다르다 (\`${d.fm.tier}\` != \`${TIER}\`)`, '무게는 의도 층에서 한 번 정하고 하위가 상속한다. 올려야 하면 intent 부터 올린다.', R('tier-mismatch'))
   }
 }
 for (const [d, key] of [[docs.spec, 'intent'], [docs.plan, 'intent'], [docs.plan, 'spec']]) {
   if (TEMPLATE || !d || isNull(d.fm[key])) continue
-  if (!existsSync(resolve(DIR, String(d.fm[key])))) err(d.name, `\`${key}: ${d.fm[key]}\` 가 가리키는 파일이 없다`, '상대 경로를 확인한다.')
+  if (!existsSync(resolve(DIR, String(d.fm[key])))) err(d.name, `\`${key}: ${d.fm[key]}\` 가 가리키는 파일이 없다`, '상대 경로를 확인한다.', R('link-target-missing'))
 }
 
 
 if (docs.finding) {
   const f = docs.finding
-  if (f.fm.trigger && !TRIGGERS.includes(f.fm.trigger)) err(f.name, `허용되지 않는 trigger \`${f.fm.trigger}\``, `${TRIGGERS.join(' · ')} 중 하나여야 한다.`)
-  if (f.fm.autonomy_tier && !AUTONOMY.includes(f.fm.autonomy_tier)) err(f.name, `허용되지 않는 autonomy_tier \`${f.fm.autonomy_tier}\``, `${AUTONOMY.join(' · ')} 중 하나여야 한다.`)
+  if (f.fm.trigger && !TRIGGERS.includes(f.fm.trigger)) err(f.name, `허용되지 않는 trigger \`${f.fm.trigger}\``, `${TRIGGERS.join(' · ')} 중 하나여야 한다.`, R('finding-trigger-unknown'))
+  if (f.fm.autonomy_tier && !AUTONOMY.includes(f.fm.autonomy_tier)) err(f.name, `허용되지 않는 autonomy_tier \`${f.fm.autonomy_tier}\``, `${AUTONOMY.join(' · ')} 중 하나여야 한다.`, R('finding-autonomy-unknown'))
   const route = isNull(f.fm.routed_to) ? null : String(f.fm.routed_to)
   const kind = route ? route.split(':')[0].trim() : null
   if (route && !['patch', 'intent', 'dismiss'].includes(kind)) {
-    err(f.name, `\`routed_to: ${route}\` 의 경로가 셋 중 하나가 아니다`, '`patch:<PR>` · `intent:<경로>` · `dismiss:<사유>` 뿐이다. 나가는 길이 셋이라는 것이 이 문서의 요점이다.')
+    err(f.name, `\`routed_to: ${route}\` 의 경로가 셋 중 하나가 아니다`, '`patch:<PR>` · `intent:<경로>` · `dismiss:<사유>` 뿐이다. 나가는 길이 셋이라는 것이 이 문서의 요점이다.', R('finding-route-invalid'))
   }
-  if (f.fm.status === 'accepted' && !route) err(f.name, '`accepted`(경로 확정) 인데 `routed_to` 가 비었다', '어디로 나갔는지 없으면 이 발견은 닫힌 것이 아니라 잊힌 것이다.')
+  if (f.fm.status === 'accepted' && !route) err(f.name, '`accepted`(경로 확정) 인데 `routed_to` 가 비었다', '어디로 나갔는지 없으면 이 발견은 닫힌 것이 아니라 잊힌 것이다.', R('finding-route-missing'))
   if (f.fm.status === 'rejected' && kind !== 'dismiss') {
-    err(f.name, `\`rejected\` 인데 \`routed_to\` 가 \`${kind ?? '비어 있다'}\``, '기각이면 `dismiss:<사유>` 여야 한다. 밴드를 조정하는지도 §경로 판정 에 적는다 — 안 그러면 같은 신호가 다음 실행에서 새 발견으로 다시 선다.')
+    err(f.name, `\`rejected\` 인데 \`routed_to\` 가 \`${kind ?? '비어 있다'}\``, '기각이면 `dismiss:<사유>` 여야 한다. 밴드를 조정하는지도 §경로 판정 에 적는다 — 안 그러면 같은 신호가 다음 실행에서 새 발견으로 다시 선다.', R('finding-rejected-not-dismissed'))
   }
   if (kind === 'intent') {
     const t = route.slice(route.indexOf(':') + 1).trim()
-    if (t && !existsSync(resolve(DIR, t))) err(f.name, `\`routed_to\` 가 가리키는 intent 가 없다: ${t}`, '경로를 고치거나, 아직 안 만들었으면 status 를 in_review 로 되돌린다.')
+    if (t && !existsSync(resolve(DIR, t))) err(f.name, `\`routed_to\` 가 가리키는 intent 가 없다: ${t}`, '경로를 고치거나, 아직 안 만들었으면 status 를 in_review 로 되돌린다.', R('link-target-missing'))
   }
 }
 
@@ -371,12 +373,12 @@ if (docs.research) {
 
   if (Number(r.fm.schema_version) !== RESEARCH_SCHEMA) {
     err(r.name, `schema_version 이 ${r.fm.schema_version ?? '(없음)'} 다`,
-      `조사는 언제나 ${RESEARCH_SCHEMA} 다 — 산출물 세트의 버전과 별개다(references/schema.md).`)
+      `조사는 언제나 ${RESEARCH_SCHEMA} 다 — 산출물 세트의 버전과 별개다(references/schema.md).`, R('research-schema-version'))
   }
   for (const k of ['tier', 'approved_by']) {
     if (isNull(r.fm[k])) continue
     err(r.name, `조사 문서에 \`${k}\` 가 있다`,
-      '조사는 승인하지 않고 티어도 없다 — 증거는 결정이 아니다. 이 키를 지우고, 무엇을 정했는지는 이 문서를 인용하는 ADR·intent 에 적는다.')
+      '조사는 승인하지 않고 티어도 없다 — 증거는 결정이 아니다. 이 키를 지우고, 무엇을 정했는지는 이 문서를 인용하는 ADR·intent 에 적는다.', R('research-approval-field'))
   }
 
   if (!TEMPLATE) {
@@ -387,18 +389,18 @@ if (docs.research) {
       [recs, 1, '판단(REC-*)', '읽기만 하고 무엇을 뜻하는지 적지 않으면 다음 사람이 같은 자료를 다시 읽는다.'],
     ]) {
       if (list.length >= min) continue
-      err(r.name, `${label} 이 ${list.length}개다 — ${min}개 이상이어야 한다`, hint)
+      err(r.name, `${label} 이 ${list.length}개다 — ${min}개 이상이어야 한다`, hint, R('research-too-few'))
     }
 
     for (const s of srcs) {
       if (!field(s, ...FIELD.at).trim()) {
         err(r.name, `${s.id} 에 \`at:\` 이 없다`,
-          'URL 이나 저장소 경로를 적는다. 어디서 읽었는지 없으면 다음 사람이 같은 것을 다시 찾지 못하고, 인용은 확인할 수 없는 말이 된다.')
+          'URL 이나 저장소 경로를 적는다. 어디서 읽었는지 없으면 다음 사람이 같은 것을 다시 찾지 못하고, 인용은 확인할 수 없는 말이 된다.', R('research-source-location-missing'))
       }
       const at = field(s, ...FIELD.retrieved).trim()
       if (/^\d{4}-\d{2}-\d{2}$/.test(at)) continue
       err(r.name, at ? `${s.id} 의 \`retrieved: ${at}\` 를 날짜로 읽을 수 없다` : `${s.id} 에 \`retrieved:\` 가 없다`,
-        '`YYYY-MM-DD` 로 적는다. 조사는 낡는다 — 언제 읽었는지 없으면 이 출처가 아직 그 말을 하는지 아무도 판정하지 못한다.')
+        '`YYYY-MM-DD` 로 적는다. 조사는 낡는다 — 언제 읽었는지 없으면 이 출처가 아직 그 말을 하는지 아무도 판정하지 못한다.', R('research-source-undated'))
     }
 
     for (const [list, prefix, what, hint] of [
@@ -407,7 +409,7 @@ if (docs.research) {
     ]) {
       for (const e of list) {
         if (idsIn(field(e, ...FIELD.basis)).some((x) => x.startsWith(prefix + '-') && ALL.has(x))) continue
-        err(r.name, `${e.id} 이 이 문서의 어느 ${what}도 가리키지 않는다`, hint)
+        err(r.name, `${e.id} 이 이 문서의 어느 ${what}도 가리키지 않는다`, hint, R('research-basis-missing'))
       }
     }
 
@@ -429,17 +431,17 @@ if (docs.research) {
     const table = candidates.find((t) => t.first.some((c) => idsIn(c).some((x) => x.startsWith('CRIT-')))) ?? candidates[0] ?? null
     if (!table) {
       err(r.name, '기준과 선택지를 함께 놓은 비교표가 없다',
-        '머리행에 `OPT-NNN`, 첫 열에 `CRIT-NNN` 을 둔 표 하나가 §비교 다. 표가 없으면 어느 기준에서 무엇이 갈렸는지가 문장 사이에 흩어져 아무도 다시 세우지 못한다.')
+        '머리행에 `OPT-NNN`, 첫 열에 `CRIT-NNN` 을 둔 표 하나가 §비교 다. 표가 없으면 어느 기준에서 무엇이 갈렸는지가 문장 사이에 흩어져 아무도 다시 세우지 못한다.', R('research-table-missing'))
     } else {
       const inHead = new Set(table.header.flatMap((c) => idsIn(c)).filter((x) => x.startsWith('OPT-')))
       const inCol = new Set(table.first.flatMap((c) => idsIn(c)).filter((x) => x.startsWith('CRIT-')))
       for (const c of crits) {
         if (inCol.has(c.id)) continue
-        err(r.name, `비교표의 첫 열에 ${c.id} 이 없다`, '기준을 세워 놓고 그 기준으로 재지 않았다. 행을 더하거나 기준을 뺀다.')
+        err(r.name, `비교표의 첫 열에 ${c.id} 이 없다`, '기준을 세워 놓고 그 기준으로 재지 않았다. 행을 더하거나 기준을 뺀다.', R('research-table-criterion-missing'))
       }
       for (const o of opts) {
         if (inHead.has(o.id)) continue
-        err(r.name, `비교표의 머리행에 ${o.id} 이 없다`, '재지 않은 선택지는 비교된 적이 없다. 열을 더하거나 선택지를 뺀다.')
+        err(r.name, `비교표의 머리행에 ${o.id} 이 없다`, '재지 않은 선택지는 비교된 적이 없다. 열을 더하거나 선택지를 뺀다.', R('research-table-option-missing'))
       }
     }
   }
@@ -447,17 +449,17 @@ if (docs.research) {
 
 if (docs.intent && !isNull(docs.intent.fm.from_finding)) {
   const fp = resolve(DIR, String(docs.intent.fm.from_finding))
-  if (!existsSync(fp)) err('intent.md', `\`from_finding: ${docs.intent.fm.from_finding}\` 가 가리키는 파일이 없다`, '상대 경로를 확인한다.')
+  if (!existsSync(fp)) err('intent.md', `\`from_finding: ${docs.intent.fm.from_finding}\` 가 가리키는 파일이 없다`, '상대 경로를 확인한다.', R('link-target-missing'))
   else {
     const up = frontmatter(readFileSync(fp, 'utf8')) ?? {}
     const r = isNull(up.routed_to) ? '' : String(up.routed_to)
     if (up.status === 'accepted' && !r.startsWith('intent')) {
-      err('intent.md', `상위 발견(${basename(fp)}) 은 \`${r || '경로 없음'}\` 로 나갔다고 적혀 있다`, '이 intent 가 그 발견에서 왔다면 발견의 `routed_to` 도 `intent:<이 경로>` 여야 한다.')
+      err('intent.md', `상위 발견(${basename(fp)}) 은 \`${r || '경로 없음'}\` 로 나갔다고 적혀 있다`, '이 intent 가 그 발견에서 왔다면 발견의 `routed_to` 도 `intent:<이 경로>` 여야 한다.', R('finding-route-mismatch'))
     } else if (r.startsWith('intent')) {
       const points = resolve(fp, '..', r.slice(r.indexOf(':') + 1).trim())
       if (points !== docs.intent.path) {
         err('intent.md', '상위 발견의 `routed_to` 는 다른 intent 를 가리킨다',
-          `발견 → ${points}\n      이 문서 → ${docs.intent.path}\n      발견 하나는 intent 하나를 낳는다. 다른 의도라면 발견도 따로 연다.`)
+          `발견 → ${points}\n      이 문서 → ${docs.intent.path}\n      발견 하나는 intent 하나를 낳는다. 다른 의도라면 발견도 따로 연다.`, R('finding-route-mismatch'))
       }
     }
   }
@@ -465,15 +467,15 @@ if (docs.intent && !isNull(docs.intent.fm.from_finding)) {
 
 const LOCK = TEMPLATE ? null : loadLock(DIR)
 if (LOCK?.broken) {
-  err(LOCK_FILE, `락을 읽을 수 없다 — ${LOCK.broken}`, '`pull-spec.mjs` 로 다시 끌어오면 새로 만든다.')
+  err(LOCK_FILE, `락을 읽을 수 없다 — ${LOCK.broken}`, '`pull-spec.mjs` 로 다시 끌어오면 새로 만든다.', R('lock-broken'))
 } else if (LOCK) {
   for (const pr of verifyLock(DIR, LOCK)) problems.push(pr)
   if (!UP.self) {
     err(LOCK_FILE, '상류에서 끌어왔는데 프로필에 `repo` 가 없다',
-      '`repo: "<owner>/<name>"` 이 없으면 어느 수용 기준이 이 레포 몫인지 가를 수 없어, 남의 몫까지 이 레포에 물린다.')
+      '`repo: "<owner>/<name>"` 이 없으면 어느 수용 기준이 이 레포 몫인지 가를 수 없어, 남의 몫까지 이 레포에 물린다.', R('lock-repo-missing'))
   }
   if (UP.self && sameRepo(UP.self, LOCK.repo)) {
-    err(LOCK_FILE, `상류(${LOCK.repo})가 이 레포다`, '자기 자신에서 끌어오면 사본과 정본이 같은 자리에 산다. 락을 지운다.')
+    err(LOCK_FILE, `상류(${LOCK.repo})가 이 레포다`, '자기 자신에서 끌어오면 사본과 정본이 같은 자리에 산다. 락을 지운다.', R('lock-self-upstream'))
   }
   const upRoot = findUpstream(LOCK, REPO_ROOT, null)
   if (!upRoot) {
@@ -484,7 +486,7 @@ if (LOCK?.broken) {
       const head = headOf(upRoot, e.path)
       if (!head || head === e.sha) continue
       err(name, `상류가 이 사본보다 앞서 있다 (락 ${String(e.sha).slice(0, 7)} != 상류 ${head.slice(0, 7)})`,
-        `${LOCK.repo} 의 ${e.path} 가 바뀌었다. \`pull-spec.mjs ${basename(DIR)}\` 로 다시 끌어오고 바뀐 내용에 맞춰 plan 을 고친다.`)
+        `${LOCK.repo} 의 ${e.path} 가 바뀌었다. \`pull-spec.mjs ${basename(DIR)}\` 로 다시 끌어오고 바뀐 내용에 맞춰 plan 을 고친다.`, R('upstream-ahead'))
     }
   }
 }
@@ -513,34 +515,34 @@ if (!TEMPLATE) {
       const hex = BODY_PIN.exec(decl)?.[1]
       if ((schemaVersion(d.fm) ?? 0) < BODY_PIN_SCHEMA) {
         err(d.name, `\`${key}: ${decl}\` 는 커밋 SHA 도 날짜도 아니다`,
-          `본문 해시 고정은 schema ${BODY_PIN_SCHEMA} 부터다. 프런트매터의 schema_version 을 올리거나 ${up} 의 커밋 SHA 를 적는다 — 낮은 버전을 읽는 런타임은 이 값을 조용히 잘못 읽는다.`)
+          `본문 해시 고정은 schema ${BODY_PIN_SCHEMA} 부터다. 프런트매터의 schema_version 을 올리거나 ${up} 의 커밋 SHA 를 적는다 — 낮은 버전을 읽는 런타임은 이 값을 조용히 잘못 읽는다.`, R('version-pin-body-schema'))
       } else if (locked && !vendored) {
         err(d.name, `\`${key}\` 가 본문 해시인데 이 산출물 세트는 \`${LOCK_FILE}\` 으로 고정돼 있다`,
-          `상류 사본은 락이 적은 커밋(${String(locked).slice(0, 7)})을 적는다. 본문 해시는 상류가 앞서간 것을 못 본다.`)
+          `상류 사본은 락이 적은 커밋(${String(locked).slice(0, 7)})을 적는다. 본문 해시는 상류가 앞서간 것을 못 본다.`, R('version-pin-body-locked'))
       } else if (!hex) {
         err(d.name, `\`${key}: ${decl}\` 의 본문 해시를 읽을 수 없다`,
-          `16진수 12자 이상이어야 한다. \`node <sdlc_runtime>/tools/pin.mjs ${up}\` 가 찍어 준다.`)
+          `16진수 12자 이상이어야 한다. \`node <sdlc_runtime>/tools/pin.mjs ${up}\` 가 찍어 준다.`, R('version-pin-unreadable'))
       } else if (!upDoc) {
-        warn(d.name, `${up} 이 없어 \`${key}\` 를 대조하지 못했다`, '상위 문서를 먼저 놓는다.')
+        warn(d.name, `${up} 이 없어 \`${key}\` 를 대조하지 못했다`, '상위 문서를 먼저 놓는다.', R('version-pin-unverified'))
       } else if (!bodyHash(upDoc.text).startsWith(hex.toLowerCase())) {
         err(d.name, vendored
           ? `\`${key}\` 가 함께 끌어온 ${up} 의 본문과 다르다 (선언 ${decl} != 실제 ${bodyPin(upDoc.text)})`
           : `\`${key}\` 가 ${up} 의 현재 본문과 다르다 (선언 ${decl} != 실제 ${bodyPin(upDoc.text)})`,
           vendored ? readOnly
-            : `${up} 의 본문이 이 문서를 쓴 뒤에 바뀌었다. 바뀐 내용을 읽고 이 문서를 갱신한 다음 \`node <sdlc_runtime>/tools/pin.mjs ${up}\` 로 다시 찍는다.`)
+            : `${up} 의 본문이 이 문서를 쓴 뒤에 바뀌었다. 바뀐 내용을 읽고 이 문서를 갱신한 다음 \`node <sdlc_runtime>/tools/pin.mjs ${up}\` 로 다시 찍는다.`, R('version-pin-stale'))
       }
       continue
     }
     if (!inGit && !LOCK?.files) continue
-    if (/^\d{4}-\d{2}-\d{2}$/.test(decl)) { warn(d.name, `\`${key}\` 가 날짜다`, '커밋 SHA 를 쓰면 기계가 대조할 수 있다.'); continue }
-    if (!/^[0-9a-f]{7,40}$/i.test(decl)) { err(d.name, `\`${key}: ${decl}\` 는 커밋 SHA 도 날짜도 아니다`, `${up} 을 마지막으로 바꾼 커밋의 SHA 를 적는다.`); continue }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(decl)) { warn(d.name, `\`${key}\` 가 날짜다`, '커밋 SHA 를 쓰면 기계가 대조할 수 있다.', R('version-pin-date')); continue }
+    if (!/^[0-9a-f]{7,40}$/i.test(decl)) { err(d.name, `\`${key}: ${decl}\` 는 커밋 SHA 도 날짜도 아니다`, `${up} 을 마지막으로 바꾼 커밋의 SHA 를 적는다.`, R('version-pin-unreadable')); continue }
     // A vendored pin names an upstream commit, so this repository's own history of the copy says
     // nothing about it: falling back to it when the lock has no sha (`--force` on an uncommitted
     // draft) compared an upstream SHA with a local one and always failed.
     const actual = locked ?? (inGit && !vendored ? lastCommit(up) : null)
     if (!actual) {
       warn(d.name, vendored ? `락에 ${up} 의 상류 커밋이 없어 \`${key}\` 를 대조하지 못했다` : `${up} 의 커밋 이력을 못 읽었다`,
-        vendored ? `${up} 이 ${LOCK.repo} 에서 아직 커밋되지 않았다. 상류에서 커밋·승인한 뒤 \`pull-spec.mjs\` 로 다시 끌어온다.` : '아직 커밋되지 않았을 수 있다.')
+        vendored ? `${up} 이 ${LOCK.repo} 에서 아직 커밋되지 않았다. 상류에서 커밋·승인한 뒤 \`pull-spec.mjs\` 로 다시 끌어온다.` : '아직 커밋되지 않았을 수 있다.', R('version-pin-unverified'))
       continue
     }
     if (actual.startsWith(decl.toLowerCase())) continue
@@ -548,7 +550,7 @@ if (!TEMPLATE) {
       vendored ? readOnly
         : locked
         ? '락이 가리키는 상류 커밋을 적는다. 상류가 바뀌었으면 `pull-spec.mjs` 로 다시 끌어온 뒤 찍는다.'
-        : `${up} 이 이 문서를 쓴 뒤에 바뀌었다. 바뀐 내용을 읽고 이 문서를 갱신한 다음 ${key} 를 다시 찍는다.`)
+        : `${up} 이 이 문서를 쓴 뒤에 바뀌었다. 바뀐 내용을 읽고 이 문서를 갱신한 다음 ${key} 를 다시 찍는다.`, R('version-pin-stale'))
   }
 }
 
@@ -567,7 +569,7 @@ for (const d of Object.values(docs)) {
   const unmarkedRequired = (schemaVersion(d.fm) ?? 0) >= UNMARKED_SECTION_SCHEMA
   for (const h of d.hs) {
     const need = tierOf(h.marker) ?? (unmarkedRequired && h.depth === 2 ? 'light' : null)
-    if (need === 'unknown') { warn(d.name, `«${h.title}» 의 표기 \`[${h.marker}]\` 를 못 읽었다`, 'conventions.md 의 표기 넷 중 하나여야 한다 — 모든 티어 필수는 표기 없이 쓴다.'); continue }
+    if (need === 'unknown') { warn(d.name, `«${h.title}» 의 표기 \`[${h.marker}]\` 를 못 읽었다`, 'conventions.md 의 표기 넷 중 하나여야 한다 — 모든 티어 필수는 표기 없이 쓴다.', R('section-marker-unknown')); continue }
     if (!need || !required(need) || h.hasMarkedChild || TEMPLATE) continue
 
     const body = (from, to, prose = false) => stripComments(d.lines.slice(from, to).filter((_, k) => !prose || d.live[from + k]).join('\n')).split('\n')
@@ -585,13 +587,13 @@ for (const d of Object.values(docs)) {
       const sibling = next && next.depth === h.depth && new RegExp(`^(${P_ALT})-\\d`).test(next.title)
       err(d.name, `${where} 이 비어 있다`, sibling
         ? `바로 뒤의 \`${next.title.split(/\s/)[0]}\` 이 같은 층(h${next.depth})이라 자식이 아니라 옆칸이다. 이 제목을 \`##\` 로 올리거나 표기를 떼고 항목만 남긴다 — 템플릿의 헤딩 층을 그대로 쓰는 것이 가장 안전하다.`
-        : `\`${TIER}\` 티어에서 필수다. 없으면 \`해당 없음 — <근거>\`.`)
+        : `\`${TIER}\` 티어에서 필수다. 없으면 \`해당 없음 — <근거>\`.`, R('section-empty'))
       continue
     }
     const none = content.length <= 2 ? content.find((l) => RE_NA.test(l)) : undefined
     if (none) {
       if (!RE_NA_WITH_BASIS.test(none)) {
-        err(d.name, `${where} 의 \`해당 없음\` 에 근거가 없다`, '근거 없는 «해당 없음» 은 «정말 없다» 와 «안 봤다» 를 같은 글자로 만든다.')
+        err(d.name, `${where} 의 \`해당 없음\` 에 근거가 없다`, '근거 없는 «해당 없음» 은 «정말 없다» 와 «안 봤다» 를 같은 글자로 만든다.', R('na-without-basis'))
       }
       continue
     }
@@ -599,8 +601,8 @@ for (const d of Object.values(docs)) {
     // type is the contract. Emptiness above still counts every line — a section that is only a code
     // block is not empty — so the placeholder count reads the prose lines and compares with all.
     const ph = prose.filter((l) => /<[^<>\n]{1,120}>/.test(outsideCode(l)))
-    if (ph.length === content.length) err(d.name, `${where} 이 placeholder 뿐이다 (미작성)`, `\`${TIER}\` 티어에서 필수다. 채우거나 티어를 낮춘다.`)
-    else if (ph.length > 0) warn(d.name, `${where} 에 placeholder ${ph.length}줄이 남았다`, `첫 줄: ${ph[0].trim().slice(0, 60)}`)
+    if (ph.length === content.length) err(d.name, `${where} 이 placeholder 뿐이다 (미작성)`, `\`${TIER}\` 티어에서 필수다. 채우거나 티어를 낮춘다.`, R('section-placeholder'))
+    else if (ph.length > 0) warn(d.name, `${where} 에 placeholder ${ph.length}줄이 남았다`, `첫 줄: ${ph[0].trim().slice(0, 60)}`, R('placeholder-left'))
   }
 }
 
@@ -613,7 +615,7 @@ if (!TEMPLATE) {
     const sections = d.hs.filter((h) => h.depth <= 3)
     if (!sections.some((h) => h.depth === 2) || sections.some((h) => h.marker)) continue
     warn(d.name, `절 표기가 하나도 없다 — schema ${schema} 에서는 표기 없는 절을 검사하지 않는다`,
-      `\`schema_version\` 을 ${UNMARKED_SECTION_SCHEMA} 로 올리고(프로필의 \`sdlc_version\` 도 함께), 아니면 이 문서 버전의 템플릿을 쓴다.`)
+      `\`schema_version\` 을 ${UNMARKED_SECTION_SCHEMA} 로 올리고(프로필의 \`sdlc_version\` 도 함께), 아니면 이 문서 버전의 템플릿을 쓴다.`, R('section-markers-absent'))
   }
 }
 
@@ -622,11 +624,12 @@ for (const d of Object.values(docs)) {
   for (const e of d.ents.values()) {
     const home = PREFIXES[e.id.split('-')[0]]
     if (home && home.doc !== d.kind) {
-      err(d.name, `${e.id} 이 ${FILES[home.doc]} 밖에서 정의됐다`, `${e.id.split('-')[0]}-* 는 ${FILES[home.doc]} 의 «${home.label}» 이 정의한다.`)
+      err(d.name, `${e.id} 이 ${FILES[home.doc]} 밖에서 정의됐다`, `${e.id.split('-')[0]}-* 는 ${FILES[home.doc]} 의 «${home.label}» 이 정의한다.`, R('id-wrong-document'))
     }
   }
+  const waiving = waiveLines(d.lines)
   d.lines.forEach((raw, i) => {
-    if (!d.live[i]) return
+    if (!d.live[i] || waiving.has(i)) return
     // 조사 인용은 이 그래프의 밖이다. `RSH-2026-001/SRC-002` 의 뒤쪽을 여기서 그대로 읽으면 이 폴더에
     // 없는 ID 가 되어 «정의되지 않았다» 가 된다 — 인용은 checkResearchCitations 가 따로 대조한다.
     const line = raw.replace(RE_RESEARCH_CITE, ' ')
@@ -635,11 +638,10 @@ for (const d of Object.values(docs)) {
       if (TEMPLATE && /<[^<>]*-\d/.test(line)) continue
       const home = PREFIXES[id.split('-')[0]]
       const pending = !docs[home.doc]
-      ;(pending ? warn : err)(d.name,
-        pending ? `${id} 은 아직 없는 ${FILES[home.doc]} 의 ID 다`
-                : `${id} 을 참조하는데 어디에도 정의되어 있지 않다`,
-        pending ? `${FILES[home.doc]} 을 쓸 때 «${home.label}» 에 \`### ${id} — 제목\` 으로 정의한다. 위치: ${d.name}:${i + 1}`
-                : `${FILES[home.doc]} 의 «${home.label}» 에 \`### ${id} — 제목\` 으로 정의하거나 참조를 고친다. 위치: ${d.name}:${i + 1}`)
+      if (pending) warn(d.name, `${id} 은 아직 없는 ${FILES[home.doc]} 의 ID 다`,
+        `${FILES[home.doc]} 을 쓸 때 «${home.label}» 에 \`### ${id} — 제목\` 으로 정의한다. 위치: ${d.name}:${i + 1}`, R('id-pending'))
+      else err(d.name, `${id} 을 참조하는데 어디에도 정의되어 있지 않다`,
+        `${FILES[home.doc]} 의 «${home.label}» 에 \`### ${id} — 제목\` 으로 정의하거나 참조를 고친다. 위치: ${d.name}:${i + 1}`, R('id-undefined'))
     }
     // Only a near miss of a prefix is reported; a ticket key or a standard is another system's name.
     // A code span is the author marking a name as exact, the way out for one that happens to be near.
@@ -647,13 +649,13 @@ for (const d of Object.values(docs)) {
       const like = prefixTypo(m[1])
       if (!like) continue
       warn(d.name, `\`${m[0]}\` — \`${m[1]}\` 는 ID 접두가 아니고 \`${like}\` 와 한 글자 다르다`,
-        `\`${like}-${m[2]}\` 의 오타면 고친다. 다른 시스템의 이름(티켓 키·표준 번호)이면 백틱으로 감싼다 — 코드 스팬은 이 검사가 읽지 않는다. 새 접두라면 conventions.md 의 ID 접두 표에 먼저 더한다. 위치: ${d.name}:${i + 1}`)
+        `\`${like}-${m[2]}\` 의 오타면 고친다. 다른 시스템의 이름(티켓 키·표준 번호)이면 백틱으로 감싼다 — 코드 스팬은 이 검사가 읽지 않는다. 새 접두라면 conventions.md 의 ID 접두 표에 먼저 더한다. 위치: ${d.name}:${i + 1}`, R('id-prefix-typo'))
     }
   })
 }
 
 
-checkResearchCitations(Object.values(docs), err)
+checkResearchCitations(Object.values(docs))
 
 
 const outs = of('intent', 'OUT')
@@ -663,13 +665,13 @@ const wps = of('plan', 'WP')
 
 for (const r of reqs) {
   if (idsIn(field(r, ...FIELD.basis)).some((x) => /^(OUT|CON)-/.test(x))) continue
-  err('spec.md', `${r.id} 에 \`근거:\` 가 없다`, '어느 OUT-*/CON-* 에서 왔는지 없으면 이 요구사항이 왜 존재하는지 아무도 답할 수 없다.')
+  err('spec.md', `${r.id} 에 \`근거:\` 가 없다`, '어느 OUT-*/CON-* 에서 왔는지 없으면 이 요구사항이 왜 존재하는지 아무도 답할 수 없다.', R('requirement-basis-missing'))
 }
 if (docs.spec) {
   const covered = new Set(reqs.flatMap((r) => idsIn(field(r, ...FIELD.basis))))
   for (const o of outs) {
     if (!isMust(o) || covered.has(o.id)) continue
-    err('spec.md', `${o.id}(Must) 를 덮는 요구사항이 없다`, 'intent 가 Must 로 약속한 결과인데 명세가 다루지 않는다. 요구사항을 더하거나 intent 에서 우선순위를 내린다.')
+    err('spec.md', `${o.id}(Must) 를 덮는 요구사항이 없다`, 'intent 가 Must 로 약속한 결과인데 명세가 다루지 않는다. 요구사항을 더하거나 intent 에서 우선순위를 내린다.', R('outcome-uncovered'))
   }
 }
 // 시나리오의 우선순위는 배포 슬라이스다 — `Must` 시나리오 하나만 되어도 내보낼 가치가 있다는 뜻이고,
@@ -685,25 +687,25 @@ if (docs.spec && scns.some((s) => s.priority)) {
   for (const s of scns) {
     if (!s.priority) {
       warn('spec.md', `${s.id} 에 우선순위가 없다 — 다른 시나리오에는 있다`,
-        '슬라이스를 나누기 시작했으면 시나리오마다 `Must`·`Should`·`Could` 를 단다. 하나만 비면 그 흐름이 첫 배포에 드는지 아무도 답하지 못한다.')
+        '슬라이스를 나누기 시작했으면 시나리오마다 `Must`·`Should`·`Could` 를 단다. 하나만 비면 그 흐름이 첫 배포에 드는지 아무도 답하지 못한다.', R('scenario-priority-missing'))
       continue
     }
     if (!isMust(s) || realised.has(s.id)) continue
     warn('spec.md', `${s.id}(Must) 를 실현하는 요구사항이 없다`,
-      '이 시나리오 하나만으로 배포 가치가 있다고 적었는데 어느 FR·NFR 도 `scenario:`(`시나리오:`) 로 이것을 가리키지 않는다. 슬라이스는 요구사항을 거쳐 작업으로 내려가므로, 가리키는 요구사항이 없으면 계획이 이 흐름을 먼저 세울 수 없다.')
+      '이 시나리오 하나만으로 배포 가치가 있다고 적었는데 어느 FR·NFR 도 `scenario:`(`시나리오:`) 로 이것을 가리키지 않는다. 슬라이스는 요구사항을 거쳐 작업으로 내려가므로, 가리키는 요구사항이 없으면 계획이 이 흐름을 먼저 세울 수 없다.', R('scenario-unrealised'))
   }
 }
 for (const r of reqs) {
   if (!isMust(r)) continue
   if (acs.some((a) => a.parent === r.id)) continue
-  err('spec.md', `${r.id}(Must) 에 수용 기준이 없다`, '`수용 기준:` 밑에 `- [ ] AC-00N — <언제>이면 시스템은 <무엇을> 한다` 를 적는다. Pass/Fail 로 못 재는 Must 는 끝났는지 아무도 말할 수 없다.')
+  err('spec.md', `${r.id}(Must) 에 수용 기준이 없다`, '`수용 기준:` 밑에 `- [ ] AC-00N — <언제>이면 시스템은 <무엇을> 한다` 를 적는다. Pass/Fail 로 못 재는 Must 는 끝났는지 아무도 말할 수 없다.', R('requirement-ac-missing'))
 }
 for (const w of wps) {
   const missing = WP_FIELDS.filter((k) => !w.fields.has(k))
-  if (missing.length) err('plan.md', `${w.id} 에 \`${missing.join('\`·\`')}\` 줄이 없다`, `작업마다 ${WP_FIELDS.join(' · ')} 다섯 줄이 있어야 /implement-spec 이 이것을 굴린다.`)
+  if (missing.length) err('plan.md', `${w.id} 에 \`${missing.join('\`·\`')}\` 줄이 없다`, `작업마다 ${WP_FIELDS.join(' · ')} 다섯 줄이 있어야 /implement-spec 이 이것을 굴린다.`, R('task-fields-missing'))
   if (!w.fields.has('covers')) continue
   if (idsIn(field(w, 'covers')).some((x) => /^(FR|NFR|AC)-/.test(x))) continue
-  err('plan.md', `${w.id} 이 어느 요구사항도 가리키지 않는다`, '어디에도 안 걸린 작업은 이 변경의 일이 아니다. covers 를 채우거나 작업을 뺀다.')
+  err('plan.md', `${w.id} 이 어느 요구사항도 가리키지 않는다`, '어디에도 안 걸린 작업은 이 변경의 일이 아니다. covers 를 채우거나 작업을 뺀다.', R('task-covers-nothing'))
 }
 // owed.mjs, not this file, decides which criteria a plan owes: plan-progress asks the same question
 // and must reach the same answer, or a set clean here fails check-all there.
@@ -715,7 +717,7 @@ if (docs.plan && docs.spec) {
     const parent = a.parent ? ent(a.parent) : null
     if (done.has(a.id) || done.has(a.parent)) continue
     if (owes(SELF, a, parent) !== 'owed') continue
-    err('plan.md', `${a.id}(${a.parent} 의 수용 기준) 을 덮는 작업이 없다`, '수용 기준이 있는데 그것을 만드는 작업이 없으면 그 기준은 아무도 통과시키지 않는다.')
+    err('plan.md', `${a.id}(${a.parent} 의 수용 기준) 을 덮는 작업이 없다`, '수용 기준이 있는데 그것을 만드는 작업이 없으면 그 기준은 아무도 통과시키지 않는다.', R('ac-uncovered'))
   }
   if (SELF) {
     for (const w of wps) {
@@ -726,7 +728,7 @@ if (docs.plan && docs.spec) {
       })
       if (!foreign.length) continue
       err('plan.md', `${w.id} 이 다른 레포 몫을 덮는다: ${foreign.map((e) => `${e.id}(${scopeOf(e, e.kind === 'ac' && e.parent ? ent(e.parent) : null).join('·')})`).join(' · ')}`,
-        `이 레포는 \`${UP.self}\` 다. 범위가 틀렸으면 상류 spec 의 \`scope\` 를 고치고 다시 끌어온다.`)
+        `이 레포는 \`${UP.self}\` 다. 범위가 틀렸으면 상류 spec 의 \`scope\` 를 고치고 다시 끌어온다.`, R('task-covers-foreign'))
     }
   }
 }
@@ -734,7 +736,7 @@ if (docs.spec && !TEMPLATE && schemaVersion(docs.spec.fm) < 6) {
   const scoped = [...docs.spec.ents.values()].filter((e) => e.scope?.length)
   if (scoped.length) {
     err('spec.md', `\`scope\` 를 썼는데 \`schema_version: ${docs.spec.fm.schema_version ?? '(없음)'}\` 이다: ${scoped.map((e) => e.id).join(' · ')}`,
-      'AC·요구사항의 레포 배정은 v6 부터다. 프런트매터의 schema_version 을 6 으로 올린다.')
+      'AC·요구사항의 레포 배정은 v6 부터다. 프런트매터의 schema_version 을 6 으로 올린다.', R('scope-schema'))
   }
 }
 
@@ -746,28 +748,28 @@ if (UP.isUpstream && docs.spec && !TEMPLATE && schemaVersion(docs.spec.fm) >= 6)
     const sc = scopeOf(a, parent)
     if (!sc.length) {
       err('spec.md', `${a.id}(Must) 에 \`scope\` 가 없다`,
-        `이 레포는 ${UP.consumers.join(' · ')} 의 상류다. 어느 레포가 만드는지 없으면 아무도 자기 몫으로 읽지 않는다. AC 줄 끝에 \`\`scope: <repo>\`\` 를 붙이거나 상위 요구사항에 \`scope:\` 줄을 둔다.`)
+        `이 레포는 ${UP.consumers.join(' · ')} 의 상류다. 어느 레포가 만드는지 없으면 아무도 자기 몫으로 읽지 않는다. AC 줄 끝에 \`\`scope: <repo>\`\` 를 붙이거나 상위 요구사항에 \`scope:\` 줄을 둔다.`, R('ac-scope-missing'))
       continue
     }
     const stray = sc.filter((s) => !known(s))
     if (stray.length) {
       err('spec.md', `${a.id} 의 \`scope\` 가 등록되지 않은 레포를 가리킨다: ${stray.join(' · ')}`,
-        `프로필의 \`spec_consumers\` 에 있는 레포만 쓴다 — 지금은 ${UP.consumers.join(' · ')} 다.`)
+        `프로필의 \`spec_consumers\` 에 있는 레포만 쓴다 — 지금은 ${UP.consumers.join(' · ')} 다.`, R('ac-scope-unknown-repo'))
     }
   }
   if (docs.plan) {
     warn('plan.md', '상류 문서 레포에 plan 이 있다',
-      '계획과 실행은 코드 레포가 진다. 여기 두면 워크트리·검증·증거가 코드와 다른 레포에서 돈다.')
+      '계획과 실행은 코드 레포가 진다. 여기 두면 워크트리·검증·증거가 코드와 다른 레포에서 돈다.', R('plan-in-upstream'))
   }
 }
 
 for (const h of of('finding', 'HYP')) {
   if (idsIn(field(h, ...FIELD.basis)).some((x) => x.startsWith('EV-'))) continue
-  err('finding.md', `${h.id} 이 어느 관측도 가리키지 않는다`, '§관측 의 EV-* 를 `근거:` 로 든다. 기계가 잰 것에 안 걸린 가설은 모델의 짐작이지 발견이 아니다.')
+  err('finding.md', `${h.id} 이 어느 관측도 가리키지 않는다`, '§관측 의 EV-* 를 `근거:` 로 든다. 기계가 잰 것에 안 걸린 가설은 모델의 짐작이지 발견이 아니다.', R('hypothesis-unobserved'))
 }
 
 if (wps.length) {
-  for (const w of wps) for (const p of wpFiles(w)) if (!validTaskPath(p)) err('plan.md', `${w.id} 의 files 는 저장소 안의 상대 경로여야 한다: ${p}`, '절대 경로와 저장소 밖 경로를 제거한다.')
+  for (const w of wps) for (const p of wpFiles(w)) if (!validTaskPath(p)) err('plan.md', `${w.id} 의 files 는 저장소 안의 상대 경로여야 한다: ${p}`, '절대 경로와 저장소 밖 경로를 제거한다.', R('task-path-invalid'))
   const { level, cycles, unknown } = levelsOf(wps)
   // 첫 배포 슬라이스가 증분 뒤에 서면 안 된다. Must 시나리오의 몫인 작업이 — 직접이든 건너서든 —
   // Should·Could 시나리오만 만드는 작업에 depends 하면, 슬라이스는 이름뿐이고 실제 배포 단위는 전부다.
@@ -791,11 +793,11 @@ if (wps.length) {
       const behind = [...upstream(w)].filter((d) => sliceOf(byId.get(d)) === 'increment')
       if (!behind.length) continue
       warn('plan.md', `${w.id} 은 Must 시나리오의 몫인데 증분 작업 ${behind.join('·')} 뒤에 선다`,
-        '첫 배포 슬라이스가 그 뒤의 증분을 기다린다. 의존을 끊거나, 그 작업이 정말 기반이면 그것이 만드는 요구사항의 `scenario:`(`시나리오:`) 를 Must 시나리오로 옮긴다.')
+        '첫 배포 슬라이스가 그 뒤의 증분을 기다린다. 의존을 끊거나, 그 작업이 정말 기반이면 그것이 만드는 요구사항의 `scenario:`(`시나리오:`) 를 Must 시나리오로 옮긴다.', R('slice-order'))
     }
   }
-  for (const c of cycles) err('plan.md', `${c[0]} 의 \`depends\` 가 순환한다`, `${c.join(' → ')}. 순환하면 레벨이 정해지지 않아 실행 순서가 없다.`)
-  for (const u of unknown) err('plan.md', `${u.id} 의 \`depends\` 가 없는 작업 ${u.dep} 를 가리킨다`, '오타이거나 그 작업이 빠졌다.')
+  for (const c of cycles) err('plan.md', `${c[0]} 의 \`depends\` 가 순환한다`, `${c.join(' → ')}. 순환하면 레벨이 정해지지 않아 실행 순서가 없다.`, R('task-cycle'))
+  for (const u of unknown) err('plan.md', `${u.id} 의 \`depends\` 가 없는 작업 ${u.dep} 를 가리킨다`, '오타이거나 그 작업이 빠졌다.', R('task-depends-unknown'))
   const byLevel = new Map()
   for (const w of wps) { const lv = level.get(w.id) ?? 0; (byLevel.get(lv) ?? byLevel.set(lv, []).get(lv)).push(w) }
   for (const [lv, group] of byLevel) {
@@ -803,7 +805,7 @@ if (wps.length) {
       const shared = overlappingTaskPaths(wpFiles(group[i]), wpFiles(group[j]))
       if (shared.length === 0) continue
       err('plan.md', `레벨 ${lv + 1} 의 ${group[i].id} 와 ${group[j].id} 가 같은 파일을 만진다: ${shared.join(', ')}`,
-        '같은 레벨은 병렬로 돌아 합류에서 충돌한다. `depends` 로 줄을 세우거나 두 작업을 합친다.')
+        '같은 레벨은 병렬로 돌아 합류에서 충돌한다. `depends` 로 줄을 세우거나 두 작업을 합친다.', R('task-level-overlap'))
     }
   }
 }
@@ -814,7 +816,7 @@ if (!TEMPLATE) {
   for (const [c, p] of [[docs.spec, docs.intent], [docs.plan, docs.spec], [docs.plan, docs.intent]]) {
     if (!c || !p) continue
     if (rank(c) >= 2 && rank(p) < 2) {
-      err(c.name, `\`${c.fm.status}\` 인데 상위 ${p.name} 가 \`${p.fm.status}\` 다`, '하위는 상위보다 앞서갈 수 없다. 승인되지 않은 의도 위에 선 명세는 무엇에 대한 명세인지 알 수 없다.')
+      err(c.name, `\`${c.fm.status}\` 인데 상위 ${p.name} 가 \`${p.fm.status}\` 다`, '하위는 상위보다 앞서갈 수 없다. 승인되지 않은 의도 위에 선 명세는 무엇에 대한 명세인지 알 수 없다.', R('status-ahead-of-parent'))
     }
   }
   for (const [d, prefix] of [[docs.finding, 'FQ'], [docs.intent, 'Q'], [docs.spec, 'SQ'], [docs.plan, 'PQ']]) {
@@ -822,23 +824,23 @@ if (!TEMPLATE) {
     for (const q of of(d.kind, prefix)) {
       const txt = q.body + ' ' + q.title
       if (!hasAlias(txt, BLOCKED) || !/\bOpen\b/i.test(txt) || /<[^<>]*(?:막힘|blocked)/i.test(txt)) continue
-      err(d.name, `\`${d.fm.status}\` 인데 «막힘» 질문이 Open 이다 — ${q.id}`, '막는 질문이 열려 있는 동안에는 다음 단계의 확정적 작업을 시작하지 않는다.')
+      err(d.name, `\`${d.fm.status}\` 인데 «막힘» 질문이 Open 이다 — ${q.id}`, '막는 질문이 열려 있는 동안에는 다음 단계의 확정적 작업을 시작하지 않는다.', R('blocked-question-open'))
     }
   }
 
   if (docs.plan && schemaVersion(docs.plan.fm) >= 4 && docs.plan.fm.status === 'completed') {
     const open = wps.filter((w) => !w.done)
     if (open.length) err('plan.md', `\`completed\` 인데 미완료 작업이 있다: ${open.map((w) => w.id).join(' · ')}`,
-      '모든 작업과 검증을 끝낸 뒤 completed 로 바꾼다.')
+      '모든 작업과 검증을 끝낸 뒤 completed 로 바꾼다.', R('plan-completed-open-tasks'))
     const planText = stripComments(docs.plan.lines.join('\n'))
     const log = sectionBlock(SECTION.executionLog).exec(planText)?.[0] ?? ''
     const logged = new Set(idsIn(log).filter((id) => id.startsWith('WP-')))
     const missing = wps.filter((w) => !logged.has(w.id))
     if (missing.length) err('plan.md', `\`completed\` 인데 실행 기록이 없는 작업이 있다: ${missing.map((w) => w.id).join(' · ')}`,
-      '§실행 기록에 작업 ID, 결과, 계획과의 차이를 남긴다. 계획대로 끝난 작업은 한 줄에 묶어도 된다.')
+      '§실행 기록에 작업 ID, 결과, 계획과의 차이를 남긴다. 계획대로 끝난 작업은 한 줄에 묶어도 된다.', R('plan-completed-unlogged'))
     const unchecked = docs.plan.lines.filter((line, i) => docs.plan.live[i] && /^\s*- \[ \]/.test(line))
     if (unchecked.length) err('plan.md', `\`completed\` 인데 체크되지 않은 완료 조건이 ${unchecked.length}개 있다`,
-      '작업과 완료 정의의 체크박스를 모두 확인한다. 필수 수동 검증이 남았으면 completed 로 바꾸지 않는다.')
+      '작업과 완료 정의의 체크박스를 모두 확인한다. 필수 수동 검증이 남았으면 completed 로 바꾸지 않는다.', R('plan-completed-unchecked'))
   }
 }
 
@@ -846,8 +848,8 @@ if (!TEMPLATE) {
 if (!TEMPLATE) {
   // A note from a closed set must reach the report: `report` prints errors, warnings and notes,
   // and an `info` pushed into problems would vanish — the check would look as if it had passed.
-  const toReport = (level, doc, msg, hint) =>
-    level === 'info' ? notes.push(`${doc} — ${msg}${hint ? ` ${hint}` : ''}`) : problems.push({ level, doc, msg, hint })
+  const toReport = (level, doc, msg, hint, rule) =>
+    level === 'info' ? notes.push(`${doc} — ${msg}${hint ? ` ${hint}` : ''}`) : problems.push({ level, doc, rule, msg, hint })
   checkPins(docs, { seam: SEAM }, toReport)
   // ADR 은 v5 가 들인 다섯째 산출물이다. 그 전 버전의 산출물 세트는 결정 기록이 없던 때에 썼으므로
   // 여기서 새로 빨개지지 않는다 — 핀의 상태 검사(checkPins)는 핀이 적혀 있을 때만 돌아 버전 문이 필요 없다.
@@ -860,21 +862,28 @@ if (!TEMPLATE) {
 if (!TEMPLATE) {
   const SRC = /`?[\w.-]+\/[\w./-]*\.(?:ts|tsx|js|jsx|py|rs|go|java|kt|rb|php|cs|swift|sql)`?/
   for (const d of [docs.intent, docs.spec].filter(Boolean)) {
+    const waiving = waiveLines(d.lines)
     d.lines.forEach((line, i) => {
+      if (waiving.has(i)) return
       if (/^\s*```/.test(line) && d.kind === 'intent' && d.live[i] === false) return
-      if (!d.live[i]) { if (d.kind === 'intent' && /^\s*```/.test(line)) warn(d.name, `${i + 1}번째 줄에 코드 블록이 있다`, 'intent 는 «왜/무엇»이다. 코드가 필요하면 spec 의 인터페이스 계약이나 plan 으로 내린다.'); return }
+      if (!d.live[i]) { if (d.kind === 'intent' && /^\s*```/.test(line)) warn(d.name, `${i + 1}번째 줄에 코드 블록이 있다`, 'intent 는 «왜/무엇»이다. 코드가 필요하면 spec 의 인터페이스 계약이나 plan 으로 내린다.', R('intent-code-block')); return }
       const m = SRC.exec(stripComments(line))
       if (!m) return
       warn(d.name, `${i + 1}번째 줄에 소스 경로 \`${m[0]}\` 가 있다`,
-        d.kind === 'intent' ? 'intent 는 파일명을 확정하지 않는다.' : 'spec 은 «관찰되는 동작»이다. 파일 구조는 plan 의 §도달 상태와 변경 지점 이 진다.')
+        d.kind === 'intent' ? 'intent 는 파일명을 확정하지 않는다.' : 'spec 은 «관찰되는 동작»이다. 파일 구조는 plan 의 §도달 상태와 변경 지점 이 진다.',
+        d.kind === 'intent' ? R('source-path-in-intent') : R('source-path-in-spec'))
     })
   }
 }
 
 
+// Waivers are applied last, over every problem the checks above reported, so a waiver can only
+// remove what actually fired — an unused one is visible as such instead of reading as a pass.
+const waivers = applyWaivers(problems, Object.values(docs))
 process.exit(report({
     json: argv.includes('--json'),
   // 조사만 있는 폴더에 tier 를 적지 않는다 — 없는 값을 기본값으로 찍으면 «이 문서에도 티어가 있다» 로 읽힌다.
   title: `산출물 추적성 검사 — ${basename(DIR)}  (tier: ${docs.research && Object.keys(docs).length === 1 ? '—' : TIER}, 문서 ${Object.keys(docs).length}개, ID ${ALL.size}개)`,
-  notes, problems, strict: STRICT, ruleDoc: '`conventions.md` 의 «Tiers» · «ID prefixes» · «States and approval» 절에 있다.',
+  notes: [...notes, ...waivers.notes], problems: waivers.problems, waived: waivers.waived, strict: STRICT,
+  ruleDoc: '`conventions.md` 의 «Tiers» · «ID prefixes» · «States and approval» 절에 있다.',
 }))

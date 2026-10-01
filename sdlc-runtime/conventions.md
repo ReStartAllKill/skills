@@ -16,6 +16,7 @@ Read conditional details only when needed.
 - Detection bands: `references/bands.md`
 - Hooks, CI, and vendored runtime: `sdlc-runtime/references/runtime.md`
 - Autonomous execution policy: `references/autonomy.md`
+- Rule IDs and waivers: `references/rules.md`
 
 ## Authority and lifetime
 
@@ -231,6 +232,29 @@ an error. No frontmatter key is needed.
 - When an agent writes the document, populate `generated_by`; `generated_from` and
   `skills_in_force` are optional. A document a person wrote leaves it empty; the checker reports
   that as a note, not a warning, so it does not fail `--strict`.
+
+### Waivers
+
+Every checker problem carries a stable rule ID (`[adr-scope-empty]` in the report, `rule` in
+`--json`). When a warning does not apply to one document, the document says so in its
+frontmatter instead of satisfying the rule with an invented path or test name:
+
+```yaml
+waive:
+  - "adr-scope-empty — applies to how the team operates, not to a code path"
+```
+
+- An entry is `<rule-id> — <basis>`; it covers that rule in that document only.
+- Only warnings the registry marks waivable can be waived — rules about whether something
+  applies, not rules that protect traceability, an approval, or report a check that could not
+  run. An error is never waivable.
+- A waived warning does not fail `--strict` and is reported as a note with its basis on every
+  run. A waiver with no basis, an unknown rule ID or a rule that cannot be waived is an error;
+  one that matched nothing is a note.
+- Use the block list form shown above, never an inline `[...]` list: the inline form splits on
+  every comma.
+
+`references/rules.md` lists every rule ID, its level and whether it can be waived.
 
 ## Paths and validation
 

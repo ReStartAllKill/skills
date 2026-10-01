@@ -1,0 +1,10 @@
+{
+  "kind": "seeded · 면제",
+  "why": "waiver-applied 에서 규칙 ID 한 글자를 바꿨다(`adr-scope-emtpy`). 모르는 ID 를 조용히 넘기면 아무것도 면제하지 않은 줄이 면제한 것처럼 읽히므로 오류이고, `scope` 경고는 그대로 선다.",
+  "cmd": "clean-adr 와 같다.",
+  "check": {
+    "errors": 1, "warns": 1,
+    "matches": ["[waiver-rule-unknown] `waive` 의 `adr-scope-emtpy` 는 아는 규칙 ID 가 아니다", "[adr-scope-empty] `scope` 가 비었다"]
+  },
+  "lint": { "errors": 0, "warns": 0 }
+}

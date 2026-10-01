@@ -126,6 +126,22 @@ export function frontmatter(text) {
   return out
 }
 
+/** Line indexes of the frontmatter's `waive:` key and its items. A waiver's basis is the
+ *  justification of an opt-out, not artifact prose: read as prose it named a path, an undefined ID
+ *  or a prefix-like token, and raised the very problems the waiver was explaining — a basis citing
+ *  `config/quota.py` and `FR-009` warned about a source path and failed on an undefined ID. */
+export function waiveLines(lines) {
+  const out = new Set()
+  if (!/^---\s*$/.test(lines[0] ?? '')) return out
+  let inWaive = false
+  for (let i = 1; i < lines.length && !/^---\s*$/.test(lines[i]); i++) {
+    if (/^waive:/.test(lines[i])) { inWaive = true; out.add(i); continue }
+    if (inWaive && (/^\s+-\s/.test(lines[i]) || !lines[i].trim())) { out.add(i); continue }
+    inWaive = false
+  }
+  return out
+}
+
 /** A pin over the upstream body rather than over the commit that carried it (schema 7).
  *  The commit form cannot be written when intent, spec and plan are born in one commit, and a
  *  frontmatter-only edit upstream — an approval — invalidates it for a body nobody touched.
@@ -297,12 +313,15 @@ export const isTemplate = (docs) => Object.values(docs)
 export const schemaNote = (schema) => `산출물 schema v${schema}${schema === 1 ? ' (무버전 문서 호환)' : ''} · runtime ${SDLC_VERSION}`
 export const isSchemaNote = (n) => /^산출물 schema v\d+(?: \(무버전 문서 호환\))? · runtime \S+$/.test(String(n))
 
-export function report({ title, notes = [], problems, strict, ruleDoc, json = false }) {
+/** `waived` is added to the JSON only by a tool that applies waivers (`check-artifacts`): the
+ *  waivers that removed a warning, as `{ doc, rule, basis, count }`, so a consumer can key on them
+ *  without reading the note text. Other tools' JSON keeps its shape. */
+export function report({ title, notes = [], problems, strict, ruleDoc, json = false, waived }) {
   const errors = problems.filter((p) => p.level === 'error')
   const warns = problems.filter((p) => p.level === 'warn')
   if (json) {
     const exitCode = errors.length || (strict && warns.length) ? 1 : 0
-    console.log(JSON.stringify({ version: 1, title, notes, problems, counts: { errors: errors.length, warnings: warns.length }, exitCode }))
+    console.log(JSON.stringify({ version: 1, title, notes, problems, counts: { errors: errors.length, warnings: warns.length }, exitCode, ...(waived ? { waived } : {}) }))
     return exitCode
   }
   const ESC = String.fromCharCode(27)

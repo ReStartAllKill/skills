@@ -6,6 +6,7 @@ import { SECTION, CHOSEN, hasAlias, canonical, ADR_STATUS_ALIASES, LEGACY_STATUS
 import { locale } from './locale.mjs'
 import { ADR_DEAD, adrSeam, loadManifest, loadBindings, boundForFiles, collect, touches } from './adr-bindings.mjs'
 import { sameRepo } from './upstream.mjs'
+import { R } from './rules.mjs'
 export { ADR_DEAD, adrSeam, loadManifest }
 const CHOSEN_RE = new RegExp(`\\((?:${CHOSEN.join('|')})\\)`, 'i')
 
@@ -54,15 +55,15 @@ export function legacyMeta(doc) {
 
 export function checkAdr(doc, { seam, siblings = [] }, push) {
   const fm = doc.fm ?? {}
-  const err = (m, h) => push('error', m, h)
-  const warn = (m, h) => push('warn', m, h)
+  const err = (m, h, rule) => push('error', m, h, rule)
+  const warn = (m, h, rule) => push('warn', m, h, rule)
 
   const nm = ADR_FILENAME.exec(doc.name)
   if (!nm) {
-    err(`파일 이름이 규칙과 다르다 — ${doc.name}`, 'ADR-{세 자리}-{kebab-slug}.md 다. 이름이 번호를 물어야 «ADR-007» 이 한 문서를 가리킨다.')
+    err(`파일 이름이 규칙과 다르다 — ${doc.name}`, 'ADR-{세 자리}-{kebab-slug}.md 다. 이름이 번호를 물어야 «ADR-007» 이 한 문서를 가리킨다.', R('adr-filename'))
   }
   if (!/^---\r?\n/.test(doc.text)) {
-    if (!legacyMeta(doc).status) err('Unknown legacy ADR status', 'Use a Status/상태 table row with a supported status value.')
+    if (!legacyMeta(doc).status) err('Unknown legacy ADR status', 'Use a Status/상태 table row with a supported status value.', R('adr-legacy-status-unknown'))
     push('info', '프런트매터가 없는 옛 문서다 — 이름과 번호·상태 해석만 검사했다',
       '새 계약으로 옮기려면 프런트매터(artifact · id · status · scope · confirms)를 더한다. ' +
       '그 전까지 이 결정은 승인 가드가 지키지 않고, 산출물 세트가 핀해도 상태를 못 본다.')
@@ -71,34 +72,34 @@ export function checkAdr(doc, { seam, siblings = [] }, push) {
 
   if (nm) {
     const want = `ADR-${nm[1]}`
-    if (String(fm.id ?? '') !== want) err(`파일 이름의 번호와 id 가 다르다 — 이름 ${want} · id ${fm.id ?? '(없음)'}`, '둘 중 어느 쪽이 맞는지 정하고 맞춘다. 번호는 재사용하지 않는다.')
+    if (String(fm.id ?? '') !== want) err(`파일 이름의 번호와 id 가 다르다 — 이름 ${want} · id ${fm.id ?? '(없음)'}`, '둘 중 어느 쪽이 맞는지 정하고 맞춘다. 번호는 재사용하지 않는다.', R('adr-id-mismatch'))
     const dup = siblings.filter((s) => s !== doc && String(s.fm?.id ?? '') === want)
-    if (dup.length) err(`${want} 번호를 ${dup.length + 1}개 문서가 쓴다 — ${[doc, ...dup].map((s) => s.name).join(' · ')}`, '번호는 단조 증가하고 재사용하지 않는다. 뒤에 쓴 것에 새 번호를 준다.')
+    if (dup.length) err(`${want} 번호를 ${dup.length + 1}개 문서가 쓴다 — ${[doc, ...dup].map((s) => s.name).join(' · ')}`, '번호는 단조 증가하고 재사용하지 않는다. 뒤에 쓴 것에 새 번호를 준다.', R('adr-number-reused'))
   }
 
-  if (String(fm.artifact ?? '') !== 'adr') err('`artifact: adr` 이 아니다', '이 값으로 검사기가 ADR 을 가려낸다.')
-  if (Number(fm.schema_version) !== 5) err(`schema_version 이 ${fm.schema_version ?? '(없음)'} 다`, 'ADR 은 언제나 5 다 — 산출물 세트의 버전과 별개다(references/schema.md).')
+  if (String(fm.artifact ?? '') !== 'adr') err('`artifact: adr` 이 아니다', '이 값으로 검사기가 ADR 을 가려낸다.', R('artifact-kind-mismatch'))
+  if (Number(fm.schema_version) !== 5) err(`schema_version 이 ${fm.schema_version ?? '(없음)'} 다`, 'ADR 은 언제나 5 다 — 산출물 세트의 버전과 별개다(references/schema.md).', R('adr-schema-version'))
   for (const k of ['id', 'title', 'status', 'generated_by']) {
-    if (isNull(fm[k])) err(`\`${k}\` 가 비었다`)
+    if (isNull(fm[k])) err(`\`${k}\` 가 비었다`, undefined, R('frontmatter-missing-key'))
   }
   const status = String(fm.status ?? '')
   if (status && !ADR_STATUS.includes(status)) {
-    err(`status 가 \`${status}\` 다`, `허용값: ${ADR_STATUS.join(' · ')}. 산출물 상태값을 그대로 쓴다 — 모르는 값이면 승인 가드가 상태 전이를 못 본다.`)
+    err(`status 가 \`${status}\` 다`, `허용값: ${ADR_STATUS.join(' · ')}. 산출물 상태값을 그대로 쓴다 — 모르는 값이면 승인 가드가 상태 전이를 못 본다.`, R('status-unknown'))
   }
 
   if (status === 'accepted') {
-    if (isNull(fm.approved_by)) err('accepted 인데 `approved_by` 가 비었다', '승인은 사람이 한다. 가드가 그 편집을 다이얼로그로 보낸다.')
-    else if (String(fm.approved_by) === String(fm.generated_by)) err('`approved_by` 와 `generated_by` 가 같다', '쓴 쪽이 승인하면 관문이 아니라 자기선언이다.')
+    if (isNull(fm.approved_by)) err('accepted 인데 `approved_by` 가 비었다', '승인은 사람이 한다. 가드가 그 편집을 다이얼로그로 보낸다.', R('approved-by-missing'))
+    else if (String(fm.approved_by) === String(fm.generated_by)) err('`approved_by` 와 `generated_by` 가 같다', '쓴 쪽이 승인하면 관문이 아니라 자기선언이다.', R('self-approval'))
   }
   if (status === 'superseded' && isNull(fm.superseded_by)) {
-    err('superseded 인데 `superseded_by` 가 없다', '무엇이 대체했는지 없으면 결정의 변경 이력을 추적할 수 없다.')
+    err('superseded 인데 `superseded_by` 가 없다', '무엇이 대체했는지 없으면 결정의 변경 이력을 추적할 수 없다.', R('superseded-by-missing'))
   }
   for (const [k, other] of [['superseded_by', 'supersedes'], ['supersedes', 'superseded_by']]) {
     for (const ref of [].concat(fm[k] ?? []).filter((v) => !isNull(v))) {
       const target = siblings.find((s) => String(s.fm?.id ?? '') === String(ref))
-      if (!target) { warn(`\`${k}: ${ref}\` 가 이 폴더에 없다`, '다른 레포의 결정이면 그대로 두고, 오타면 고친다.'); continue }
+      if (!target) { warn(`\`${k}: ${ref}\` 가 이 폴더에 없다`, '다른 레포의 결정이면 그대로 두고, 오타면 고친다.', R('adr-supersede-target-missing')); continue }
       const back = [].concat(target.fm?.[other] ?? []).map(String)
-      if (!back.includes(String(fm.id))) warn(`${ref} 의 \`${other}\` 에 ${fm.id} 가 없다`, '대체 관계는 양쪽에 적어야 어느 쪽에서 읽어도 추적 관계가 이어진다.')
+      if (!back.includes(String(fm.id))) warn(`${ref} 의 \`${other}\` 에 ${fm.id} 가 없다`, '대체 관계는 양쪽에 적어야 어느 쪽에서 읽어도 추적 관계가 이어진다.', R('adr-supersede-unreciprocated'))
     }
   }
 
@@ -106,40 +107,40 @@ export function checkAdr(doc, { seam, siblings = [] }, push) {
   for (const t of SECTIONS) {
     if (found[t]) continue
     if (t === '확인과 재검토' && ['draft', 'in_review', 'rejected'].includes(status)) continue
-    err(`«${t}» 절이 없다`, `ADR 의 절은 다섯이고 지울 수 없다: ${SECTIONS.join(' · ')}`)
+    err(`«${t}» 절이 없다`, `ADR 의 절은 다섯이고 지울 수 없다: ${SECTIONS.join(' · ')}`, R('adr-section-missing'))
   }
   if (found['결정'] && !doc.hs.some((h) => h.depth === 3 && /^Non-goals$/i.test(h.title))) {
-    warn('«결정» 에 `### Non-goals` 가 없다', '정하지 않는 것을 적지 않으면 스코프 논쟁이 나중에 다시 열린다. 이 목록은 구현 에이전트 프롬프트에 그대로 실린다.')
+    warn('«결정» 에 `### Non-goals` 가 없다', '정하지 않는 것을 적지 않으면 스코프 논쟁이 나중에 다시 열린다. 이 목록은 구현 에이전트 프롬프트에 그대로 실린다.', R('adr-non-goals-missing'))
   }
 
   const alts = alternativesOf(doc)
   if (found['대안']) {
-    if (alts.length < 2) err(`대안이 ${alts.length}개다`, '합리적인 대안이 실제로 있었다는 것이 ADR 의 전제다. 선택지가 없었으면 결정이 아니라 사실이고 spec 으로 간다.')
+    if (alts.length < 2) err(`대안이 ${alts.length}개다`, '합리적인 대안이 실제로 있었다는 것이 ADR 의 전제다. 선택지가 없었으면 결정이 아니라 사실이고 spec 으로 간다.', R('adr-alternatives-too-few'))
     const chosen = alts.filter((a) => a.chosen)
     if (status === 'accepted' && chosen.length !== 1) {
-      err(`accepted 인데 «(채택)» 이 ${chosen.length}개다`, '채택안이 정확히 하나여야 이 문서가 무엇을 정했는지 기계도 사람도 읽는다.')
+      err(`accepted 인데 «(채택)» 이 ${chosen.length}개다`, '채택안이 정확히 하나여야 이 문서가 무엇을 정했는지 기계도 사람도 읽는다.', R('adr-chosen-count'))
     } else if (chosen.length > 1) {
-      err(`«(채택)» 이 ${chosen.length}개다 — ${chosen.map((c) => c.id).join(' · ')}`, '대안은 서로 배타적이다. 동시에 채택 가능하면 그건 대안이 아니라 조합이다.')
+      err(`«(채택)» 이 ${chosen.length}개다 — ${chosen.map((c) => c.id).join(' · ')}`, '대안은 서로 배타적이다. 동시에 채택 가능하면 그건 대안이 아니라 조합이다.', R('adr-chosen-count'))
     }
   }
 
   if (found['결과'] && !['draft', 'rejected'].includes(status)) {
     if (!locale().tradeoff.test(found['결과'].text)) {
-      err('«결과» 에 감수하는 제약이 없다', '얻는 것만 있는 결정은 없다. 무엇을 대가로 지불하기로 했는지 적는다 — 그 줄이 이 문서의 핵심 기록이다.')
+      err('«결과» 에 감수하는 제약이 없다', '얻는 것만 있는 결정은 없다. 무엇을 대가로 지불하기로 했는지 적는다 — 그 줄이 이 문서의 핵심 기록이다.', R('adr-tradeoff-missing'))
     }
   }
 
   const asms = [...doc.ents.values()].filter((e) => e.id.startsWith('ASM-')).map((e) => e.id)
   const rvs = [...doc.ents.values()].filter((e) => e.id.startsWith('RV-')).map((e) => e.id)
   if (asms.length && !rvs.length) {
-    warn(`전제 ${asms.length}개가 있는데 재검토 조건이 없다`, '전제가 무너지는 것이 곧 재검토 조건이다. RV-* 로 짝짓지 않으면 전제가 틀렸을 때 아무도 이 결정을 깨우지 않는다.')
+    warn(`전제 ${asms.length}개가 있는데 재검토 조건이 없다`, '전제가 무너지는 것이 곧 재검토 조건이다. RV-* 로 짝짓지 않으면 전제가 틀렸을 때 아무도 이 결정을 깨우지 않는다.', R('adr-revisit-missing'))
   }
   const declared = [].concat(fm.revisit ?? []).map(String).filter((v) => !isNull(v))
-  for (const id of declared) if (!rvs.includes(id)) warn(`\`revisit: ${id}\` 가 본문에 없다`, '«확인과 재검토» 에 `### RV-NNN — 조건` 으로 정의한다.')
-  for (const id of rvs) if (declared.length && !declared.includes(id)) warn(`${id} 가 \`revisit:\` 에 없다`, '프런트매터가 기계가 읽는 목록이다 — 빠지면 finding 이 그 조건을 못 깨운다.')
+  for (const id of declared) if (!rvs.includes(id)) warn(`\`revisit: ${id}\` 가 본문에 없다`, '«확인과 재검토» 에 `### RV-NNN — 조건` 으로 정의한다.', R('adr-revisit-undefined'))
+  for (const id of rvs) if (declared.length && !declared.includes(id)) warn(`${id} 가 \`revisit:\` 에 없다`, '프런트매터가 기계가 읽는 목록이다 — 빠지면 finding 이 그 조건을 못 깨운다.', R('adr-revisit-unlisted'))
   for (const rv of [...doc.ents.values()].filter((e) => e.id.startsWith('RV-'))) {
     if (locale().deadlineOnly.test(rv.title)) {
-      warn(`${rv.title} 이 시한으로 쓰였다`, 'RV-* 는 참·거짓이 판정되는 조건이다. «6개월 뒤 재검토» 는 아무도 판정하지 않는다.')
+      warn(`${rv.title} 이 시한으로 쓰였다`, 'RV-* 는 참·거짓이 판정되는 조건이다. «6개월 뒤 재검토» 는 아무도 판정하지 않는다.', R('adr-revisit-deadline'))
     }
   }
 
@@ -152,17 +153,17 @@ export function checkAdr(doc, { seam, siblings = [] }, push) {
   const foreign = entries.filter((e) => !e.mine)
 
   for (const r of appliesTo) {
-    if (!/^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)?$/.test(r)) err(`\`applies_to\` 의 \`${r}\` 가 레포 이름이 아니다`, '`<repo>` 나 `<owner>/<repo>` 다. 경로는 그 레포의 `.claude/adr-bindings.yml` 이 적는다.')
+    if (!/^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)?$/.test(r)) err(`\`applies_to\` 의 \`${r}\` 가 레포 이름이 아니다`, '`<repo>` 나 `<owner>/<repo>` 다. 경로는 그 레포의 `.claude/adr-bindings.yml` 이 적는다.', R('adr-applies-to-invalid'))
   }
   // `applies_to` is the opt-in to bindings. An ADR is always schema 5, so the version cannot mark
   // the boundary; the field can. An ADR that has it and still names another repository's path
   // holds the same link in two places, and the upstream copy is the one nothing checks.
   if (foreign.length && appliesTo.length) {
     err(`\`applies_to\` 를 쓰는데 \`scope\` 가 다른 레포의 경로를 짚는다 — ${foreign.map((e) => `${e.repo}:${e.path}`).join(' · ')}`,
-      '경로는 그 레포의 `.claude/adr-bindings.yml` 로 옮긴다. 여기 남기면 아무도 검사하지 않는 사본이 된다.')
+      '경로는 그 레포의 `.claude/adr-bindings.yml` 로 옮긴다. 여기 남기면 아무도 검사하지 않는 사본이 된다.', R('adr-scope-foreign-with-applies-to'))
   } else if (foreign.length && live) {
     warn(`\`scope\` 가 다른 레포의 경로를 짚는다 — ${foreign.map((e) => `${e.repo}:${e.path}`).join(' · ')}`,
-      '이 레포는 그 경로를 볼 수 없고, 경로를 바꾸는 사람은 저쪽 레포에 있다. `applies_to: [<repo>]` 로 레포만 적고, 경로와 confirms 는 그 레포의 `.claude/adr-bindings.yml` 로 옮긴다 — `pull-adr.mjs` 가 뼈대를 출력한다.')
+      '이 레포는 그 경로를 볼 수 없고, 경로를 바꾸는 사람은 저쪽 레포에 있다. `applies_to: [<repo>]` 로 레포만 적고, 경로와 confirms 는 그 레포의 `.claude/adr-bindings.yml` 로 옮긴다 — `pull-adr.mjs` 가 뼈대를 출력한다.', R('adr-scope-foreign'))
   }
   if (foreign.length && !seam?.self) {
     push('info', `\`scope\` 가 다른 레포를 짚는데 프로필에 \`repo\` 가 없다 — ${foreign.map((e) => e.repo).join(' · ')}`,
@@ -173,13 +174,13 @@ export function checkAdr(doc, { seam, siblings = [] }, push) {
   // repository's bindings, so an empty `scope` and `confirms` here is the expected shape.
   const viaBindings = appliesTo.length > 0 && !mine.length
   if (live && !scope.length && !appliesTo.length) {
-    warn('`scope` 가 비었다', '이 결정이 제약하는 코드 자리다. 비우면 task-brief 가 구현 에이전트에게 못 싣고 확인 드리프트 검사도 안 돈다 — 결정이 코드에 닿지 않는다. 코드가 다른 레포에 있으면 `applies_to` 다.')
+    warn('`scope` 가 비었다', '이 결정이 제약하는 코드 자리다. 비우면 task-brief 가 구현 에이전트에게 못 싣고 확인 드리프트 검사도 안 돈다 — 결정이 코드에 닿지 않는다. 코드가 다른 레포에 있으면 `applies_to` 다.', R('adr-scope-empty'))
   }
   if (live && !confirms.length && !viaBindings) {
-    warn('`confirms` 가 비었다', '지켜졌는지 무엇으로 판정하나. 식이나 fixture 를 옮겨 적지 말고 어느 테스트가 정본인지를 가리킨다.')
+    warn('`confirms` 가 비었다', '지켜졌는지 무엇으로 판정하나. 식이나 fixture 를 옮겨 적지 말고 어느 테스트가 정본인지를 가리킨다.', R('adr-confirms-empty'))
   }
   if (confirms.length && viaBindings) {
-    warn('`confirms` 를 이 레포에서 대조할 곳이 없다', '테스트는 코드가 있는 레포에 있다. 그 레포의 `.claude/adr-bindings.yml` 에 `confirms` 로 옮긴다.')
+    warn('`confirms` 를 이 레포에서 대조할 곳이 없다', '테스트는 코드가 있는 레포에 있다. 그 레포의 `.claude/adr-bindings.yml` 에 `confirms` 로 옮긴다.', R('adr-confirms-unplaced'))
   }
 
   // The path check stands on its own. It once ran only when `confirms` was non-empty, so an ADR
@@ -188,14 +189,14 @@ export function checkAdr(doc, { seam, siblings = [] }, push) {
     const bodies = []
     for (const e of mine) {
       const p = resolve(seam.root, e.path)
-      if (!existsSync(p)) { warn(`\`scope\` 의 \`${e.path}\` 가 없다`, '경로가 바뀌었거나 지워졌다. 결정이 제약하던 자리가 사라졌으면 이 ADR 이 아직 유효한지 본다.'); continue }
+      if (!existsSync(p)) { warn(`\`scope\` 의 \`${e.path}\` 가 없다`, '경로가 바뀌었거나 지워졌다. 결정이 제약하던 자리가 사라졌으면 이 ADR 이 아직 유효한지 본다.', R('adr-scope-missing-path')); continue }
       collect(p, bodies)
     }
     const hay = bodies.join('\n').replace(/\s+/g, '')
     if (hay) {
       for (const c of confirms) {
         if (!hay.includes(c.replace(/\s+/g, ''))) {
-          warn(`\`confirms\` 의 «${c}» 를 scope 안에서 못 찾았다`, '테스트 이름이 바뀌었거나 사라졌다. 결정이 아직 지켜지는지 확인하고, 이름만 바뀐 것이면 confirms 를 고친다.')
+          warn(`\`confirms\` 의 «${c}» 를 scope 안에서 못 찾았다`, '테스트 이름이 바뀌었거나 사라졌다. 결정이 아직 지켜지는지 확인하고, 이름만 바뀐 것이면 confirms 를 고친다.', R('adr-confirms-not-found'))
         }
       }
     }
@@ -207,10 +208,10 @@ export function checkAdr(doc, { seam, siblings = [] }, push) {
   const body = outsideCode(stripComments(doc.lines.filter((_, i) => doc.live[i]).join('\n')))
   for (const re of RESIDUE) {
     const m = re.exec(body)
-    if (m) { err(`템플릿 자국이 남았다 — \`${m[0].slice(0, 40)}\``, '안내 주석과 placeholder 를 전부 지운다.'); break }
+    if (m) { err(`템플릿 자국이 남았다 — \`${m[0].slice(0, 40)}\``, '안내 주석과 placeholder 를 전부 지운다.', R('adr-template-residue')); break }
   }
   if (/<!--/.test(doc.text) && status !== 'draft') {
-    warn('안내 주석이 남았다', '제출 전 지운다.')
+    warn('안내 주석이 남았다', '제출 전 지운다.', R('adr-comment-left'))
   }
 }
 
@@ -331,23 +332,23 @@ export function checkPins(docs, { seam }, push) {
 
   for (const d of Object.values(docs)) {
     const pins = [].concat(d.fm?.decisions ?? []).map(String).filter((v) => !isNull(v))
-    const err = (m, h) => push('error', d.name, m, h)
-    const warn = (m, h) => push('warn', d.name, m, h)
+    const err = (m, h, rule) => push('error', d.name, m, h, rule)
+    const warn = (m, h, rule) => push('warn', d.name, m, h, rule)
 
     for (const raw of pins) {
       const m = PIN.exec(raw.trim())
-      if (!m) { err(`\`decisions: ${raw}\` 를 읽을 수 없다`, '같은 레포면 `ADR-005`, 다른 레포면 `<owner>/<repo>#ADR-005@<sha>` 다.'); continue }
+      if (!m) { err(`\`decisions: ${raw}\` 를 읽을 수 없다`, '같은 레포면 `ADR-005`, 다른 레포면 `<owner>/<repo>#ADR-005@<sha>` 다.', R('decision-pin-unreadable')); continue }
       // A pin into the repository the manifest came from is checked against it. Only a pin into a
       // repository this one has no manifest for is left at the SHA-shape check.
       const { space, explicit } = ids.spaceOf(m.groups)
       const src = space ? ids[space] : null
       if (m.groups.repo && (!src || (!src.byId.has(m.groups.id) && !explicit))) {
-        if (!m.groups.sha) warn(`\`${raw}\` 에 SHA 가 없다`, '다른 레포의 결정은 움직인다. `@<sha>` 로 고정해야 나중에 무엇을 읽고 정했는지 되짚을 수 있다.')
+        if (!m.groups.sha) warn(`\`${raw}\` 에 SHA 가 없다`, '다른 레포의 결정은 움직인다. `@<sha>` 로 고정해야 나중에 무엇을 읽고 정했는지 되짚을 수 있다.', R('decision-pin-sha-missing'))
         continue
       }
       if (!src.have) continue
       const target = src.byId.get(m.groups.id)
-      if (!target) { err(`핀한 ${m.groups.id} 가 없다`, `${src.where} 에서 못 찾았다. 오타이거나, 소비 레포라면 매니페스트가 낡았다.`); continue }
+      if (!target) { err(`핀한 ${m.groups.id} 가 없다`, `${src.where} 에서 못 찾았다. 오타이거나, 소비 레포라면 매니페스트가 낡았다.`, R('decision-pin-unknown')); continue }
       const st = String(target.status ?? '')
       const history = ADR_DEAD.includes(st) ? historyOf(docs, seam) : null
       const then = history ? history.statusAt(m.groups.id, target.path) : null
@@ -361,9 +362,9 @@ export function checkPins(docs, { seam }, push) {
           : ' 세트를 닫는 변경이 아직 커밋되지 않았거나 git 이력이 얕다(CI 는 fetch-depth: 0) — 닫은 시점을 모르므로 오류로 둔다.'
         err(`핀한 ${m.groups.id} 의 상태가 \`${st}\` 다`,
           (st === 'superseded' ? `${target.superseded_by ?? '후속 ADR'} 이 대체했다. 그쪽을 읽고 이 산출물 세트가 여전히 유효한지 확인한 뒤 핀을 옮긴다.`
-                               : '효력이 없는 결정을 전제하고 있다. 이 산출물 세트가 여전히 유효한지 확인한다.') + why)
+                               : '효력이 없는 결정을 전제하고 있다. 이 산출물 세트가 여전히 유효한지 확인한다.') + why, R('pin-dead'))
       } else if (['draft', 'in_review'].includes(st)) {
-        warn(`핀한 ${m.groups.id} 가 아직 \`${st}\` 다`, '승인 안 된 결정을 전제하고 구현하면, 결정이 바뀔 때 산출물 세트 전체의 추적 관계가 어긋난다.')
+        warn(`핀한 ${m.groups.id} 가 아직 \`${st}\` 다`, '승인 안 된 결정을 전제하고 구현하면, 결정이 바뀔 때 산출물 세트 전체의 추적 관계가 어긋난다.', R('decision-pin-unaccepted'))
       }
     }
 
@@ -377,7 +378,7 @@ export function checkPins(docs, { seam }, push) {
     for (const [key, shown] of mentioned) {
       if (pinned.has(key)) continue
       warn(`본문이 ${shown} 를 부르는데 \`decisions:\` 에 없다`, '핀이 있어야 검사기가 그 결정의 상태를 본다 — 대체된 결정을 인용한 채로 도는 것을 산문만으로는 아무도 못 잡는다.' +
-        (ids.dual && !shown.includes('#') ? ` 앞에 레포가 없는 ID 는 이 레포의 ${ids.local.where} 로 읽는다 — ${ids.upRepo} 의 결정이면 \`${ids.upRepo}#${shown}\` 로 쓴다.` : ''))
+        (ids.dual && !shown.includes('#') ? ` 앞에 레포가 없는 ID 는 이 레포의 ${ids.local.where} 로 읽는다 — ${ids.upRepo} 의 결정이면 \`${ids.upRepo}#${shown}\` 로 쓴다.` : ''), R('adr-mention-unpinned'))
     }
   }
 }
@@ -434,7 +435,7 @@ export function checkTaskScope(docs, { seam }, push) {
     const isLocal = a.space === 'local'
     const pin = isLocal ? `"${a.id}"` : `"${manifest.source ?? '<owner>/<repo>'}#${a.id}@<sha>"`
     push('warn', 'plan.md', `${a.wps.join('·')} 의 files 가 ${shown(a)}(«${a.title}») 의 ${isLocal ? 'scope' : '바인딩 paths'} 를 만지는데 \`decisions:\` 에 없다`,
-      `결정을 읽고 그 안에서 설계했으면 \`decisions: [${pin}]\` 로 핀한다 — 핀이 있어야 검사기가 그 결정의 상태를 보고, 대체된 결정 위에 선 계획을 잡는다. 결정에서 벗어나는 설계면 TD-* 에 적지 말고 그 ADR 을 대체하는 새 ADR 을 먼저 쓴다.`)
+      `결정을 읽고 그 안에서 설계했으면 \`decisions: [${pin}]\` 로 핀한다 — 핀이 있어야 검사기가 그 결정의 상태를 보고, 대체된 결정 위에 선 계획을 잡는다. 결정에서 벗어나는 설계면 TD-* 에 적지 말고 그 ADR 을 대체하는 새 ADR 을 먼저 쓴다.`, R('task-adr-unpinned'))
   }
 }
 

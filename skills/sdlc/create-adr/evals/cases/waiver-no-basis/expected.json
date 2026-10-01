@@ -1,0 +1,11 @@
+{
+  "kind": "seeded · 면제",
+  "why": "waiver-applied 에서 `adr-scope-empty` 면제의 근거만 지웠다. 근거 없는 면제는 «해당하지 않는다» 와 «경고를 끄고 싶었다» 를 같은 글자로 만드므로 오류이고, 그 면제는 아무것도 지우지 않아 원래 경고가 그대로 선다. 근거가 있는 `adr-confirms-empty` 면제는 그대로 적용된다.",
+  "cmd": "clean-adr 와 같다.",
+  "check": {
+    "errors": 1, "warns": 1,
+    "matches": ["[waiver-basis-missing] `adr-scope-empty` 면제에 근거가 없다", "[adr-scope-empty] `scope` 가 비었다"],
+    "notes": ["`adr-confirms-empty` 면제 1건"]
+  },
+  "lint": { "errors": 0, "warns": 0 }
+}

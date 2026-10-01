@@ -17,6 +17,7 @@ import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { resolve, join, relative, dirname } from 'node:path'
 import { ADR_FILENAME, report } from './artifact-parse.mjs'
 import { hashOf, headOf, findUpstream, sameRepo } from './upstream.mjs'
+import { R, noteDrift } from './rules.mjs'
 
 export const ADR_DEAD = ['deprecated', 'superseded', 'rejected']
 export const MANIFEST_FILE = '.claude/adr-manifest.json'
@@ -171,31 +172,32 @@ export function collect(path, out, budget = { files: 400 }) {
 
 const appliesHere = (d, self) => !!self && [].concat(d.applies_to ?? []).some((r) => sameRepo(r, self))
 /** Every check that needs a path runs here, in the repository that holds the path.
- *  push(level, doc, msg, hint, line?) — level is error · warn · info. */
+ *  push(level, doc, msg, hint, line?, rule?) — level is error · warn · info; error and warn carry a
+ *  rule ID from rules.mjs. */
 export function checkBindings({ root, seam, from = null }, push) {
   const mrel = relative(root, seam.manifest)
   const brel = relative(root, seam.bindings)
   const loaded = readManifest(seam.manifest)
   const bindings = loadBindings(seam.bindings)
 
-  for (const p of bindings?.problems ?? []) push('error', brel, p.msg, null, p.line)
+  for (const p of bindings?.problems ?? []) push('error', brel, p.msg, null, p.line, R('bindings-parse'))
 
   if (loaded.missing) {
     push('warn', mrel, `결정 매니페스트가 없다 — ${seam.repo} 의 결정을 이 레포가 하나도 모른다`,
-      `\`node <sdlc_runtime>/tools/pull-adr.mjs\` 로 끌어와 커밋한다. 그 전까지 핀의 상태 검사, 계획의 결정 누락 검사, 구현 에이전트 주입이 전부 꺼져 있다.`)
+      `\`node <sdlc_runtime>/tools/pull-adr.mjs\` 로 끌어와 커밋한다. 그 전까지 핀의 상태 검사, 계획의 결정 누락 검사, 구현 에이전트 주입이 전부 꺼져 있다.`, undefined, R('manifest-missing'))
     return
   }
-  if (loaded.broken) { push('error', mrel, `결정 매니페스트가 깨졌다 — ${loaded.broken}`, '`pull-adr.mjs` 로 다시 만든다.'); return }
+  if (loaded.broken) { push('error', mrel, `결정 매니페스트가 깨졌다 — ${loaded.broken}`, '`pull-adr.mjs` 로 다시 만든다.', undefined, R('manifest-broken')); return }
   const manifest = loaded.manifest
   if (manifest.integrity !== manifestIntegrity(manifest.decisions)) {
     push('error', mrel, '결정 매니페스트가 `pull-adr` 가 쓴 것과 다르다',
-      `이 파일은 ${manifest.source ?? seam.repo} 의 ADR 에서 만든 사본이고 여기서는 읽기 전용이다. 결정을 고칠 일은 그쪽에서 하고 \`pull-adr.mjs\` 로 다시 끌어온다.`)
+      `이 파일은 ${manifest.source ?? seam.repo} 의 ADR 에서 만든 사본이고 여기서는 읽기 전용이다. 결정을 고칠 일은 그쪽에서 하고 \`pull-adr.mjs\` 로 다시 끌어온다.`, undefined, R('manifest-modified'))
   }
   if (manifest.source && seam.repo && !sameRepo(manifest.source, seam.repo)) {
-    push('error', mrel, `매니페스트의 출처(${manifest.source})가 프로필의 \`adr_repo\`(${seam.repo})와 다르다`, '결정이 사는 곳을 옮겼으면 다시 끌어온다.')
+    push('error', mrel, `매니페스트의 출처(${manifest.source})가 프로필의 \`adr_repo\`(${seam.repo})와 다르다`, '결정이 사는 곳을 옮겼으면 다시 끌어온다.', undefined, R('manifest-source-mismatch'))
   }
   if (bindings?.source && manifest.source && !sameRepo(bindings.source, manifest.source)) {
-    push('error', brel, `바인딩의 \`source\`(${bindings.source})가 매니페스트의 출처(${manifest.source})와 다르다`, '한 레포의 결정만 바인딩한다.')
+    push('error', brel, `바인딩의 \`source\`(${bindings.source})가 매니페스트의 출처(${manifest.source})와 다르다`, '한 레포의 결정만 바인딩한다.', undefined, R('bindings-source-mismatch'))
   }
 
   const self = seam.self
@@ -209,52 +211,52 @@ export function checkBindings({ root, seam, from = null }, push) {
   for (const d of manifest.decisions ?? []) {
     if (String(d.status ?? '') !== 'accepted' || !appliesHere(d, self) || bound[String(d.id)]) continue
     push('warn', brel, `${d.id}(«${d.title ?? ''}») 가 이 레포에 적용되는데 바인딩이 없다`,
-      `결정이 제약하는 경로를 \`bindings:\` 에 적는다 — 그래야 계획과 구현 에이전트가 그 결정을 만난다. 이 레포에 닿는 코드가 없으면 \`paths: []\` 와 \`reason:\` 으로 명시한다. \`pull-adr.mjs\` 가 뼈대를 출력한다.`)
+      `결정이 제약하는 경로를 \`bindings:\` 에 적는다 — 그래야 계획과 구현 에이전트가 그 결정을 만난다. 이 레포에 닿는 코드가 없으면 \`paths: []\` 와 \`reason:\` 으로 명시한다. \`pull-adr.mjs\` 가 뼈대를 출력한다.`, undefined, R('binding-missing'))
   }
 
   for (const b of Object.values(bound)) {
-    const err = (m, h) => push('error', brel, `${b.id} — ${m}`, h, b.line)
-    const warn = (m, h) => push('warn', brel, `${b.id} — ${m}`, h, b.line)
+    const err = (m, h, rule) => push('error', brel, `${b.id} — ${m}`, h, b.line, rule)
+    const warn = (m, h, rule) => push('warn', brel, `${b.id} — ${m}`, h, b.line, rule)
     const d = byId.get(b.id)
-    if (!d) { err(`매니페스트에 없는 결정이다`, '오타이거나 매니페스트가 낡았다. `pull-adr.mjs` 로 다시 끌어온다.'); continue }
+    if (!d) { err(`매니페스트에 없는 결정이다`, '오타이거나 매니페스트가 낡았다. `pull-adr.mjs` 로 다시 끌어온다.', R('binding-unknown-decision')); continue }
     const st = String(d.status ?? '')
     if (ADR_DEAD.includes(st)) {
       err(`결정의 상태가 \`${st}\` 다`, st === 'superseded'
         ? `${d.superseded_by ?? '후속 ADR'} 이 대체했다. 그 결정을 읽고 바인딩을 옮긴다.`
-        : '효력이 없는 결정에 코드를 묶어 두고 있다. 바인딩을 지운다.')
+        : '효력이 없는 결정에 코드를 묶어 두고 있다. 바인딩을 지운다.', R('binding-dead'))
     } else if (st !== 'accepted') {
-      warn(`결정이 아직 \`${st}\` 다`, '승인 안 된 결정에 묶인 코드는 결정이 바뀔 때 같이 흔들린다.')
+      warn(`결정이 아직 \`${st}\` 다`, '승인 안 된 결정에 묶인 코드는 결정이 바뀔 때 같이 흔들린다.', R('binding-unaccepted'))
     }
-    if (!b.at) err('`at` 이 없다', `어느 판의 결정을 읽고 묶었는지가 없으면 결정이 바뀐 것을 알 수 없다. 지금 판은 ${d.sha ? d.sha.slice(0, 7) : '(상류에서 미커밋)'} 이다.`)
-    else if (!/^[0-9a-f]{7,40}$/.test(b.at)) err(`\`at: ${b.at}\` 이 커밋 SHA 가 아니다`, '상류 ADR 파일을 마지막으로 바꾼 커밋이다. `pull-adr.mjs` 가 출력한다.')
+    if (!b.at) err('`at` 이 없다', `어느 판의 결정을 읽고 묶었는지가 없으면 결정이 바뀐 것을 알 수 없다. 지금 판은 ${d.sha ? d.sha.slice(0, 7) : '(상류에서 미커밋)'} 이다.`, R('binding-at-missing'))
+    else if (!/^[0-9a-f]{7,40}$/.test(b.at)) err(`\`at: ${b.at}\` 이 커밋 SHA 가 아니다`, '상류 ADR 파일을 마지막으로 바꾼 커밋이다. `pull-adr.mjs` 가 출력한다.', R('binding-at-invalid'))
     else if (d.sha && !d.sha.startsWith(b.at)) {
       err(`묶은 뒤 결정이 바뀌었다 — \`at: ${b.at.slice(0, 7)}\`, 지금 ${d.sha.slice(0, 7)}`,
-        `${manifest.source ?? seam.repo} 의 ${d.path ?? d.id} 를 다시 읽고, 경로와 확인이 여전히 맞으면 \`at\` 을 올린다.`)
+        `${manifest.source ?? seam.repo} 의 ${d.path ?? d.id} 를 다시 읽고, 경로와 확인이 여전히 맞으면 \`at\` 을 올린다.`, R('binding-stale'))
     } else if (!d.sha) {
-      warn('끌어올 때 상류 ADR 이 커밋되지 않아 `at` 을 대조하지 못했다', '상류에서 커밋한 뒤 다시 끌어온다.')
+      warn('끌어올 때 상류 ADR 이 커밋되지 않아 `at` 을 대조하지 못했다', '상류에서 커밋한 뒤 다시 끌어온다.', R('binding-at-unverified'))
     }
     if (self && !appliesHere(d, self)) {
-      warn(`결정의 \`applies_to\` 에 이 레포(${self})가 없다`, `이 레포를 제약하는 결정이면 ${manifest.source ?? '상류'} 에서 \`applies_to\` 에 더한다.`)
+      warn(`결정의 \`applies_to\` 에 이 레포(${self})가 없다`, `이 레포를 제약하는 결정이면 ${manifest.source ?? '상류'} 에서 \`applies_to\` 에 더한다.`, R('binding-not-applicable'))
     }
 
-    if (b.paths == null) { err('`paths` 가 없다', '결정이 제약하는 경로를 적는다. 이 레포에 닿는 코드가 없으면 `paths: []` 와 `reason:` 이다.'); continue }
+    if (b.paths == null) { err('`paths` 가 없다', '결정이 제약하는 경로를 적는다. 이 레포에 닿는 코드가 없으면 `paths: []` 와 `reason:` 이다.', R('binding-paths-missing')); continue }
     if (!b.paths.length) {
-      if (!b.reason) err('`paths: []` 인데 `reason` 이 없다', '빈 바인딩은 «이 레포는 이 결정과 무관하다» 는 선언이다. 왜 무관한지 한 줄 적는다 — 검토자가 읽는 것은 그 줄뿐이다.')
+      if (!b.reason) err('`paths: []` 인데 `reason` 이 없다', '빈 바인딩은 «이 레포는 이 결정과 무관하다» 는 선언이다. 왜 무관한지 한 줄 적는다 — 검토자가 읽는 것은 그 줄뿐이다.', R('binding-reason-missing'))
       else push('info', brel, `${b.id} — 경로 없이 묶었다: ${b.reason}`)
       continue
     }
     const bodies = []
     for (const p of b.paths) {
       const abs = resolve(root, p)
-      if (!existsSync(abs)) { warn(`\`paths\` 의 \`${p}\` 가 없다`, '경로가 바뀌었으면 같은 PR 에서 바인딩을 고친다. 결정이 제약하던 자리가 사라졌으면 그 결정이 아직 유효한지 본다.'); continue }
+      if (!existsSync(abs)) { warn(`\`paths\` 의 \`${p}\` 가 없다`, '경로가 바뀌었으면 같은 PR 에서 바인딩을 고친다. 결정이 제약하던 자리가 사라졌으면 그 결정이 아직 유효한지 본다.', R('binding-path-missing')); continue }
       collect(abs, bodies)
     }
     if (!b.confirms.length) {
-      warn('`confirms` 가 비었다', '결정이 지켜지는지 판정하는 테스트 이름을 적는다. 검사기는 `paths` 안에서 그 이름을 찾는다.')
+      warn('`confirms` 가 비었다', '결정이 지켜지는지 판정하는 테스트 이름을 적는다. 검사기는 `paths` 안에서 그 이름을 찾는다.', R('binding-confirms-empty'))
     } else if (bodies.length) {
       const hay = bodies.join('\n').replace(/\s+/g, '')
       for (const c of b.confirms) {
-        if (!hay.includes(String(c).replace(/\s+/g, ''))) warn(`\`confirms\` 의 «${c}» 를 \`paths\` 안에서 못 찾았다`, '테스트 이름이 바뀌었으면 같은 PR 에서 고친다. 지워졌으면 결정이 아직 지켜지는지 본다.')
+        if (!hay.includes(String(c).replace(/\s+/g, ''))) warn(`\`confirms\` 의 «${c}» 를 \`paths\` 안에서 못 찾았다`, '테스트 이름이 바뀌었으면 같은 PR 에서 고친다. 지워졌으면 결정이 아직 지켜지는지 본다.', R('binding-confirms-not-found'))
       }
     }
   }
@@ -274,14 +276,14 @@ export function checkBindings({ root, seam, from = null }, push) {
     ? readdirSync(resolve(upstream, dir)).map((n) => ADR_FILENAME.exec(n)).filter(Boolean).map((m) => `ADR-${m[1]}`)
     : [])
   const unseen = onDisk.filter((id) => !byId.has(id))
-  if (unseen.length) push('error', mrel, `상류에 매니페스트가 모르는 결정이 있다 — ${unseen.join(' · ')}`, '`pull-adr.mjs` 로 다시 끌어온다.')
+  if (unseen.length) push('error', mrel, `상류에 매니페스트가 모르는 결정이 있다 — ${unseen.join(' · ')}`, '`pull-adr.mjs` 로 다시 끌어온다.', undefined, R('manifest-decision-unknown'))
   for (const d of manifest.decisions ?? []) {
     if (!d.path) continue
-    if (!existsSync(resolve(upstream, d.path))) { push('error', mrel, `${d.id} 가 상류에서 사라졌다 — ${d.path}`, '`pull-adr.mjs` 로 다시 끌어온다.'); continue }
+    if (!existsSync(resolve(upstream, d.path))) { push('error', mrel, `${d.id} 가 상류에서 사라졌다 — ${d.path}`, '`pull-adr.mjs` 로 다시 끌어온다.', undefined, R('manifest-decision-gone')); continue }
     const head = headOf(upstream, d.path)
     if (head && d.sha && head !== d.sha) {
       push('error', mrel, `${d.id} 가 끌어온 뒤 상류에서 바뀌었다 — ${d.sha.slice(0, 7)} → ${head.slice(0, 7)}`,
-        '`pull-adr.mjs` 로 다시 끌어오고, 이 결정에 묶인 바인딩의 `at` 을 새 판을 읽은 뒤 올린다.')
+        '`pull-adr.mjs` 로 다시 끌어오고, 이 결정에 묶인 바인딩의 `at` 을 새 판을 읽은 뒤 올린다.', undefined, R('manifest-decision-changed'))
     }
   }
 }
@@ -297,8 +299,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   }
   const problems = []
   const notes = []
-  checkBindings({ root: ROOT, seam, from: flag('--from') }, (level, doc, msg, hint, line) =>
-    level === 'info' ? notes.push(hint ? `${msg}\n      ${hint}` : msg) : problems.push({ level, doc, msg, hint, line }))
+  checkBindings({ root: ROOT, seam, from: flag('--from') }, (level, doc, msg, hint, line, rule) =>
+    level === 'info' ? notes.push(hint ? `${msg}\n      ${hint}` : msg) : problems.push({ level, doc, rule, msg, hint, line }))
+  // No waivers here: these problems are reported against the bindings file and the manifest, which
+  // carry no frontmatter. The bindings file has its own opt-out, `paths: []` with a `reason:`.
+  noteDrift(problems, 'adr-bindings')
   process.exit(report({
     json: argv.includes('--json'),
     title: `결정 바인딩 검사 — ${seam.repo} → ${seam.self ?? '(repo 미지정)'}`,

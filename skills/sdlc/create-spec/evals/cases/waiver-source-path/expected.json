@@ -1,0 +1,9 @@
+{
+  "kind": "negative-control · 면제",
+  "why": "spec 의 관찰되는 계약이 **파일 경로 자체**인 경우다 — 운영자가 손으로 고치는 `config/search.py` 의 값이 기본 동작을 정한다. 경로를 빼면 계약이 빠지고, 두면 `source-path-in-spec` 경고가 CI(`--strict`)를 막는다. `waive:` 에 규칙 ID 와 근거를 적은 문서는 0/0 으로 서되, 면제는 노트로 매번 보고에 남아야 한다 — 노트가 없으면 면제가 경고를 조용히 지운 것과 구별되지 않는다. clean-spec 에서 FR-002 한 문장과 프런트매터의 `waive:` 만 다르다.",
+  "check": {
+    "errors": 0, "warns": 0,
+    "notes": ["spec.md — `source-path-in-spec` 면제 1건: 운영자가 손으로 고치는 설정 파일이라 그 경로가 곧 관찰되는 계약이다"]
+  },
+  "lint": { "errors": 0, "warns": 0 }
+}

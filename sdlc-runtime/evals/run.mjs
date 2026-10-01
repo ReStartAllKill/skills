@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 import { findSkillDirs } from './skills.mjs'
+import { driftInReport } from '../tools/rules.mjs'
 const TOOLS = resolve(HERE, '../tools')
 const only = process.argv[2]
 const git = (d, ...a) => execFileSync('git', ['-C', d, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
@@ -61,6 +62,11 @@ function findings(out, level) {
   return res
 }
 
+/** The report's notes, `  · …` above the findings. A waived warning leaves the counts and lives
+ *  only here, so a case that waives one must be able to say the note is there — otherwise a waiver
+ *  that silently dropped a warning and one that reported it would score the same. */
+const notesOf = (out) => strip(out).split('\n').filter((l) => /^ {2}· /.test(l)).map((l) => l.slice(4))
+
 /** Collect evaluation cases from each authoring skill's evals/cases directory. */
 const cases = findSkillDirs(HERE)
   .flatMap(({ name: skill, dir: skillDir }) => {
@@ -72,6 +78,10 @@ const cases = findSkillDirs(HERE)
   .sort((a, b) => (a.skill + a.id).localeCompare(b.skill + b.id))
 const rows = []
 let pass = 0, fail = 0
+// Every checker report a case produces is held to the rule registry: an error or warning without a
+// registered rule, or at another level, fails the case. The tools only print such drift to stderr —
+// it is our defect, and a user's save hook is the wrong place to find it.
+const audited = { reports: 0, problems: 0 }
 for (const { skill, id, dir } of cases) {
   const exp = JSON.parse(readFileSync(join(dir, 'expected.json'), 'utf8'))
   const staged = stage(dir, exp.target ?? '.')
@@ -93,10 +103,20 @@ for (const { skill, id, dir } of cases) {
     for (const m of want.matches ?? []) {
       if (![...errs, ...warns].some((f) => f.includes(m))) problems.push(`${tool}: «${m}» 을 못 잡았다`)
     }
+    for (const m of want.notes ?? []) {
+      if (!notesOf(got[tool].out).some((n) => n.includes(m))) problems.push(`${tool}: 노트에 «${m}» 이 없다`)
+    }
     for (const m of want.forbidden ?? []) {
       const hit = [...errs, ...warns].find((f) => f.includes(m))
       if (hit) problems.push(`${tool}: «${m}» 을 잡으면 안 되는데 잡았다 — ${hit}`)
     }
+  }
+  const audit = driftInReport(got.check.out)
+  if (audit) {
+    audited.reports++; audited.problems += audit.problems
+    for (const d of audit.drift) problems.push(`check: 규칙 등록부와 어긋난 지적 — ${d}`)
+  } else if (findings(got.check.out, 'error').length + findings(got.check.out, 'warn').length) {
+    problems.push('check: 지적이 있는데 검사 보고서로 읽지 못해 규칙을 대조하지 못했다 — 미검사다')
   }
   const ok = problems.length === 0
   ok ? pass++ : fail++
@@ -116,7 +136,7 @@ for (const r of rows) {
   console.log(`    ${r.id.padEnd(16)} ${r.kind.padEnd(18)} ${r.n.padEnd(26)} ${r.ok ? '통과' : '✗ 실패'}`)
   for (const p of r.problems) console.log(`        ${p}`)
 }
-console.log(`\n${pass}/${rows.length} 통과`)
+console.log(`\n${pass}/${rows.length} 통과 · 규칙 대조 — 검사 보고서 ${audited.reports}개 · 지적 ${audited.problems}건`)
 const runtimeFail = !only && !runRuntime()
 if (fail || runtimeFail) { console.log('\n기대와 다르다 — 도구가 회귀했거나 케이스가 낡았다. 어느 쪽인지 정하고 고친다.\n'); process.exit(1) }
 console.log('')

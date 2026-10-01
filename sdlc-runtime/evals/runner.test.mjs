@@ -19,6 +19,8 @@ function fixture(t, { expected = {}, check = '', lint = '', runtimeCode = 0, doc
   const evals = join(root, 'sdlc-runtime/evals')
   mkdirSync(evals, { recursive: true })
   for (const file of ['run.mjs', 'skills.mjs']) copyFileSync(join(HERE, file), join(evals, file))
+  mkdirSync(join(root, 'sdlc-runtime/tools'), { recursive: true })
+  copyFileSync(join(HERE, '../tools/rules.mjs'), join(root, 'sdlc-runtime/tools/rules.mjs'))
   put(join(evals, 'runtime-smoke.mjs'), `console.log('runtime sentinel'); process.exit(${runtimeCode})`)
   put(join(root, 'sdlc-runtime/tools/check-artifacts.mjs'), check)
   put(join(root, 'sdlc-runtime/tools/lint-prose.mjs'), lint)
@@ -69,6 +71,28 @@ test('a checker exception is not counted as success when zero errors are expecte
   assert.match(r.out, /checker crashed/)
 })
 
+test('a case can require a note, and a missing one fails it', (t) => {
+  const check = "console.log('\\n제목\\n  · ADR-001.md — `adr-scope-empty` 면제 1건: no code path\\n\\n통과')"
+  const pass = fixture(t, { expected: { check: { errors: 0, warns: 0, notes: ['`adr-scope-empty` 면제 1건: no code path'] } }, check })('sample')
+  assert.equal(pass.code, 0, pass.out)
+  const fail = fixture(t, { expected: { check: { errors: 0, warns: 0, notes: ['`adr-confirms-empty` 면제'] } }, check })('sample')
+  assert.equal(fail.code, 1, fail.out)
+  assert.match(fail.out, /노트에 «`adr-confirms-empty` 면제» 이 없다/)
+})
+
+test('a checker problem without a registered rule fails its case', (t) => {
+  const report = (line) => `console.log('산출물 추적성 검사 — sample\\n\\n⚠ 경고 1건\\n\\n  intent.md  ${line}')`
+  const expected = { check: { errors: 0, warns: 1 } }
+  for (const [line, why] of [['[made-up-rule] x', /no registered rule \(made-up-rule\)/], ['[pin-dead] x', /pin-dead is registered as error but reported as warn/], ['x', /no registered rule \(none\)/]]) {
+    const r = fixture(t, { expected, check: report(line) })('sample')
+    assert.equal(r.code, 1, r.out)
+    assert.match(r.out, why)
+  }
+  const ok = fixture(t, { expected, check: report('[adr-scope-empty] x') })('sample')
+  assert.equal(ok.code, 0, ok.out)
+  assert.match(ok.out, /규칙 대조 — 검사 보고서 1개 · 지적 1건/)
+})
+
 test('a warning-only case passes with exit code zero', (t) => {
   const r = fixture(t, {
     expected: { lint: { errors: 0, warns: 1, matches: ['warning sentinel'] } },
@@ -83,7 +107,7 @@ test('an error case fails when its exit code differs even if problem counts matc
   for (const code of [0, 1, 2]) {
     const r = fixture(t, {
       expected: { check: { errors: 1, warns: 0, matches: ['error sentinel'] } },
-      check: `console.log('✗ 오류 1건\\n  intent.md  error sentinel'); process.exit(${code})`,
+      check: `console.log('산출물 추적성 검사 — sample\\n\\n✗ 오류 1건\\n\\n  intent.md  [intent-missing] error sentinel'); process.exit(${code})`,
     })('sample')
     assert.equal(r.code, code === 1 ? 0 : 1, r.out)
   }
@@ -92,7 +116,7 @@ test('an error case fails when its exit code differs even if problem counts matc
 test('a checker terminated by signal is not accepted as the expected error exit', (t) => {
   const r = fixture(t, {
     expected: { check: { errors: 1, warns: 0 } },
-    check: "process.stdout.write('✗ 오류 1건\\n  intent.md  error sentinel\\n', () => process.kill(process.pid, 'SIGTERM'))",
+    check: "process.stdout.write('산출물 추적성 검사 — sample\\n\\n✗ 오류 1건\\n\\n  intent.md  [intent-missing] error sentinel\\n', () => process.kill(process.pid, 'SIGTERM'))",
   })('sample')
   assert.equal(r.code, 1, r.out)
   assert.match(r.out, /시그널 종료/)

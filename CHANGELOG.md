@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+### Added
+
+- **Every checker problem carries a stable rule ID, and a document can waive a warning that does
+  not apply to it — in writing, with a basis, and visible on every run.** `check-all` runs the
+  checker with `--strict`, so a warning blocks the merge; that is deliberate, but it left no way to
+  say «this rule does not apply here». A decision about a vendor or an operating policy has no
+  code path for `scope` and no test for `confirms`, so it warned twice and could never be accepted
+  in a repository whose CI runs the checker; a spec whose observable contract is a config file's
+  path warned that it named a source path. The only choices were to invent a path or a test name,
+  or to leave CI red. And `check-artifacts`, `adr-check` and `adr-bindings` problems had only
+  `level` and a Korean `msg` that consumers are told never to parse, so nothing could key on which
+  defect a problem was. Every error and warning those tools report now has a kebab-case `rule`
+  (`adr-scope-empty`, `pin-dead`, `source-path-in-spec`, …), printed as `[rule]` in the text report
+  and added to each problem in `--json`; messages and hints are unchanged. The IDs live in one
+  registry, `sdlc-runtime/tools/rules.mjs`, with each rule's level and whether it may be waived, and
+  `references/rules.md` is the table; a new test, `sdlc-runtime/evals/rules.test.mjs`, fails when a
+  call site reports an unregistered ID, when a registered ID is reported nowhere, when a call site
+  reports a rule at another level, or when the table and the registry disagree. A problem whose rule
+  is missing from the registry or registered at another level is still reported as before and only
+  noted on stderr — a slip in our bookkeeping must not fail a user's save — while the eval runner
+  and the runtime smoke harness check every checker report they read against the registry and fail
+  on it. A document waives a
+  warning with `waive: ["<rule-id> — <basis>"]` in its frontmatter, written as a block list. Only
+  rules about whether something applies are waivable — empty `scope` or `confirms`, a source path in
+  an intent or spec, a code block in an intent, a missing `### Non-goals`, a deadline-shaped `RV-*`,
+  a supersede link to another repository's ADR, a plan in a document repository; rules that protect
+  traceability or an approval, or report a check that could not run, are not, and no error is. A
+  waived warning does not fail `--strict` and is reported as a note naming the rule and the basis,
+  which `check-all` prints under a passing check; `--json` also lists it under `waived`. A waiver
+  with no basis, an unknown rule ID or a rule that cannot be waived is an error, and the original
+  problem is still reported; a waiver that matched nothing is a note, since removing a line from an
+  accepted document costs an approval. Adding a waiver to an accepted document is an edit of an
+  accepted document and goes to the approval dialog as before. The key binds at no schema version:
+  an older runtime ignores it and keeps warning. Rejected: a profile-level allow-list of rules,
+  which would silence a rule for every document to make it fit one; turning these warnings into
+  notes, which would stop CI from catching the documents they are right about; and waiving
+  `lint-prose` rules, which already have the `lint_warnings` policy. The eval runner gained a
+  `notes` match in `expected.json`, since a waived warning leaves the counts and shows only there.
+
 ### Fixed
 
 - **Every section a skill or a tool message tells you to read now exists under that name.**

@@ -17,7 +17,8 @@ node forward-eval.mjs <results.json>  # 독립 실행 결과 채점
 케이스는 해당 작성 스킬의 `evals/cases/`에 둔다. 정상 문서와 결함 문서를 같은 배치에서
 검사해 오탐과 누락을 확인한다. 번역체·메타 문장·중복 표를 의도적으로 넣은 결함 문서는 교정하지 않는다.
 
-- `expected.json`에 오류·경고 수와 기대 지적을 기록한다.
+- `expected.json`에 오류·경고 수와 기대 지적을 기록한다. 면제처럼 수에 잡히지 않고 보고서의
+  노트(`  · …`)로만 남는 결과는 `notes`에 그 문장의 일부를 적는다.
 - 종료 코드도 대조한다. 기대 오류가 있으면 1, 오류가 없으면 0이어야 한다. 경고만 있으면 0이다.
   실행 예외나 시그널 종료는 통과로 처리하지 않는다.
 - `chain-broken`은 구조 검사만, `prose-rot`·`prose-style`은 문체 검사만 실패해야 한다.
@@ -55,6 +56,8 @@ node ../tools/check-artifacts.mjs --supports-schema 4
 검사기 예외·시그널 종료·잘못된 종료 코드를 검사한다.
 `check-set.test.mjs`는 `check-set.mjs`의 병합 보고서와 종료 코드, 자기승인을 다이얼로그 전에
 막는 가드, `task-worktree.mjs finish`의 중단 지점 보고를 임시 저장소에서 검사한다.
+`rules.test.mjs`는 규칙 ID 등록부(`tools/rules.mjs`)가 도구의 호출 지점과 `references/rules.md`
+표와 일치하는지, 면제의 해석과 적용을 검사한다.
 `test_scorecard.py`는 미채점 결과와 하네스 실행 오류의 집계 거부, 정상적인 미검출과 대조군,
 점수·리포트 CLI의 실패 처리를 검사한다.
 

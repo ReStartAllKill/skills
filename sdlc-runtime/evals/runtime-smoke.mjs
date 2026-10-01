@@ -9,11 +9,28 @@ import { spawnSync } from 'node:child_process'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, '..')
 import { findSkill } from './skills.mjs'
+import { driftInReport } from '../tools/rules.mjs'
 const tool = (name) => join(ROOT, 'tools', name)
 const results = []
 
+/** Every report a case reads from a checker — text or `--json` — is held to the rule registry here,
+ *  in the one function every case runs a tool through, rather than case by case. Drift fails the
+ *  case that produced it and, collected, the whole run: a case that catches the error itself must
+ *  not swallow it. The tools only print drift to stderr; this is where it is enforced. */
+const CHECKERS = new Set(['check-artifacts.mjs', 'adr-bindings.mjs'])
+const audited = { reports: 0, problems: 0, drift: [] }
 function run(cmd, args = [], opts = {}) {
   const r = spawnSync(cmd, args, { encoding: 'utf8', ...opts })
+  if (cmd === process.execPath && CHECKERS.has(basename(String(args[0] ?? '')))) {
+    const a = driftInReport(r.stdout ?? '')
+    if (a) {
+      audited.reports++; audited.problems += a.problems
+      if (a.drift.length) {
+        audited.drift.push(...a.drift)
+        throw new Error(`${basename(args[0])} 의 보고가 규칙 등록부와 어긋난다: ${a.drift.join(' | ')}`)
+      }
+    }
+  }
   return { code: r.status ?? 1, out: (r.stdout ?? '') + (r.stderr ?? '') }
 }
 function git(dir, ...args) {
@@ -1264,6 +1281,62 @@ await test('the approval guard protects ADRs even though they live outside artif
   put(join(d, '.claude/spec-profile.yml'), `sdlc_version: 5\nsdlc_runtime: "${ROOT}"\nspec_dir: ".sdlc/specs"\n`)
   r = invoke({ tool_name: 'Write', tool_input: { file_path: adr, content: 'status: accepted\napproved_by: "agent"' } })
   assert(r.code === 0 && !asks(r), 'adr_dir 이 없는데도 ADR 경로를 붙잡았다')
+})
+
+// A waiver turns a warning off, so on an accepted decision it is a change to what was approved. The
+// guard needs no rule of its own for it — any edit of an accepted document goes to the dialog — and
+// this pins that down: if the guard ever learned to let frontmatter-only edits through, a waiver
+// could be slipped into an approved ADR with nobody asked.
+await test('adding a waiver to an accepted ADR goes to the approval dialog', () => {
+  const d = temp('sdlc-guard-waiver')
+  put(join(d, '.claude/spec-profile.yml'), `sdlc_version: 7\nsdlc_runtime: "${ROOT}"\nspec_dir: ".sdlc/specs"\nadr_dir: "docs/adr"\n`)
+  const adr = join(d, 'docs/adr/ADR-001-managed-postgres.md')
+  put(adr, '---\nartifact: adr\nid: "ADR-001"\nstatus: accepted\napproved_by: "human"\ngenerated_by: "agent"\nscope: []\nconfirms: []\n---\n\n## 결정\n\n관리형 Postgres 를 쓴다.\n')
+  const r = run(tool('guard-approval.sh'), [], { env: { ...process.env, CLAUDE_PROJECT_DIR: d }, input: JSON.stringify({
+    tool_name: 'Edit',
+    tool_input: { file_path: adr, old_string: 'confirms: []\n', new_string: 'confirms: []\nwaive:\n  - "adr-confirms-empty — a vendor choice; no test can confirm it"\n' },
+  }) })
+  assert((r.out ?? '').includes('"permissionDecision":"ask"'), `accepted ADR 에 면제를 더하는 편집이 다이얼로그 없이 통과했다:\n${r.out}`)
+})
+
+await test('check-all passes a waived ADR and prints each waiver with its basis', () => {
+  const d = temp('sdlc-waiver')
+  put(join(d, '.claude/spec-profile.yml'), `sdlc_version: 7\nsdlc_runtime: "${ROOT}"\nspec_dir: ".sdlc/specs"\nadr_dir: "docs/adr"\n`)
+  mkdirSync(join(d, '.sdlc/specs'), { recursive: true })
+  const name = 'ADR-014-reindex-batch-after-cutoff.md'
+  const waived = readFileSync(join(findSkill('create-adr', HERE), 'evals/cases/waiver-applied/docs', name), 'utf8')
+  const adr = join(d, 'docs/adr', name)
+  put(adr, waived)
+  let r = run(process.execPath, [tool('adr-index.mjs'), d])
+  assert(r.code === 0, `adr-index failed:\n${r.out}`)
+
+  const after = (out, head) => { const ls = out.split('\n'); const at = ls.findIndex((l) => l.startsWith(head)); return at < 0 ? null : ls.slice(at + 1) }
+  r = run(process.execPath, [tool('check-all.mjs'), d])
+  assert(r.code === 0, `면제한 ADR 하나뿐인 저장소에서 check-all 이 실패했다:\n${r.out}`)
+  const notes = after(r.out, '결정 기록 통과')
+  assert(notes, `결정 기록 통과 줄이 없다:\n${r.out}`)
+  assert(notes[0].includes('`adr-confirms-empty` 면제 1건: 회차 구성은 운영 기록이 판정한다') &&
+    notes[1].includes('`adr-scope-empty` 면제 1건: 제약 대상: 운영 절차, 코드 한 자리가 아니다'),
+    `통과한 결정 기록 아래에 면제와 근거가 없다 — 면제가 조용한 통과가 됐다:\n${r.out}`)
+
+  r = run(process.execPath, [tool('check-artifacts.mjs'), join(d, 'docs/adr'), '--json'])
+  const json = JSON.parse(r.out)
+  assert(json.counts.warnings === 0 && json.waived.map((w) => w.rule).join() === 'adr-confirms-empty,adr-scope-empty',
+    `--json 에 면제가 \`waived\` 로 실리지 않았다:\n${r.out}`)
+
+  // The Non-goals warning does not fire on this decision, so a waiver for it is spent on nothing:
+  // a note says so, and the check still passes — removing it from an accepted ADR costs an approval.
+  put(adr, waived.replace('waive:\n', 'waive:\n  - "adr-non-goals-missing — 범위가 좁아 정하지 않는 것이 없다"\n'))
+  r = run(process.execPath, [tool('check-all.mjs'), d])
+  assert(r.code === 0, `쓰이지 않은 면제가 check-all 을 실패시켰다:\n${r.out}`)
+  assert(r.out.includes('쓰이지 않은 면제 `adr-non-goals-missing`'), `쓰이지 않은 면제를 알리지 않았다:\n${r.out}`)
+
+  // Without the waivers the same decision fails, and every problem carries its rule ID.
+  put(adr, waived.replace(/waive:\n(?: {2}- .*\n)+/, ''))
+  r = run(process.execPath, [tool('check-artifacts.mjs'), join(d, 'docs/adr'), '--json', '--strict'])
+  const bare = JSON.parse(r.out)
+  assert(r.code === 1 && bare.problems.map((p) => p.rule).sort().join() === 'adr-confirms-empty,adr-scope-empty',
+    `면제를 지운 결정이 두 규칙 ID 로 실패하지 않았다:\n${r.out}`)
 })
 
 await test('the Bash approval guard blocks approval rewrites of artifacts and nothing else', () => {
@@ -3105,5 +3178,9 @@ for (const r of results) {
   if (r.error) console.log(`        ${r.error}`)
 }
 const failed = results.filter((r) => !r.ok).length
-console.log(`\n${results.length - failed}/${results.length} 통과\n`)
-process.exit(failed ? 1 : 0)
+console.log(`\n${results.length - failed}/${results.length} 통과 · 규칙 대조 — 검사 보고서 ${audited.reports}개 · 지적 ${audited.problems}건\n`)
+// Zero reports read would mean the parser stopped matching the report format, not that every report
+// was clean — a check that is off must not look like one that passed.
+if (!audited.reports) console.log('규칙 대조가 검사 보고서를 하나도 읽지 못했다 — 미검사다. 통과가 아니다.\n')
+if (audited.drift.length) console.log(`규칙 등록부와 어긋난 지적 ${audited.drift.length}건:\n  ${audited.drift.join('\n  ')}\n`)
+process.exit(failed || !audited.reports || audited.drift.length ? 1 : 0)

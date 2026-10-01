@@ -12,6 +12,10 @@ Global skills and the repository contract version are separate:
 - The intent, spec, and plan in one artifact set use the same version.
 - Existing artifact sets are not upgraded automatically while being edited.
 - A new error rule applies only at or above the schema version that introduced it.
+- `waive:` (rule waivers, `references/rules.md`) has no schema version. A runtime that predates it
+  ignores the key and keeps warning, which misreads nothing: the document is held to more than it
+  asked, never to less. A malformed waiver is an error only for a document that writes the key,
+  and no document written before the key existed has it.
 
 ## v7 — Lighter documents
 

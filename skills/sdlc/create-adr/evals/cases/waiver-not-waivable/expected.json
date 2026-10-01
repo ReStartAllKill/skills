@@ -1,0 +1,16 @@
+{
+  "kind": "seeded · 면제",
+  "why": "면제할 수 없는 것을 면제하려 했다 — 오류인 자기승인(`approved_by` = `generated_by`)과, 프런트매터의 `revisit:` 에서 RV-002 를 뺀 추적성 경고. 둘 다 면제 오류가 서고 원래 지적도 그대로 남는다. 면제가 승인의 무결성이나 문서 사이의 연결을 끌 수 있으면 관문이 자기선언이 된다. 적용 가능한 두 면제(`scope` · `confirms`)는 그대로 적용된다.",
+  "cmd": "clean-adr 와 같다.",
+  "check": {
+    "errors": 3, "warns": 1,
+    "matches": [
+      "[waiver-not-waivable] `self-approval` 는 면제할 수 없는 규칙이다 (오류)",
+      "[waiver-not-waivable] `adr-revisit-unlisted` 는 면제할 수 없는 규칙이다 (면제 불가 경고)",
+      "[self-approval] `approved_by` 와 `generated_by` 가 같다",
+      "[adr-revisit-unlisted] RV-002 가 `revisit:` 에 없다"
+    ],
+    "notes": ["`adr-scope-empty` 면제 1건", "`adr-confirms-empty` 면제 1건"]
+  },
+  "lint": { "errors": 0, "warns": 0 }
+}

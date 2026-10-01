@@ -52,8 +52,9 @@ revisit: ["RV-001"]
 ---
 ```
 
-- `scope` lists repository-relative code paths constrained by the decision. Agent injection and drift checks both depend on it; an empty scope disconnects the ADR from implementation. A path that no longer exists warns whether or not `confirms` is set.
-- `confirms` is the source of truth for verifying that the decision still holds. Use test names or gate commands; the checker looks for each name within `scope`.
+- `scope` lists repository-relative code paths constrained by the decision. Agent injection and drift checks both depend on it; an empty scope disconnects the ADR from implementation. A path that no longer exists warns whether or not `confirms` is set. A decision that constrains no code path — a vendor choice, an operating policy — leaves `scope` empty and waives `adr-scope-empty` with the reason, rather than naming a path it does not constrain.
+- `confirms` is the source of truth for verifying that the decision still holds. Use test names or gate commands; the checker looks for each name within `scope`. A decision no single test can confirm leaves it empty and waives `adr-confirms-empty` with the reason, rather than naming a test that does not decide it.
+- `waive` lists warnings that do not apply to this decision, one `<rule-id> — <basis>` per item in a block list. It is an opt-out, not a template field; see `references/rules.md` for which rules can be waived and how a waiver is reported.
 - `revisit` lists the `RV-*` entries in Review and revisit.
 - `applies_to` lists the repositories a decision constrains when its code lives in another repository — `applies_to: ["rwa-contracts"]`. That repository holds the paths and tests in its own bindings; see «Decisions in another repository». Repository names compare by final path component.
 
