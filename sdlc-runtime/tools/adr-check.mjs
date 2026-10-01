@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { ADR_FILENAME, idsIn, stripComments, isNull, loadAdrDir, wpFiles, frontmatter, outsideCode } from './artifact-parse.mjs'
 import { SECTION, CHOSEN, hasAlias, canonical, ADR_STATUS_ALIASES, LEGACY_STATUS_ROW } from './keywords.mjs'
 import { locale } from './locale.mjs'
-import { ADR_DEAD, adrSeam, loadManifest, loadBindings, boundForFiles, collect, touches } from './adr-bindings.mjs'
+import { ADR_DEAD, adrSeam, loadManifest, loadBindings, boundForFiles, touches, lookFor, pathPast, pastUnknown, successorGap, showGap, SEARCH_BUDGET } from './adr-bindings.mjs'
 import { sameRepo } from './upstream.mjs'
 import { R } from './rules.mjs'
 export { ADR_DEAD, adrSeam, loadManifest }
@@ -102,6 +102,20 @@ export function checkAdr(doc, { seam, siblings = [] }, push) {
       if (!back.includes(String(fm.id))) warn(`${ref} 의 \`${other}\` 에 ${fm.id} 가 없다`, '대체 관계는 양쪽에 적어야 어느 쪽에서 읽어도 추적 관계가 이어진다.', R('adr-supersede-unreciprocated'))
     }
   }
+  // Retiring a decision before its successor is accepted opens a window with nothing in force for
+  // the scope: `task-brief` injects only accepted decisions, so the implementing agent is told
+  // nothing, and a plan has nothing live to pin. The chain is followed — a successor itself
+  // superseded by an accepted decision closes the gap — and a successor in another repository is
+  // left alone, since its status cannot be read here. Not waivable: it reports a broken link
+  // between decisions, and a warning, so it gates under `--strict` as the other ADR links do.
+  if (status === 'superseded') {
+    const look = (id) => siblings.find((s) => String(s.fm?.id ?? '') === id)?.fm ?? null
+    const gap = successorGap(look, String(fm.id ?? ''), [].concat(fm.superseded_by ?? []).filter((v) => !isNull(v)))
+    if (gap) {
+      warn(`superseded 인데 후속이 효력이 없다 — ${showGap(gap, look)}`,
+        '후속이 accepted 가 될 때까지 이 결정의 scope 에 효력 있는 결정이 없다 — task-brief 는 아무 결정도 싣지 않고, 계획은 핀할 결정이 없다. 순서는 «후속을 승인하고, 그다음 선행을 superseded 로 돌린다» 다. 이미 돌렸으면 후속을 승인해 그 틈을 닫는다.', R('adr-successor-not-in-force'))
+    }
+  }
 
   const found = Object.fromEntries(SECTION_KEYS.map((k, i) => [SECTIONS[i], sectionText(doc, titleIn(doc, k))]))
   for (const t of SECTIONS) {
@@ -146,6 +160,7 @@ export function checkAdr(doc, { seam, siblings = [] }, push) {
 
   const scope = [].concat(fm.scope ?? []).map(String).filter((v) => !isNull(v))
   const confirms = [].concat(fm.confirms ?? []).map(String).filter((v) => !isNull(v))
+  const confirmsIn = [].concat(fm.confirms_in ?? []).map(String).filter((v) => !isNull(v))
   const appliesTo = [].concat(fm.applies_to ?? []).map(String).filter((v) => !isNull(v))
   const live = !['draft', 'rejected', ...ADR_DEAD].includes(status)
   const entries = scope.map((s) => scopeEntry(s, seam?.self))
@@ -185,19 +200,33 @@ export function checkAdr(doc, { seam, siblings = [] }, push) {
 
   // The path check stands on its own. It once ran only when `confirms` was non-empty, so an ADR
   // with a scope and no confirms kept pointing at a deleted directory with nothing said.
-  if (seam?.root && mine.length) {
-    const bodies = []
-    for (const e of mine) {
-      const p = resolve(seam.root, e.path)
-      if (!existsSync(p)) { warn(`\`scope\` 의 \`${e.path}\` 가 없다`, '경로가 바뀌었거나 지워졌다. 결정이 제약하던 자리가 사라졌으면 이 ADR 이 아직 유효한지 본다.', R('adr-scope-missing-path')); continue }
-      collect(p, bodies)
+  // A path absent now and never in this branch's history is where code is still to be written —
+  // the «ADR first» rule accepts the decision before the plan that creates it — so it is a note, and
+  // the note says the checks that need the path did not run. `confirms_in` names where else the
+  // confirming test is looked for; it is read by this lookup and nothing else, so a test tree named
+  // there does not widen what the decision is injected into or which plans must pin it.
+  if (seam?.root && (mine.length || confirmsIn.length)) {
+    const where = []
+    for (const [key, path] of [...mine.map((e) => ['scope', e.path]), ...confirmsIn.map((p) => ['confirms_in', p])]) {
+      const p = resolve(seam.root, path)
+      if (existsSync(p)) { where.push(p); continue }
+      const past = pathPast(seam.root, path)
+      if (past.state === 'never') {
+        // check-artifacts prints a note without its hint, so what did not run is in the message.
+        push('info', `\`${key}\` 의 \`${path}\` 가 아직 없다 — git 이력에도 없던 경로라 만들어질 자리로 읽었다. 그 경로의 검사${confirms.length ? '와 그 안의 confirms 찾기' : ''}는 돌지 않았다 — 경로가 생기면 돈다`)
+      } else if (key === 'scope') {
+        warn(`\`scope\` 의 \`${path}\` 가 없다`, '경로가 바뀌었거나 지워졌다. 결정이 제약하던 자리가 사라졌으면 이 ADR 이 아직 유효한지 본다.' + pastUnknown(past), R('adr-scope-missing-path'))
+      } else {
+        warn(`\`confirms_in\` 의 \`${path}\` 가 없다`, '테스트 자리가 옮겨졌거나 지워졌다. `confirms_in` 을 고친다.' + pastUnknown(past), R('adr-confirms-in-missing-path'))
+      }
     }
-    const hay = bodies.join('\n').replace(/\s+/g, '')
-    if (hay) {
-      for (const c of confirms) {
-        if (!hay.includes(c.replace(/\s+/g, ''))) {
-          warn(`\`confirms\` 의 «${c}» 를 scope 안에서 못 찾았다`, '테스트 이름이 바뀌었거나 사라졌다. 결정이 아직 지켜지는지 확인하고, 이름만 바뀐 것이면 confirms 를 고친다.', R('adr-confirms-not-found'))
-        }
+    const inWhat = confirmsIn.length ? 'scope · confirms_in' : 'scope'
+    const found = confirms.length && where.length ? lookFor(confirms, where) : null
+    for (const c of found?.searched ? found.missing : []) {
+      if (found.cut) {
+        warn(`\`confirms\` 의 «${c}» 를 ${inWhat} 안에서 찾다가 멈췄다 — 경로마다 파일 ${SEARCH_BUDGET}개까지만 읽는다`, '없다는 뜻이 아니다 — 다 읽지 못했다. 테스트가 있는 자리를 `confirms_in` 에 좁게 적으면 그 자리는 따로 읽는다.', R('adr-confirms-search-cut'))
+      } else {
+        warn(`\`confirms\` 의 «${c}» 를 ${inWhat} 안에서 못 찾았다`, '테스트 이름이 바뀌었거나 사라졌다. 결정이 아직 지켜지는지 확인하고, 이름만 바뀐 것이면 confirms 를 고친다. 테스트가 scope 밖에 있으면 그 자리를 `confirms_in` 에 적는다.', R('adr-confirms-not-found'))
       }
     }
   }

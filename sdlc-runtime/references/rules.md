@@ -217,6 +217,7 @@ ignores the key and keeps warning, which misreads nothing, so `waive:` has no sc
 | `adr-schema-version` | error | no | An ADR is not schema 5. |
 | `adr-supersede-target-missing` | warn | yes | `supersedes` or `superseded_by` names an ADR not in this folder. *Why it may be waived:* A decision replaced by, or replacing, one in another repository names an ID this folder cannot hold. |
 | `adr-supersede-unreciprocated` | warn | no | The other ADR does not name this one back. |
+| `adr-successor-not-in-force` | warn | no | A superseded ADR's successor chain in this folder ends at no accepted decision. |
 | `adr-section-missing` | error | no | One of the five ADR sections is missing. |
 | `adr-non-goals-missing` | warn | yes | `## Decision` has no `### Non-goals`. *Why it may be waived:* A decision narrow enough that nothing adjacent could be mistaken for it has no scope argument to pre-empt. |
 | `adr-alternatives-too-few` | error | no | Fewer than two alternatives. |
@@ -232,8 +233,10 @@ ignores the key and keeps warning, which misreads nothing, so `waive:` has no sc
 | `adr-scope-empty` | warn | yes | A live ADR has no `scope` and no `applies_to`. *Why it may be waived:* A vendor choice or an operating policy constrains how the team works, not a code path. |
 | `adr-confirms-empty` | warn | yes | A live ADR has no `confirms`. *Why it may be waived:* A decision no single test can confirm — a vendor, a process — would otherwise need an invented test name. |
 | `adr-confirms-unplaced` | warn | no | `confirms` is set on an ADR that reaches code only through `applies_to`. |
-| `adr-scope-missing-path` | warn | no | A `scope` path does not exist. |
-| `adr-confirms-not-found` | warn | no | A `confirms` name is not found under `scope`. |
+| `adr-scope-missing-path` | warn | no | A `scope` path does not exist and was there before, or history cannot tell. |
+| `adr-confirms-not-found` | warn | no | A `confirms` name is not found under `scope` or `confirms_in`. |
+| `adr-confirms-in-missing-path` | warn | no | A `confirms_in` path does not exist and was there before. |
+| `adr-confirms-search-cut` | warn | no | The `confirms` search stopped at its file budget before finding a name. |
 | `adr-template-residue` | error | no | Template placeholders remain in the ADR. |
 | `adr-comment-left` | warn | no | Template guidance comments remain in a submitted ADR. |
 
@@ -270,9 +273,11 @@ ignores the key and keeps warning, which misreads nothing, so `waive:` has no sc
 | `binding-not-applicable` | warn | no | A bound decision's `applies_to` does not name this repository. |
 | `binding-paths-missing` | error | no | A binding has no `paths`. |
 | `binding-reason-missing` | error | no | `paths: []` without a `reason`. |
-| `binding-path-missing` | warn | no | A bound path does not exist. |
+| `binding-path-missing` | warn | no | A bound path does not exist and was there before, or history cannot tell. |
 | `binding-confirms-empty` | warn | no | A binding has no `confirms`. |
-| `binding-confirms-not-found` | warn | no | A bound `confirms` name is not found under `paths`. |
+| `binding-confirms-not-found` | warn | no | A bound `confirms` name is not found under `paths` or `confirms_in`. |
+| `binding-confirms-in-missing-path` | warn | no | A binding's `confirms_in` path does not exist and was there before. |
+| `binding-confirms-search-cut` | warn | no | The bound `confirms` search stopped at its file budget before finding a name. |
 | `manifest-decision-unknown` | error | no | Upstream has decisions the manifest does not list. |
 | `manifest-decision-gone` | error | no | A manifest decision is gone upstream. |
 | `manifest-decision-changed` | error | no | A manifest decision changed upstream after it was pulled. |

@@ -52,8 +52,9 @@ revisit: ["RV-001"]
 ---
 ```
 
-- `scope` lists repository-relative code paths constrained by the decision. Agent injection and drift checks both depend on it; an empty scope disconnects the ADR from implementation. A path that no longer exists warns whether or not `confirms` is set. A decision that constrains no code path — a vendor choice, an operating policy — leaves `scope` empty and waives `adr-scope-empty` with the reason, rather than naming a path it does not constrain.
-- `confirms` is the source of truth for verifying that the decision still holds. Use test names or gate commands; the checker looks for each name within `scope`. A decision no single test can confirm leaves it empty and waives `adr-confirms-empty` with the reason, rather than naming a test that does not decide it.
+- `scope` lists repository-relative code paths constrained by the decision. Agent injection and drift checks both depend on it; an empty scope disconnects the ADR from implementation. A path that no longer exists warns whether or not `confirms` is set — when git shows a commit on the current branch that had it, which is a rename or a deletion. A path no commit on the branch ever had is code still to be written: the «ADR first» rule below accepts the decision before the plan that creates the directory, so that path is a note, and the note says the path check and the `confirms` lookup inside it did not run. The history read is HEAD's, not `--all`, so the verdict depends on the commit checked out and not on which other branches a clone fetched. Without the history to tell — not a git repository, a shallow clone (CI needs `fetch-depth: 0`), no commit yet — the warning stands and its hint says the history was unavailable. A decision that constrains no code path — a vendor choice, an operating policy — leaves `scope` empty and waives `adr-scope-empty` with the reason, rather than naming a path it does not constrain.
+- `confirms` is the source of truth for verifying that the decision still holds. Use test names or gate commands; the checker looks for each name within `scope` and `confirms_in`. A decision no single test can confirm leaves it empty and waives `adr-confirms-empty` with the reason, rather than naming a test that does not decide it. The lookup reads at most 400 files per path; when it stops there before finding a name, the warning says the search was cut short (`adr-confirms-search-cut`) rather than that the name is missing — name the test directory in `confirms_in` and it is read on its own budget.
+- `confirms_in` (optional) lists further repository-relative paths where the `confirms` names are looked for — `confirms_in: ["test/vault"]` beside `scope: ["src/vault"]`. Tests seldom sit beside the code they confirm (`src/main/java` + `src/test/java`, `pkg/x` + `tests/x`), and widening `scope` to reach them would also widen what the decision is injected into and which plan tasks must pin it. `confirms_in` changes the lookup and nothing else: not injection, not the task-scope check. A `confirms_in` path that is gone is judged like a `scope` path — never in history, a note; there before, a warning (`adr-confirms-in-missing-path`). It is not a template field.
 - `waive` lists warnings that do not apply to this decision, one `<rule-id> — <basis>` per item in a block list. It is an opt-out, not a template field; see `references/rules.md` for which rules can be waived and how a waiver is reported.
 - `revisit` lists the `RV-*` entries in Review and revisit.
 - `applies_to` lists the repositories a decision constrains when its code lives in another repository — `applies_to: ["rwa-contracts"]`. That repository holds the paths and tests in its own bindings; see «Decisions in another repository». Repository names compare by final path component.
@@ -124,7 +125,7 @@ draft → in_review ──┬─→ accepted ──┬─→ deprecated
 - `draft`, `in_review`: editable and not yet safe for code to depend on.
 - `accepted`: effective. Do not change its conclusion in place; only fix typos and links. A changed conclusion requires a new ADR and moves this one to `superseded`.
 - `deprecated`: no longer applicable and has no replacement, usually because its feature was removed. Keep it as history. The `accepted → deprecated` transition requires approval because it removes an effective constraint.
-- `superseded`: replaced by the ADR named in `superseded_by`.
+- `superseded`: replaced by the ADR named in `superseded_by`. **Accept the successor, then retire the predecessor.** Only accepted decisions are injected and pinned, so a predecessor moved to `superseded` while its successor is still `draft` or `in_review` leaves its scope with no decision in force: `task-brief` tells the implementing agent nothing, and a plan has nothing live to pin. The checker warns on the superseded ADR when its `superseded_by` chain within this folder — followed through successors that are themselves superseded, and guarded against loops — ends at no accepted decision (`adr-successor-not-in-force`, not waivable). A successor in another repository cannot be read here and is not judged.
 - `rejected`: reviewed but not adopted. Keep its number and reasoning so a reopened discussion can see why it was declined.
 
 `guard-approval.sh` blocks substantive edits to accepted ADRs. Their immutability is what makes the collection trustworthy.
@@ -157,11 +158,14 @@ bindings:
     at: "a1b2c3d4e5f6"        # the upstream commit that last changed the ADR, when it was read
     paths: ["src/vault", "src/nav"]
     confirms: ["test_Deposit_MintsAtCurrentPrice"]
+    confirms_in: ["test/vault"]
   ADR-001:
     at: "9f8e7d6c5b4a"
     paths: []
     reason: "pricing lives in the backend; nothing here computes it"
 ```
+
+  `confirms_in` is optional and means what it means on an ADR: where else the `confirms` names are looked for, without widening which tasks the binding reaches. The skeleton `pull-adr` prints leaves it out.
 
 - **The decision text arrives as a manifest.** `node <sdlc_runtime>/tools/pull-adr.mjs [--from <checkout>]` writes `.claude/adr-manifest.json` — status, `applies_to` and the digest `task-brief` injects, never a path — with an integrity hash. Commit it; never edit it. It prints a binding skeleton for every accepted decision that applies here and has none.
 
@@ -177,7 +181,9 @@ bindings:
 | Binding to a decision not in the manifest, or to one no longer in force | error |
 | `at` missing, or behind the decision's current commit | error — re-read it, then raise `at` |
 | `paths` missing, or `paths: []` without `reason` | error |
-| A path that no longer exists, a `confirms` name not found under `paths`, empty `confirms` | warn |
+| A path that no longer exists, a `confirms` name not found under `paths` and `confirms_in`, a lookup cut short at its file budget, empty `confirms` | warn |
+| A `paths` or `confirms_in` entry no commit on the branch ever had | note — the directory is still to be written; the checks that need it did not run |
+| Binding to a decision superseded by one not yet accepted | the dead-binding error, with a hint that no decision is in force until the successor is accepted upstream |
 | Upstream checkout (`SDLC_UPSTREAM`, `--from`) shows the manifest is behind | error; without a checkout, a note |
 
 The plan's task-scope check and `task-brief` match plan `files` against binding `paths`, so a rename is fixed in the PR that makes it. A pin into the manifest's repository is checked against the manifest, so `acme/docs#ADR-009@…` for a decision that does not exist is an error rather than a SHA-shape check.

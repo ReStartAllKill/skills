@@ -43,6 +43,40 @@
 
 ### Fixed
 
+- **A decision written before its code no longer turns CI red; a path a commit took away still
+  does.** `references/adr.md` tells authors to create the ADR first, but an accepted ADR whose
+  `scope` named the directory its plan would create warned «`scope` 의 … 가 없다», and `check-all`
+  runs `--strict`, so CI stayed red from acceptance until the code landed. The warning was meant
+  for a rename or a deletion. The checker now asks git: a missing `scope` path — or binding `paths`
+  entry — that no commit on the current branch ever had is a note saying the path check and the
+  `confirms` lookup inside it did not run; one that was there before keeps the warning. Only HEAD's
+  history is read, one `git log` per missing path; `--all` was rejected because it answers from
+  whichever branches a clone fetched. Not a repository, a shallow clone or no commit yet keeps the
+  warning, with a hint that the history was unavailable — missing evidence does not buy the lenient
+  reading.
+
+- **The confirming test can live outside `scope`.** `confirms` names were looked for only inside
+  `scope`, but tests seldom sit beside the code (`src/vault` + `test/vault`, `src/main/java` +
+  `src/test/java`), and widening `scope` to reach them also widened what the decision is injected
+  into and which plans must pin it. An optional `confirms_in` — on an ADR, and per binding in
+  `.claude/adr-bindings.yml` — names more paths for that lookup and changes nothing else. The lookup
+  reads at most 400 files per path, and a name it did not reach used to read as «못 찾았다»; it now
+  warns that the search was cut short (`adr-confirms-search-cut`, `binding-confirms-search-cut`).
+  Raising the budget was rejected because any number loses to a broad enough scope, and `git grep`
+  because it needs a checkout and cannot match a gate command across whitespace as the walk does.
+
+- **Retiring a decision before its successor is accepted warns.** `checkAdr` checked that
+  `superseded_by` named a sibling and that the sibling named it back, not that the sibling was in
+  force. ADR-004 moved to `superseded` with ADR-005 still `draft` passed `--strict`, while
+  `task-brief` injected no decision for that scope at all. A superseded ADR whose successor chain in
+  the folder ends at no accepted decision — followed through superseded successors, guarded against
+  loops — now warns `adr-successor-not-in-force`, not waivable, with the order «accept the
+  successor, then retire the predecessor». A successor in another repository is not judged. Across
+  repositories the binding to the retired decision was already an error; its hint no longer sends
+  the reader to move the binding onto a draft.
+
+### Fixed
+
 - **Every section a skill or a tool message tells you to read now exists under that name.**
   When the reference documents were translated to English, ten skill citations kept the old
   Korean titles — adr.md's «판정», profile.md's «커밋과 사람», the conventions' «변경이 여러 레포에

@@ -15,6 +15,7 @@
  * Usage: node adr-bindings.mjs [<repo-root>] [--from <upstream-checkout>] [--strict] [--json] */
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { resolve, join, relative, dirname } from 'node:path'
+import { execFileSync } from 'node:child_process'
 import { ADR_FILENAME, report } from './artifact-parse.mjs'
 import { hashOf, headOf, findUpstream, sameRepo } from './upstream.mjs'
 import { R, noteDrift } from './rules.mjs'
@@ -106,7 +107,7 @@ export function parseBindings(text) {
       if (!m) return bad(i + 1, `바인딩은 \`  ADR-NNN:\` 한 줄로 연다: ${body}`)
       cur = m[1]
       if (out.bindings[cur]) bad(i + 1, `${cur} 이 두 번 바인딩됐다`)
-      out.bindings[cur] = { id: cur, at: null, paths: null, confirms: [], reason: null, line: i + 1 }
+      out.bindings[cur] = { id: cur, at: null, paths: null, confirms: [], confirms_in: [], reason: null, line: i + 1 }
       return
     }
     if (!cur) return bad(i + 1, `어느 바인딩에도 속하지 않은 줄: ${body}`)
@@ -116,14 +117,14 @@ export function parseBindings(text) {
       const m = /^([A-Za-z_]\w*):\s*(.*)$/.exec(body)
       if (!m) return bad(i + 1, `\`키: 값\` 이 아니다: ${body}`)
       const [, key, v] = m
-      if (key === 'paths' || key === 'confirms') {
+      if (key === 'paths' || key === 'confirms' || key === 'confirms_in') {
         if (v.trim() === '') { out.bindings[cur][key] = []; listKey = key; return }
         if (!v.trim().startsWith('[')) return bad(i + 1, `\`${key}\` 는 목록이다: ${body}`)
         out.bindings[cur][key] = list(v)
         return
       }
       if (key === 'at' || key === 'reason') { out.bindings[cur][key] = strip(v) || null; return }
-      return bad(i + 1, `모르는 키 \`${key}\` — at · paths · confirms · reason 만 읽는다`)
+      return bad(i + 1, `모르는 키 \`${key}\` — at · paths · confirms · confirms_in · reason 만 읽는다`)
     }
     if (indent === 6 && listKey) {
       const m = /^-\s*(.*)$/.exec(body)
@@ -158,8 +159,11 @@ export function boundForFiles(manifest, bindings, files) {
     .filter((d) => (bindings.bindings[String(d.id)]?.paths ?? []).some((p) => files.some((f) => touches(p, f))))
 }
 
-export function collect(path, out, budget = { files: 400 }) {
-  if (budget.files <= 0) return
+/** Files read per searched path. `cut` is set when the walk stopped with files still unread, so a
+ *  name that was not found there can be reported as «not looked at», never as «missing». */
+export const SEARCH_BUDGET = 400
+export function collect(path, out, budget = { files: SEARCH_BUDGET }) {
+  if (budget.files <= 0) { budget.cut = true; return }
   let st
   try { st = statSync(path) } catch { return }
   if (st.isFile()) { budget.files--; try { out.push(readFileSync(path, 'utf8')) } catch {} ; return }
@@ -169,6 +173,73 @@ export function collect(path, out, budget = { files: 400 }) {
     collect(join(path, name), out, budget)
   }
 }
+
+/** Look for `confirms` names under existing absolute paths, each path with its own budget as before.
+ *  Raising the budget was rejected — any number is beaten by a broad enough scope, and the check
+ *  would still read a cut-short walk as «not found». `git grep --untracked` was rejected too: it is
+ *  fast and has no budget, but it needs a git checkout, and the whitespace-blind match a gate command
+ *  needs (`npm test -- quota`) is not a pattern it takes. So the walk stays and says when it stopped.
+ *  `searched` is false when nothing readable was found at all, which callers keep treating as before. */
+export function lookFor(names, paths) {
+  const bodies = []
+  let cut = false
+  for (const p of paths) { const budget = { files: SEARCH_BUDGET }; collect(p, bodies, budget); cut ||= !!budget.cut }
+  const hay = bodies.join('\n').replace(/\s+/g, '')
+  return { searched: !!hay, cut, missing: names.filter((c) => !hay.includes(String(c).replace(/\s+/g, ''))) }
+}
+
+/** Whether a path that is absent now was ever on this branch. The «ADR first» rule has a decision
+ *  accepted before the directory it constrains is created, and a missing-path warning then keeps CI
+ *  red until the code lands; the warning is meant for a path a rename or a deletion took away. Git
+ *  tells the two apart. The history read is HEAD's — the commits CI has checked out. `--all` was
+ *  rejected: it answers from whatever other branches a clone happened to fetch, so one commit could
+ *  be judged differently on two machines, and a path that lived only on an abandoned branch was
+ *  never part of this one. When the history cannot answer — not a repository, a shallow clone, no
+ *  commit yet — the state is `unknown` and the caller keeps the warning: missing evidence does not
+ *  buy the lenient reading. One `git rev-parse` per repository root, then one `git log` per missing
+ *  path; a path that exists costs nothing. */
+const pasts = new Map()
+const gitIn = (root, args) => {
+  try { return execFileSync('git', ['-C', root, '--literal-pathspecs', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() } catch { return null }
+}
+export function pathPast(root, rel) {
+  if (!pasts.has(root)) {
+    const shallow = gitIn(root, ['rev-parse', '--is-shallow-repository'])
+    pasts.set(root, shallow == null ? 'git 저장소가 아니다' : shallow === 'true' ? '얕은 클론이다 — CI 는 fetch-depth: 0' : null)
+  }
+  const why = pasts.get(root)
+  if (why) return { state: 'unknown', why }
+  const h = gitIn(root, ['log', '-1', '--format=%H', 'HEAD', '--', rel])
+  if (h == null) return { state: 'unknown', why: '커밋이 아직 없거나 git 이 그 경로를 읽지 못했다' }
+  return h ? { state: 'gone', commit: h } : { state: 'never' }
+}
+/** The hint tail for a missing-path warning whose history could not be read. */
+export const pastUnknown = (past) => past.state === 'unknown'
+  ? ` git 이력을 읽지 못해(${past.why}) 아직 만들지 않은 경로인지 가리지 못했다 — 그래서 경고로 둔다.` : ''
+
+/** Follow `superseded_by` from the given successors to the decision now in force. `lookup(id)` gives
+ *  `{ status, superseded_by }` or null for an ID it cannot see (another repository's), and an unseen
+ *  link says nothing either way. Returns null when some chain reaches an accepted decision or leaves
+ *  sight, else the first chain that stops short — at a decision not in force, or in a loop. */
+export function successorGap(lookup, start, refs) {
+  const walk = (id, seen) => {
+    if (seen.has(id)) return { chain: [...seen, id].slice(1), status: 'cycle' }
+    const d = lookup(id)
+    if (!d) return null
+    const st = String(d.status ?? '')
+    if (st === 'accepted') return null
+    const next = [].concat(d.superseded_by ?? []).map(String).filter((v) => v && v !== 'null')
+    const here = new Set([...seen, id])
+    if (st !== 'superseded' || !next.length) return { chain: [...here].slice(1), status: st }
+    const gaps = next.map((n) => walk(n, here))
+    return gaps.some((g) => g == null) ? null : gaps[0]
+  }
+  const gaps = refs.map((r) => walk(String(r), new Set([String(start)])))
+  return !gaps.length || gaps.some((g) => g == null) ? null : gaps[0]
+}
+/** «ADR-005(draft)», «ADR-005(superseded) → ADR-006(draft)», for a gap `successorGap` found. */
+export const showGap = (gap, lookup) => gap.chain.map((id, i) =>
+  `${id}(${i === gap.chain.length - 1 && gap.status === 'cycle' ? '순환' : lookup(id)?.status ?? '?'})`).join(' → ')
 
 const appliesHere = (d, self) => !!self && [].concat(d.applies_to ?? []).some((r) => sameRepo(r, self))
 /** Every check that needs a path runs here, in the repository that holds the path.
@@ -221,9 +292,15 @@ export function checkBindings({ root, seam, from = null }, push) {
     if (!d) { err(`매니페스트에 없는 결정이다`, '오타이거나 매니페스트가 낡았다. `pull-adr.mjs` 로 다시 끌어온다.', R('binding-unknown-decision')); continue }
     const st = String(d.status ?? '')
     if (ADR_DEAD.includes(st)) {
-      err(`결정의 상태가 \`${st}\` 다`, st === 'superseded'
-        ? `${d.superseded_by ?? '후속 ADR'} 이 대체했다. 그 결정을 읽고 바인딩을 옮긴다.`
-        : '효력이 없는 결정에 코드를 묶어 두고 있다. 바인딩을 지운다.', R('binding-dead'))
+      // A successor not yet accepted upstream leaves this path with no decision in force, and «move
+      // the binding there» would then hand it to a draft. The document repository's own check warns
+      // on the retired decision; here the hint must not send anyone to the draft as if it held.
+      const look = (id) => byId.get(id) ?? null
+      const gap = st === 'superseded' ? successorGap(look, d.id, [].concat(d.superseded_by ?? [])) : null
+      err(`결정의 상태가 \`${st}\` 다`, st !== 'superseded'
+        ? '효력이 없는 결정에 코드를 묶어 두고 있다. 바인딩을 지운다.'
+        : gap ? `${showGap(gap, look)} — 후속이 아직 효력이 없어 이 경로에 효력 있는 결정이 없다. 상류에서 후속을 승인한 뒤 다시 끌어오고 바인딩을 옮긴다.`
+        : `${d.superseded_by ?? '후속 ADR'} 이 대체했다. 그 결정을 읽고 바인딩을 옮긴다.`, R('binding-dead'))
     } else if (st !== 'accepted') {
       warn(`결정이 아직 \`${st}\` 다`, '승인 안 된 결정에 묶인 코드는 결정이 바뀔 때 같이 흔들린다.', R('binding-unaccepted'))
     }
@@ -245,18 +322,30 @@ export function checkBindings({ root, seam, from = null }, push) {
       else push('info', brel, `${b.id} — 경로 없이 묶었다: ${b.reason}`)
       continue
     }
-    const bodies = []
-    for (const p of b.paths) {
+    // `confirms_in` widens only where the confirming test is looked for. Tests rarely sit beside the
+    // code (`src/vault` + `test/vault`), and widening `paths` to reach them would also widen which
+    // tasks meet the decision and what is injected into them.
+    const where = []
+    for (const [key, p] of [...b.paths.map((x) => ['paths', x]), ...b.confirms_in.map((x) => ['confirms_in', x])]) {
       const abs = resolve(root, p)
-      if (!existsSync(abs)) { warn(`\`paths\` 의 \`${p}\` 가 없다`, '경로가 바뀌었으면 같은 PR 에서 바인딩을 고친다. 결정이 제약하던 자리가 사라졌으면 그 결정이 아직 유효한지 본다.', R('binding-path-missing')); continue }
-      collect(abs, bodies)
+      if (existsSync(abs)) { where.push(abs); continue }
+      const past = pathPast(root, p)
+      if (past.state === 'never') {
+        push('info', brel, `${b.id} — \`${key}\` 의 \`${p}\` 가 아직 없다 — git 이력에도 없던 경로라 만들어질 자리로 읽었다. 그 경로의 검사${b.confirms.length ? '와 그 안의 confirms 찾기' : ''}는 돌지 않았다 — 경로가 생기면 돈다`)
+      } else if (key === 'paths') {
+        warn(`\`paths\` 의 \`${p}\` 가 없다`, '경로가 바뀌었으면 같은 PR 에서 바인딩을 고친다. 결정이 제약하던 자리가 사라졌으면 그 결정이 아직 유효한지 본다.' + pastUnknown(past), R('binding-path-missing'))
+      } else {
+        warn(`\`confirms_in\` 의 \`${p}\` 가 없다`, '테스트 자리가 옮겨졌거나 지워졌다. 같은 PR 에서 `confirms_in` 을 고친다.' + pastUnknown(past), R('binding-confirms-in-missing-path'))
+      }
     }
+    const inWhat = b.confirms_in.length ? '`paths` · `confirms_in`' : '`paths`'
     if (!b.confirms.length) {
-      warn('`confirms` 가 비었다', '결정이 지켜지는지 판정하는 테스트 이름을 적는다. 검사기는 `paths` 안에서 그 이름을 찾는다.', R('binding-confirms-empty'))
-    } else if (bodies.length) {
-      const hay = bodies.join('\n').replace(/\s+/g, '')
-      for (const c of b.confirms) {
-        if (!hay.includes(String(c).replace(/\s+/g, ''))) warn(`\`confirms\` 의 «${c}» 를 \`paths\` 안에서 못 찾았다`, '테스트 이름이 바뀌었으면 같은 PR 에서 고친다. 지워졌으면 결정이 아직 지켜지는지 본다.', R('binding-confirms-not-found'))
+      warn('`confirms` 가 비었다', '결정이 지켜지는지 판정하는 테스트 이름을 적는다. 검사기는 `paths` 와 `confirms_in` 안에서 그 이름을 찾는다.', R('binding-confirms-empty'))
+    } else if (where.length) {
+      const found = lookFor(b.confirms, where)
+      for (const c of found.searched ? found.missing : []) {
+        if (found.cut) warn(`\`confirms\` 의 «${c}» 를 ${inWhat} 안에서 찾다가 멈췄다 — 경로마다 파일 ${SEARCH_BUDGET}개까지만 읽는다`, '없다는 뜻이 아니다 — 다 읽지 못했다. 테스트가 있는 자리를 `confirms_in` 에 좁게 적으면 그 자리는 따로 읽는다.', R('binding-confirms-search-cut'))
+        else warn(`\`confirms\` 의 «${c}» 를 ${inWhat} 안에서 못 찾았다`, '테스트 이름이 바뀌었으면 같은 PR 에서 고친다. 지워졌으면 결정이 아직 지켜지는지 본다. 테스트가 `paths` 밖에 있으면 그 자리를 `confirms_in` 에 적는다.', R('binding-confirms-not-found'))
       }
     }
   }

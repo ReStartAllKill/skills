@@ -2213,6 +2213,9 @@ await test('a repository with its own ADRs and an upstream adr_repo checks both,
 
   r = run(process.execPath, [tool('check-all.mjs'), d], { env: { ...process.env, SDLC_UPSTREAM: up } })
   assert(/결정 기록 통과/.test(r.out) && /결정 바인딩 통과/.test(r.out) && r.code === 0, `check-all did not run both decision checks:\n${r.out}`)
+  // A path a commit took away: one no commit ever had is a directory still to be written, a note.
+  put(join(d, 'src/gone/x.sol'), 'contract X {}\n'); git(d, 'add', '-A'); git(d, 'commit', '-qm', 'gone soon')
+  git(d, 'rm', '-rq', 'src/gone'); git(d, 'commit', '-qm', 'gone')
   put(join(d, '.claude/adr-bindings.yml'), bindingsYml(git(up, 'rev-parse', 'HEAD'), 'src/gone'))
   r = run(process.execPath, [tool('check-all.mjs'), d], { env: { ...process.env, SDLC_UPSTREAM: up } })
   assert(/결정 기록 통과/.test(r.out) && /결정 바인딩 실패/.test(r.out) && r.code !== 0, `a broken binding hid behind the local folder:\n${r.out}`)
@@ -2405,6 +2408,156 @@ await test('check-all prints the note of a closed set whose pin was superseded a
   assert(r.code === 0, `a set closed under a live decision failed check-all:\n${r.out}`)
   assert(/통과  \.sdlc\/specs\/s\n(\s+· [^\n]*\n)*\s+· [^\n]*끝난 세트가 핀한 ADR-001/.test(r.out), `the closed-set note never reached check-all:\n${r.out}`)
   assert(!/산출물 schema v/.test(r.out), `the per-set schema line was repeated:\n${r.out}`)
+})
+
+// ── ADR lookups that need history or reach outside `scope` ───────────────────────────────────
+function adrRepo({ init = true } = {}) {
+  const d = temp('sdlc-adr-paths')
+  put(join(d, '.claude/spec-profile.yml'), 'sdlc_version: 7\nspec_dir: ".sdlc/specs"\nadr_dir: "docs/adr"\n')
+  put(join(d, 'src/a/x.ts'), 'export const x = 1 // test_Store\n')
+  if (init) { git(d, 'init', '-q'); git(d, 'config', 'user.email', 'eval@local'); git(d, 'config', 'user.name', 'eval') }
+  return d
+}
+const adrFolderCheck = (d) => {
+  const r = run(process.execPath, [tool('check-artifacts.mjs'), join(d, 'docs/adr'), '--json'])
+  try { return { ...JSON.parse(r.out), raw: r.out } } catch { throw new Error(`check-artifacts did not print JSON:\n${r.out}`) }
+}
+const ruled = (rep, rule) => rep.problems.filter((p) => p.rule === rule)
+
+await test('a scope path no commit ever had is a note; one a commit took away, or one without history, warns', () => {
+  // «ADR first»: the decision is accepted before the plan that creates its directory.
+  const write = (d) => put(join(d, 'docs/adr/ADR-001-ledger.md'), bindAdr('ADR-001', 'ledger', 'scope: ["src/ledger"]\nconfirms: ["test_LedgerIsAppendOnly"]'))
+  let d = adrRepo()
+  write(d)
+  git(d, 'add', '-A'); git(d, 'commit', '-qm', 'decide first')
+  let rep = adrFolderCheck(d)
+  assert(rep.counts.warnings === 0 && rep.counts.errors === 0, `a decision written before its code turned CI red:\n${rep.raw}`)
+  assert(rep.notes.some((n) => /`scope` 의 `src\/ledger` 가 아직 없다.*confirms 찾기는 돌지 않았다/.test(n)), `the check that did not run went unsaid:\n${rep.raw}`)
+
+  put(join(d, 'src/ledger/ledger.ts'), 'test_LedgerIsAppendOnly\n')
+  git(d, 'add', '-A'); git(d, 'commit', '-qm', 'the code')
+  git(d, 'rm', '-rq', 'src/ledger'); git(d, 'commit', '-qm', 'delete it')
+  rep = adrFolderCheck(d)
+  const gone = ruled(rep, 'adr-scope-missing-path')
+  assert(gone.length === 1 && /바뀌었거나 지워졌다/.test(gone[0].hint) && !/이력을 읽지 못해/.test(gone[0].hint), `a deleted scope path passed as not yet written:\n${rep.raw}`)
+
+  // A shallow clone cannot tell «never» from «before the cut»; the warning stays and says why.
+  const shallow = temp('sdlc-adr-shallow')
+  git(shallow, 'clone', '-q', '--depth', '1', `file://${d}`, 'c')
+  rep = adrFolderCheck(join(shallow, 'c'))
+  assert(ruled(rep, 'adr-scope-missing-path').some((p) => /얕은 클론/.test(p.hint)), `a shallow clone read the missing path leniently:\n${rep.raw}`)
+
+  d = adrRepo({ init: false })
+  write(d)
+  rep = adrFolderCheck(d)
+  assert(ruled(rep, 'adr-scope-missing-path').some((p) => /git 이력을 읽지 못해\(git 저장소가 아니다\)/.test(p.hint)), `without history the path was not warned with the reason:\n${rep.raw}`)
+})
+
+await test('a binding to a path no commit ever had is a note', () => {
+  const up = bindUpstream(), d = bindConsumer()
+  assert(run(process.execPath, [tool('pull-adr.mjs'), d, '--from', up]).code === 0, 'pull-adr failed')
+  put(join(d, '.claude/adr-bindings.yml'), bindingsYml(git(up, 'rev-parse', 'HEAD'), 'src/ledger'))
+  const rep = bindCheck(d, up)
+  assert(rep.counts.warnings === 0 && rep.counts.errors === 0, `binding before the directory exists turned red:\n${rep.raw}`)
+  assert(rep.notes.some((n) => /ADR-001 — `paths` 의 `src\/ledger` 가 아직 없다.*confirms 찾기는 돌지 않았다/.test(n)), `the unchecked binding went unsaid:\n${rep.raw}`)
+})
+
+await test('confirms_in finds a test outside scope and widens nothing else', () => {
+  const d = adrRepo()
+  put(join(d, 'src/vault/Pool.ts'), 'export class Pool {}\n')
+  put(join(d, 'test/vault/Pool.test.ts'), 'test("test_FirstEpochAtPar", () => {})\n')
+  const adr = (extra) => put(join(d, 'docs/adr/ADR-001-pool.md'), bindAdr('ADR-001', 'pool', `scope: ["src/vault"]\nconfirms: ["test_FirstEpochAtPar"]${extra}`))
+  adr('')
+  git(d, 'add', '-A'); git(d, 'commit', '-qm', 'base')
+  let rep = adrFolderCheck(d)
+  assert(ruled(rep, 'adr-confirms-not-found').length === 1, `a test outside scope was found without confirms_in:\n${rep.raw}`)
+  adr('\nconfirms_in: ["test/vault"]')
+  rep = adrFolderCheck(d)
+  assert(rep.counts.warnings === 0 && rep.counts.errors === 0, `confirms_in did not reach the test tree:\n${rep.raw}`)
+
+  // A task on the test tree alone meets no decision: confirms_in is a lookup, not reach.
+  const set = join(d, '.sdlc/specs/s')
+  const planOn = (file) => put(join(set, 'plan.md'), closedPlan('draft', '').replace('src/a/x.ts', file))
+  planOn('test/vault/Pool.test.ts')
+  let r = run(process.execPath, [tool('check-artifacts.mjs'), set, '--json'])
+  assert(!/의 files 가 ADR-001/.test(r.out), `confirms_in pulled a test-only task into the decision's scope:\n${r.out}`)
+  r = run(process.execPath, [tool('task-brief.mjs'), set, 'WP-001'])
+  assert(!/Price at 1:1/.test(r.out), `confirms_in injected the decision into a test-only task:\n${r.out}`)
+  planOn('src/vault/Pool.ts')
+  r = run(process.execPath, [tool('check-artifacts.mjs'), set, '--json'])
+  assert(/의 files 가 ADR-001/.test(r.out), `the control task inside scope was not asked to pin:\n${r.out}`)
+})
+
+await test('a binding\'s confirms_in finds a test outside its paths', () => {
+  const up = bindUpstream(), d = bindConsumer()
+  git(d, 'mv', 'src/vault/Pool.t.sol', 'src/nav/Pool.t.sol'); git(d, 'commit', '-qm', 'tests elsewhere')
+  assert(run(process.execPath, [tool('pull-adr.mjs'), d, '--from', up]).code === 0, 'pull-adr failed')
+  const yml = bindingsYml(git(up, 'rev-parse', 'HEAD'))
+  put(join(d, '.claude/adr-bindings.yml'), yml)
+  let rep = bindCheck(d, up)
+  assert(said(rep, /«test_PoolPricesAtGenesis» 를 `paths` 안에서 못 찾았다/), `a test outside paths was found without confirms_in:\n${rep.raw}`)
+  put(join(d, '.claude/adr-bindings.yml'), yml.replace('    confirms: ["test_PoolPricesAtGenesis"]\n', '    confirms: ["test_PoolPricesAtGenesis"]\n    confirms_in:\n      - "src/nav"\n'))
+  rep = bindCheck(d, up)
+  assert(rep.counts.warnings === 0 && rep.counts.errors === 0, `confirms_in in a binding did not reach the test:\n${rep.raw}`)
+})
+
+await test('a confirms search cut short by its budget says so instead of «not found»', () => {
+  const d = adrRepo()
+  for (let i = 0; i < 405; i++) put(join(d, `src/big/f${String(i).padStart(3, '0')}.ts`), `export const v${i} = ${i}\n`)
+  put(join(d, 'docs/adr/ADR-001-big.md'), bindAdr('ADR-001', 'big', 'scope: ["src/big"]\nconfirms: ["test_Somewhere"]'))
+  let rep = adrFolderCheck(d)
+  assert(ruled(rep, 'adr-confirms-search-cut').length === 1 && !ruled(rep, 'adr-confirms-not-found').length, `a cut-short search read as a missing test:\n${rep.raw}`)
+  put(join(d, 'test/big/t.ts'), 'test_Somewhere\n')
+  put(join(d, 'docs/adr/ADR-001-big.md'), bindAdr('ADR-001', 'big', 'scope: ["src/big"]\nconfirms: ["test_Somewhere"]\nconfirms_in: ["test/big"]'))
+  rep = adrFolderCheck(d)
+  assert(rep.counts.warnings === 0, `a narrow confirms_in did not settle a broad scope:\n${rep.raw}`)
+})
+
+await test('a decision retired for a successor not in force warns, along the whole chain', () => {
+  const d = adrRepo()
+  const adr = (id, status, { by = null, sup = null } = {}) => put(join(d, `docs/adr/${id}-x${id.slice(-1)}.md`),
+    bindAdr(id, `x${id.slice(-1)}`, 'scope: ["src/a"]\nconfirms: ["test_Store"]')
+      .replace('status: accepted', `status: ${status}`)
+      .replace('approved_by: "human"', status === 'draft' ? 'approved_by: null' : 'approved_by: "human"')
+      .replace('superseded_by: null', `superseded_by: ${by ? `"${by}"` : 'null'}`)
+      .replace('supersedes: null', `supersedes: ${sup ? `"${sup}"` : 'null'}`))
+  const gap = (rep) => ruled(rep, 'adr-successor-not-in-force')
+
+  adr('ADR-001', 'superseded', { by: 'ADR-002' }); adr('ADR-002', 'draft', { sup: 'ADR-001' })
+  let rep = adrFolderCheck(d)
+  assert(gap(rep).length === 1 && gap(rep)[0].doc === 'ADR-001-x1.md' && /ADR-002\(draft\)/.test(gap(rep)[0].msg) && /후속을 승인하고, 그다음 선행을/.test(gap(rep)[0].hint),
+    `a decision retired for a draft passed:\n${rep.raw}`)
+
+  adr('ADR-002', 'accepted', { sup: 'ADR-001' })
+  rep = adrFolderCheck(d)
+  assert(!gap(rep).length, `an accepted successor still warned:\n${rep.raw}`)
+
+  adr('ADR-002', 'superseded', { sup: 'ADR-001', by: 'ADR-003' }); adr('ADR-003', 'accepted', { sup: 'ADR-002' })
+  rep = adrFolderCheck(d)
+  assert(!gap(rep).length, `a chain ending at an accepted decision warned:\n${rep.raw}`)
+
+  adr('ADR-003', 'draft', { sup: 'ADR-002' })
+  rep = adrFolderCheck(d)
+  assert(gap(rep).length === 2 && gap(rep).some((p) => /ADR-002\(superseded\) → ADR-003\(draft\)/.test(p.msg)), `a chain ending at a draft passed:\n${rep.raw}`)
+
+  rmSync(join(d, 'docs/adr/ADR-003-x3.md'))
+  adr('ADR-002', 'superseded', { sup: 'ADR-001', by: 'ADR-001' })
+  rep = adrFolderCheck(d)
+  assert(gap(rep).some((p) => /순환/.test(p.msg)), `a supersede cycle was not reported:\n${rep.raw}`)
+})
+
+await test('a binding to a decision retired for a draft says no decision is in force', () => {
+  const up = bindUpstream(), d = bindConsumer()
+  const a1 = join(up, 'docs/adr/ADR-001-vault-pricing.md')
+  put(a1, readFileSync(a1, 'utf8').replace('status: accepted', 'status: superseded').replace('superseded_by: null', 'superseded_by: "ADR-003"'))
+  put(join(up, 'docs/adr/ADR-003-vault-pricing-v2.md'), bindAdr('ADR-003', 'Vault pricing v2', 'applies_to: ["acme/contracts"]\nscope: []\nconfirms: []')
+    .replace('status: accepted', 'status: draft').replace('approved_by: "human"', 'approved_by: null').replace('supersedes: null', 'supersedes: "ADR-001"'))
+  git(up, 'add', '-A'); git(up, 'commit', '-qm', 'retire early')
+  assert(run(process.execPath, [tool('pull-adr.mjs'), d, '--from', up]).code === 0, 'pull-adr failed')
+  put(join(d, '.claude/adr-bindings.yml'), bindingsYml(git(up, 'rev-parse', 'HEAD')))
+  const rep = bindCheck(d, up)
+  const dead = rep.problems.find((p) => p.rule === 'binding-dead' && /ADR-001/.test(p.msg))
+  assert(dead && /ADR-003\(draft\)/.test(dead.hint) && /효력 있는 결정이 없다/.test(dead.hint), `the binding hint sent the reader to a draft as if it held:\n${rep.raw}`)
 })
 
 await test('Execution log ignores change-history task IDs in either language', async () => {
