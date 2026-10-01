@@ -173,16 +173,39 @@ const nearestMiss = (unlabelled, labelled) => {
   return null
 }
 
-/** `files` is the evidence exactly as before; `reason` says why there is none when a log exists. */
+/** `files` is the evidence exactly as before; `reason` says why there is none when a log exists.
+ * `rewritten` is set only when the evidence was accepted on the fallback below. */
 const verifiedBy = (task, commits) => {
   const l = newest(verifyLogs.filter((x) => !x.label && x.spec === rel(DIR) && x.command === verifyCommand))
   if (!l) return { files: [], reason: nearestMiss(verifyLogs.filter((x) => !x.label), verifyLogs.filter((x) => x.label)) }
   const c = common(task, commits, l)
-  const reason = firstFailure(l, [
+  const taskChanged = () => l.fingerprints[task.id] !== fingerprinter(l.version).task(ROOT ?? DIR, task, evidenceRef)
+  const intact = firstFailure(l, [
     c.exit, c.tasks, c.legacy, c.algorithm, c.stable,
     [() => !verifyCommand, () => nearestMiss([l], [])],
-    c.headFormat, c.headGone, c.commits, c.contains,
-    [() => l.fingerprints[task.id] !== fingerprinter(l.version).task(ROOT ?? DIR, task, evidenceRef), () => ({ code: 'task-changed',
+    c.headFormat,
+  ])
+  if (intact) return { files: [], reason: intact }
+  /* A completed set whose verified HEAD is not in the history it is read from was finished on a
+   * branch that a squash or rebase merge has since rewritten — the default merge method on many
+   * hosts. Ancestry cannot be shown and the whole-repository fingerprint cannot be expected to
+   * match, since the merge target may carry other work; without this, every such set turned CI red
+   * on main the moment it landed, curable only by verifying again after the merge. What is still
+   * provable is checked: the log above is intact, a commit attributed to the task is in this
+   * history, and the task's own files at the commit that closed the plan are byte for byte what was
+   * verified. The pass is reported as a note (see `rewrittenNote`), never silently: an ancestry
+   * check that could not run must not read as one that passed. An active plan keeps `head-gone`
+   * — its author can still verify again — and `git merge-base` failing on an object a fresh clone
+   * never fetched reads the same as «not an ancestor» in a local clone that still holds it. */
+  if (evidenceRef && c.headGone[0]()) {
+    const reason = firstFailure(l, [c.commits, [taskChanged, () => ({ code: 'rewritten-task-changed',
+      msg: `검증한 HEAD ${short(l.head)} 가 이 이력에 없고 (squash·rebase 머지로 보인다) ${task.id} 의 files 내용이나 작업 정의도 검증 때와 다르다`,
+      hint: `머지 대상이 작업 파일을 바꿨거나 머지가 충돌을 풀었다 — 검증한 것과 다른 코드다. 이 브랜치에서 ${RERUN}` })]])
+    return { files: reason ? [] : [l.file], reason, rewritten: reason ? null : l }
+  }
+  const reason = firstFailure(l, [
+    ...(evidenceRef ? [] : [c.headGone]), c.commits, c.contains,
+    [taskChanged, () => ({ code: 'task-changed',
       msg: `verify 뒤에 ${task.id} 의 files 내용이나 작업 정의가 바뀌었다`, hint: RERUN })],
     [() => !repositoryAt(l.version, evidenceRef), () => ({ code: 'repository', msg: '저장소 지문을 계산할 수 없다 — git 저장소가 아니다', hint: 'git 저장소 안에서 돌린다.' })],
     [() => l.repository !== repositoryAt(l.version, evidenceRef), () => ({ code: 'repository-changed',
@@ -233,6 +256,7 @@ const logSection = (sectionBlock(SECTION.executionLog).exec(planBody)?.[0] ?? ''
 const loggedIds = new Set(idsIn(logSection).filter((x) => x.startsWith('WP-')))
 
 const rows = []
+const rewritten = []
 for (const w of wps) {
   const files = filesOf(w)
   const present = files.filter((f) => readEvidence(resolve(ROOT ?? DIR, f)) !== null)
@@ -253,6 +277,7 @@ for (const w of wps) {
   const sentences = testsOf(w)
   const tests = testsPresent(files, sentences)
   const verdict = verifiedBy(w, commits)
+  if (verdict.rewritten) rewritten.push({ id: w.id, log: verdict.rewritten })
   const integration = integratedBy(w, commits)
   rows.push({
     id: w.id, title: w.title, done: !!w.done,
@@ -305,6 +330,20 @@ for (const r of rows) {
   if (r.files.length && r.present === 0 && r.commits.length === 0) {
     notes.push({ level: 'info', id: r.id, msg: '파일이 아직 없다 — 시작 전으로 보인다' })
   }
+}
+
+/** One note per set, not per task: every task of a set is judged against the same newest log, so
+ * per-task lines would repeat one fact. `code` lets check-all print this note, and only this one,
+ * under a passing set. A whole-repository match does not drop the note: it shows the tree is the
+ * one verified, but whether that HEAD held the task commits — the ancestry check — still did not run. */
+if (rewritten.length) {
+  const l = rewritten[0].log
+  const same = repositoryAt(l.version, evidenceRef) === l.repository
+  notes.push({ level: 'info', code: 'history-rewritten', id: 'plan.md',
+    msg: `검증한 커밋 ${short(l.head)} 가 이 이력에 없다 (squash·rebase 머지) — ${rewritten.map((r) => r.id).join(' · ')} 의 증거를 ${same ? '이력 대조 없이 지문으로' : '작업 files 지문으로만'} 받았다`,
+    hint: same
+      ? `작업 files 와 저장소 전체 지문은 검증 때와 같다. 검증한 HEAD 가 작업 커밋을 담았는지는 이력이 바뀌어 확인하지 못했다. (로그: ${l.file})`
+      : `저장소 전체 일치는 확인하지 못했다 — 머지 대상의 다른 작업이 섞여 검증한 트리와 다르다. 작업 files 밖의 코드는 이 조합으로 돌린 적이 없다: 보통 규칙보다 약한 증거다. (로그: ${l.file})` })
 }
 
 if (PLAN_SCHEMA >= TASK_EVIDENCE_SCHEMA) {

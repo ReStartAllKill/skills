@@ -4,6 +4,24 @@
 
 ### Fixed
 
+- **A completed set no longer fails CI on main after a squash merge or a rebase merge.**
+  For a completed plan, a verify log counted only if its HEAD was an ancestor of the commit that
+  closed the plan, contained every task commit, and the whole-repository fingerprint at that commit
+  matched. Squash and rebase merges, the default on many hosts, rewrite every commit of the branch,
+  so all three failed on main the moment a finished set landed — «검증한 HEAD 가 지금 이력에 없다»
+  — and only verifying again after the merge cured it. Now, for a committed completed plan whose
+  log HEAD is not in that history, `plan-progress` checks what can still be shown: the log is intact
+  and passing, a commit attributed to the task (including the squash-joined trailer) is in the
+  history, and the task-file fingerprint recomputed at the closing commit, with the log's algorithm,
+  equals the recorded one. The set then passes with one info note, `history-rewritten`, which says
+  the history check did not run and whether the whole-repository fingerprint matched; `check-all`
+  now runs `plan-progress` in `--json` and prints this note, and only this one of its info notes,
+  under the pass line. A main that changed a task file, or a merge that resolved a conflict in one,
+  still fails, with a reason, `rewritten-task-changed`, naming both causes. An active plan keeps
+  `head-gone`, and scoped logs are unchanged. Rejected: a profile switch that accepts squashed sets
+  silently, because a check that did not run must not read as one that passed; and dropping the note
+  when the whole repository matches, because the ancestry of the verified HEAD is still unshown.
+
 - **Checking a completed set no longer costs time in proportion to the size of the repository.**
   The repository fingerprint hashed every file through the task fingerprint, which at a commit ran
   `git ls-tree` and `git cat-file` once per file. `plan-progress` recomputes it at a commit for

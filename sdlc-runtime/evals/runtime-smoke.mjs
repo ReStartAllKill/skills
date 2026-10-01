@@ -2045,6 +2045,134 @@ status: in_progress
   assert(/최신 verify 로그가 완료 증거가 못 된다 — verify 뒤에 저장소가 바뀌었다/.test(r.out), `plan-progress 텍스트 보고에 이유가 없다:\n${r.out}`)
 })
 
+// ── A completed set merged by squash or rebase ───────────────────────────────────────────────
+// The branch's commits are not in main's history afterwards, so the verified HEAD cannot be shown
+// to be an ancestor and the whole tree may carry other work. Every case checks a fresh
+// `--single-branch` clone, where the old HEAD object does not exist at all, as CI sees it.
+const QUOTA = 'specs/2026-09-06-store-quota'
+function finishedBranch() {
+  const d = temp('sdlc-merged')
+  cpSync(join(ROOT, '..', 'skills/sdlc/create-plan/evals/cases/adr-scope-pinned/docs'), d, { recursive: true })
+  rmSync(join(d, 'adr'), { recursive: true })
+  const spec = join(d, QUOTA)
+  const edit = (f, a, b) => { const t = readFileSync(join(spec, f), 'utf8'); assert(t.includes(a), `fixture lost «${a}»`); writeFileSync(join(spec, f), t.replace(a, b)) }
+  put(join(d, '.claude/spec-profile.yml'), 'sdlc_version: 7\nspec_dir: "specs"\nverify: "true"\n')
+  git(d, 'init', '-q', '-b', 'main'); git(d, 'config', 'user.email', 'eval@local'); git(d, 'config', 'user.name', 'eval')
+  edit('intent.md', 'decisions: ["ADR-004"]\n', '')
+  edit('spec.md', '@INTENT_SHA@', run(process.execPath, [tool('pin.mjs'), join(spec, 'intent.md')]).out.trim())
+  edit('plan.md', '@SPEC_SHA@', run(process.execPath, [tool('pin.mjs'), join(spec, 'spec.md')]).out.trim())
+  git(d, 'add', '-A'); git(d, 'commit', '-qm', 'base')
+  git(d, 'checkout', '-qb', 'feat/store-quota')   // task-worktree --main wants the set's own branch
+  edit('plan.md', 'status: accepted', 'status: in_progress'); git(d, 'commit', '-qam', 'start')
+  appendFileSync(join(d, 'src/storage/quota.test.ts'), 'it("업로드 시작 요청이 오면 시스템은 응답에 남은 용량을 바이트로 싣는다", () => {})\nit("남은 용량이 0 이면 시스템은 업로드 시작을 거부한다", () => {})\n')
+  appendFileSync(join(d, 'src/storage/quota.ts'), 'export const remaining = () => 1\n')
+  const step = (t, ...a) => { const r = run(process.execPath, [tool(t), spec, ...a], { cwd: d }); assert(r.code === 0, `${t} ${a.join(' ')}:\n${r.out}`) }
+  step('task-worktree.mjs', 'commit', 'WP-001', '-m', 'feat(storage): read remaining quota', '--main')
+  return { d, spec, edit, step }
+}
+const completedBranch = (() => {
+  let base = null
+  return () => {
+    if (!base) {
+      const b = finishedBranch()
+      b.step('verify-run.mjs', '--level', '1', '--tasks', 'WP-001', '--', 'true')
+      b.step('plan-check.mjs', 'mark', 'WP-001', '--note', '없음')
+      b.step('plan-check.mjs', 'commit', '--level', '1')
+      b.edit('plan.md', 'status: in_progress', 'status: completed'); git(b.d, 'commit', '-qam', 'complete')
+      base = b.d
+    }
+    const d = temp('sdlc-merged-copy')
+    cpSync(base, d, { recursive: true })
+    return d
+  }
+})()
+const onMain = (d) => {
+  const c = join(temp('sdlc-merged-clone'), 'c')
+  git(dirname(c), 'clone', '-q', '--branch', 'main', '--single-branch', `file://${d}`, 'c')
+  const progress = JSON.parse(run(process.execPath, [tool('plan-progress.mjs'), join(c, QUOTA), '--strict', '--json']).out)
+  const all = run(process.execPath, [tool('check-all.mjs'), c])
+  return { row: progress.rows[0], notes: progress.notes, all, raw: JSON.stringify(progress.notes) + '\n' + all.out }
+}
+const squashOnto = (d, before = () => {}) => {
+  git(d, 'checkout', '-q', 'main'); before()
+  run('git', ['-C', d, 'merge', '-q', '--squash', 'feat/store-quota'])
+  return d
+}
+/** A forced rebase within the same second as the commits it replays reproduces their SHAs exactly
+ * and rewrites nothing; a later committer date makes it a rewrite, as a host's rebase merge is. */
+const rewrite = (d) => {
+  const r = run('git', ['-C', d, 'rebase', '-q', '--force-rebase', 'main'], { env: { ...process.env, GIT_COMMITTER_DATE: '2030-01-01T00:00:00Z' } })
+  assert(r.code === 0, r.out)
+}
+const rewrittenNote = (r) => r.notes.filter((n) => n.code === 'history-rewritten')
+const noteInCheckAll = (r) => /통과  specs\/2026-09-06-store-quota\n(\s+· [^\n]*\n|\s{6}[^\n]*\n)*\s+· [^\n]*이력에 없다 \(squash·rebase 머지\)/.test(r.all.out)
+
+await test('a completed set merged with a merge commit passes on a fresh clone of main, with no note', () => {
+  const d = completedBranch()
+  git(d, 'checkout', '-q', 'main'); git(d, 'merge', '-q', '--no-ff', 'feat/store-quota', '-m', 'Merge feat/store-quota')
+  const r = onMain(d)
+  assert(r.row.verified.length === 1 && r.all.code === 0, r.raw)
+  assert(!rewrittenNote(r).length && !/이력에 없다/.test(r.all.out), `a merge commit carried the rewritten-history note:\n${r.raw}`)
+})
+
+await test('a completed set squash-merged onto an unmoved main passes with a note naming what was not checked', () => {
+  const d = squashOnto(completedBranch())
+  git(d, 'commit', '-qm', 'feat(storage): read remaining quota (#12)', '-m', git(d, 'log', '--format=%B', 'main..feat/store-quota'))
+  const r = onMain(d)
+  assert(r.row.verified.length === 1 && r.row.unverified === null && r.all.code === 0, `a squash-merged set failed on main:\n${r.raw}`)
+  const n = rewrittenNote(r)
+  assert(n.length === 1 && n[0].level === 'info' && /WP-001/.test(n[0].msg) && /저장소 전체 지문은 검증 때와 같다/.test(n[0].hint), `note missing or wrong:\n${r.raw}`)
+  assert(noteInCheckAll(r), `check-all printed the pass without the note:\n${r.all.out}`)
+})
+
+await test('a completed set squash-merged onto a main that moved in another file passes with the weaker note', () => {
+  const d = completedBranch()
+  squashOnto(d, () => { put(join(d, 'NOTES.txt'), 'unrelated\n'); git(d, 'add', 'NOTES.txt'); git(d, 'commit', '-qm', 'docs: unrelated') })
+  git(d, 'commit', '-qm', 'feat(storage): read remaining quota (#12)', '-m', git(d, 'log', '--format=%B', 'main..feat/store-quota'))
+  const r = onMain(d)
+  assert(r.row.verified.length === 1 && r.all.code === 0, `a squash onto a moved main failed:\n${r.raw}`)
+  const n = rewrittenNote(r)
+  assert(n.length === 1 && /작업 files 지문으로만/.test(n[0].msg) && /저장소 전체 일치는 확인하지 못했다/.test(n[0].hint) && /약한 증거/.test(n[0].hint), `the weaker pass did not say so:\n${r.raw}`)
+  assert(noteInCheckAll(r), `check-all printed the pass without the note:\n${r.all.out}`)
+})
+
+await test('a completed set squash-merged onto a main that changed a task file warns, naming both causes', () => {
+  const d = completedBranch()
+  git(d, 'checkout', '-q', 'main')
+  put(join(d, 'src/storage/quota.ts'), 'export const quotaOf = (workspace: string) => 42\n'); git(d, 'commit', '-qam', 'fix: quota on main')
+  run('git', ['-C', d, 'merge', '-q', '--squash', 'feat/store-quota'])
+  // The squash resolves the conflict keeping both sides: not the file that was verified.
+  put(join(d, 'src/storage/quota.ts'), 'export const quotaOf = (workspace: string) => 42\nexport const remaining = () => 1\n')
+  git(d, 'add', '-A'); git(d, 'commit', '-qm', 'feat(storage): read remaining quota (#12)', '-m', git(d, 'log', '--format=%B', 'main..feat/store-quota'))
+  const r = onMain(d)
+  assert(r.row.verified.length === 0 && r.row.unverified?.code === 'rewritten-task-changed', `a changed task file was accepted:\n${r.raw}`)
+  assert(/이력에 없고/.test(r.row.unverified.msg) && /files 내용/.test(r.row.unverified.msg) && /이 브랜치에서/.test(r.row.unverified.hint), JSON.stringify(r.row.unverified))
+  assert(r.all.code !== 0 && /체크됐는데 합류점 verify 기록이 증거가 못 된다/.test(r.all.out) && !rewrittenNote(r).length, r.raw)
+})
+
+await test('a completed set rebase-merged passes with the note, and an identical tree still keeps it', () => {
+  let d = completedBranch()
+  git(d, 'checkout', '-q', 'main'); put(join(d, 'NOTES.txt'), 'unrelated\n'); git(d, 'add', 'NOTES.txt'); git(d, 'commit', '-qm', 'docs: unrelated')
+  git(d, 'checkout', '-q', 'feat/store-quota'); git(d, 'rebase', '-q', 'main'); git(d, 'checkout', '-q', 'main'); git(d, 'merge', '-q', '--ff-only', 'feat/store-quota')
+  let r = onMain(d)
+  assert(r.row.verified.length === 1 && r.all.code === 0, `a rebase-merged set failed on main:\n${r.raw}`)
+  assert(rewrittenNote(r).length === 1 && /저장소 전체 일치는 확인하지 못했다/.test(rewrittenNote(r)[0].hint) && noteInCheckAll(r), r.raw)
+  // A host's «rebase and merge» rewrites every commit even when main has not moved: the tree is the
+  // verified one, yet the ancestry check still could not run, so the note stays and says which.
+  d = completedBranch()
+  git(d, 'checkout', '-q', 'feat/store-quota'); rewrite(d); git(d, 'checkout', '-q', 'main'); git(d, 'merge', '-q', '--ff-only', 'feat/store-quota')
+  r = onMain(d)
+  assert(r.row.verified.length === 1 && rewrittenNote(r).length === 1 && /저장소 전체 지문은 검증 때와 같다/.test(rewrittenNote(r)[0].hint), r.raw)
+})
+
+await test('an in-progress plan whose verified HEAD a rebase rewrote keeps head-gone', () => {
+  const b = finishedBranch()
+  b.step('verify-run.mjs', '--level', '1', '--tasks', 'WP-001', '--', 'true')
+  rewrite(b.d)
+  const progress = JSON.parse(run(process.execPath, [tool('plan-progress.mjs'), b.spec, '--json']).out)
+  assert(progress.rows[0].unverified?.code === 'head-gone' && !progress.notes.some((n) => n.code === 'history-rewritten'), JSON.stringify(progress.rows[0].unverified))
+})
+
 await test('the v2 fingerprint of a working tree equals that of its commit, and only a real change moves it', () => {
   // verify-run fingerprints the working tree; plan-progress recomputes a completed set from its
   // commit. The two must agree for an unchanged tree, including for content git rewrites on the way

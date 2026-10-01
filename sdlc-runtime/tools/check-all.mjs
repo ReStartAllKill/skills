@@ -114,12 +114,16 @@ for (const dir of chains) {
     if (advisory) for (const p of r.report.problems.filter((p) => p.level === 'warn')) console.log(`⚠ ${rel}/${p.doc}:${p.line ?? 0} [${p.rule}] ${p.msg}`)
     notes.push(...r.notes)
   }
-  // plan-progress stays in text mode: under `--strict` any warning or error fails it, so a passing
-  // run carries only info-level notes — routine progress hints that would flood CI on every set.
+  // Under `--strict` a passing plan-progress carries only info-level notes, and nearly all of them
+  // are routine progress hints that would flood CI on every set, so they stay unprinted. The one
+  // exception is a completed set accepted on its task-file fingerprints because a squash or rebase
+  // merge rewrote the history it was verified on: that pass is weaker than the normal rule, and
+  // printing nothing would make the ancestry and whole-repository checks it skipped read as passed.
   const planPath = join(dir, 'plan.md')
   if (existsSync(planPath) && schemaVersion(frontmatter(readFileSync(planPath, 'utf8')) ?? {}) >= 4) {
-    try { run(process.execPath, [tool('plan-progress.mjs'), dir, '--strict'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) }
-    catch (e) { ok = false; out.push((e.stdout ?? '') + (e.stderr ?? '')) }
+    const r = runChecked('plan-progress.mjs', [dir, '--strict'])
+    if (!r.ok) { ok = false; out.push(r.out) }
+    else notes.push(...r.report.notes.filter((n) => n.code === 'history-rewritten').map((n) => `${n.msg}\n${n.hint}`))
   }
   console.log(`${ok ? '통과' : '실패'}  ${rel}`)
   showNotes(notes)
