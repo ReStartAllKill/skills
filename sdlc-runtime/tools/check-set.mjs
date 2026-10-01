@@ -71,5 +71,5 @@ process.exit(report({
   notes,
   problems,
   strict: STRICT || lintPolicy === 'error',
-  ruleDoc: '`conventions.md` 의 «티어» · «ID 접두» · «상태와 승인» · «산출물 문법» 절과 `references/prose.md` 에 있다. 둘이 어긋나면 check-artifacts.mjs 가 정본이다.',
+  ruleDoc: '`conventions.md` 의 «Tiers» · «ID prefixes» · «States and approval» · «Artifact syntax» 절과 `references/prose.md` 에 있다. 둘이 어긋나면 check-artifacts.mjs 가 정본이다.',
 }))

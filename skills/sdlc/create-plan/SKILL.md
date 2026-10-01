@@ -16,7 +16,7 @@ description: '승인된 spec.md를 바탕으로 구현 계획과 작업 목록�
 
 0. 프로필에 `upstream_repo`가 있으면 먼저 승인된 상류 문서를 끌어온다 —
    `node <sdlc_runtime>/tools/pull-spec.mjs <산출물 디렉터리>`. 사본과 `upstream.lock.json`을 함께
-   커밋한다. 사본은 읽기 전용이다(규약 「변경이 여러 레포에 걸치면」).
+   커밋한다. 사본은 읽기 전용이다(규약 「Changes spanning multiple repositories」).
 1. intent·spec을 읽고 위험 등급(`tier`)을 상속한다. 프로필의 검증 명령과 `extra_gates`를 확인한다.
    상류에서 온 spec이면 **`scope`가 이 레포인 수용 기준만** 이 계획의 몫이다. 남의 몫을 `covers`에
    적으면 검사기가 막는다.
@@ -37,7 +37,7 @@ description: '승인된 spec.md를 바탕으로 구현 계획과 작업 목록�
    커밋되지 않아도 된다. v7 미만이면 명세 디렉터리에서 `git log -1 --format=%h -- spec.md`를
    실행하고, 커밋이 없으면 버전 값을 만들지 말고 상위 문서를 먼저 커밋한다.
 6. `TD-*`에는 이번 변경의 구현 방법을 기록한다. 변경 이후에도 유지할 아키텍처 결정은
-   `<sdlc_runtime>/references/adr.md`의 「판정」 기준에 따라 `/create-adr`로 작성한다.
+   `<sdlc_runtime>/references/adr.md`의 「What qualifies as an ADR」 기준에 따라 `/create-adr`로 작성한다.
    버전을 고정해 참조한 ADR은 `task-brief`가 구현 에이전트에게 전달한다.
    **작업의 `files` 가 승인된 ADR 의 `scope` 에 들어가면 그 ADR 을 읽고 `decisions:` 에 핀한다.** 결정이
    다른 레포(`adr_repo`)에 있으면 `scope` 대신 이 레포의 `.claude/adr-bindings.yml` 의 `paths` 로 겹침을

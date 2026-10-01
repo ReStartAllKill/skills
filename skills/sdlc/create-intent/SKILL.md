@@ -23,7 +23,7 @@ description: '변경의 목적·목표·범위를 intent.md로 작성한다. 구
 3. 규약의 기준으로 위험 등급(`tier`)을 정하고 근거를 한 줄로 보고한다.
 4. `assets/<lang>/intent-template.md`를 사용해 `<spec_dir>/<YYYY-MM-DD>-<slug>/intent.md`에 쓴다.
    `OUT-*`에는 관찰 가능한 결과와 `확인:` 방법을 적는다. Must 결과는 후속 명세의 요구사항과 연결한다.
-5. 되돌리기 어려운 결정은 `<sdlc_runtime>/references/adr.md`의 「판정」 기준에 따라 ADR로 관리한다.
+5. 되돌리기 어려운 결정은 `<sdlc_runtime>/references/adr.md`의 「What qualifies as an ADR」 기준에 따라 ADR로 관리한다.
    기존 ADR을 `decisions:`에 버전을 고정해 참조한다. ADR이 없으면 `/create-adr`로 먼저 작성하고
    이 단계는 중단한다.
 6. 공통 절차에 따라 검사하고 승인을 처리한다. 다음 단계는 `/create-spec <경로>`다.

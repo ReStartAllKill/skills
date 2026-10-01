@@ -20,7 +20,7 @@ description: '되돌리기 어려운 아키텍처 결정을 ADR로 기록한다.
 
 ## 1. 대상 결정과 기존 기록 확인
 
-`<sdlc_runtime>/references/adr.md`의 「판정」 기준에 해당하지 않으면 여기서 중단하고 plan의 `TD-*` 또는
+`<sdlc_runtime>/references/adr.md`의 「What qualifies as an ADR」 기준에 해당하지 않으면 여기서 중단하고 plan의 `TD-*` 또는
 PR 본문에 기록하도록 안내한다. 결정 전에도 대안을 정리한 `draft`를 작성할 수 있으며,
 채택안은 승인 시 명시한다.
 

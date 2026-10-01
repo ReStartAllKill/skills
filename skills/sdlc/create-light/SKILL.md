@@ -23,7 +23,7 @@ description: '되돌리기 쉬운 작은 변경의 intent·spec·plan 세 문서
    `node <sdlc_runtime>/tools/migrate-schema.mjs`로 프로필을 올리라고 안내한다.
    `<sdlc_runtime>/conventions.md`와 `references/tasks.md`를 읽는다 — `references/prose.md`는
    검사가 낸 문체 경고를 해석해야 할 때만 읽는다.
-1. 규약 「티어」의 기준으로 등급을 판단한다. 외부 계약이나 데이터가 바뀌거나 즉시 되돌릴 수단이
+1. 규약 「Tiers」의 기준으로 등급을 판단한다. 외부 계약이나 데이터가 바뀌거나 즉시 되돌릴 수단이
    없으면 light가 아니다 — 멈추고 `/create-intent`를 안내하며 어느 기준에 걸렸는지 한 줄로 적는다.
    입력이 finding 경로면 `from_finding`과 finding의 `routed_to`를 `/create-intent`와 같은 방식으로
    잇는다(두 경로는 각자 자기 문서의 폴더 기준이고 같은 쌍을 가리켜야 한다).

@@ -4,6 +4,26 @@
 
 ### Fixed
 
+- **Every section a skill or a tool message tells you to read now exists under that name.**
+  When the reference documents were translated to English, ten skill citations kept the old
+  Korean titles — adr.md's «판정», profile.md's «커밋과 사람», the conventions' «변경이 여러 레포에
+  걸치면», «누가 쓰고 누가 완성하나» and «티어» — and `check-artifacts`, `check-set` and
+  `lint-prose` ended a failing run by pointing at «티어» · «ID 접두» · «상태와 승인» · «산출물 문법»
+  in `conventions.md`, which has none of them. create-pr sent the model to a pr.md heading that was
+  really a bullet. The model landed on a page without the heading and guessed. Each citation now
+  names the heading as it is written in the document it names; the tool messages name
+  `conventions.md`, the canonical file the skills also read, with its English headings, rather than
+  conventions.ko.md's Korean ones — one document per citation, and the same one everywhere.
+  implement-spec and create-pr's pr.md also cited `<adr_dir>`'s ADR-001, a decision record of this
+  plugin's own development that does not exist in a repository installing it, where that number is
+  someone else's decision; the reason stays in the sentence and the pointer is gone. A new test,
+  `sdlc-runtime/evals/doc-citations.test.mjs`, recognises «`path.md` + quoted title», «title in
+  `path.md`», «규약 「title」» and «see «title»» across skills, references, tools and the README,
+  resolves the document and fails with the file, line and the document's headings when the title is
+  not one of them — and fails when it recognises no citation at all, so a recogniser that stops
+  matching cannot pass as a clean tree. Renaming headings to match the old citations was rejected:
+  the headings were right, the citations were stale.
+
 - **Pulling decisions or specs twice with nothing changed upstream leaves the file untouched.**
   `pull-adr.mjs` wrote `pulled_at: <now>` into `.claude/adr-manifest.json` and `pull-spec.mjs` into
   `upstream.lock.json`, so every re-pull was a diff and two branches that both re-pulled conflicted

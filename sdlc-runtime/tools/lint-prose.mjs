@@ -320,5 +320,5 @@ if (!TEMPLATE) {
 process.exit(report({
     json: argv.includes('--json'),
   title: TEMPLATE ? '' : `산문 린트 — ${basename(DIR)}  (문서 ${Object.keys(LINTED).length}개)`,
-  notes, problems, strict: STRICT, ruleDoc: '`conventions.md` 의 «산출물 문법» 절과 `references/prose.md` 에 있다.',
+  notes, problems, strict: STRICT, ruleDoc: '`conventions.md` 의 «Artifact syntax» 절과 `references/prose.md` 에 있다.',
 }))

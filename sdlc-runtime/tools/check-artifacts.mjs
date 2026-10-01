@@ -876,5 +876,5 @@ process.exit(report({
     json: argv.includes('--json'),
   // 조사만 있는 폴더에 tier 를 적지 않는다 — 없는 값을 기본값으로 찍으면 «이 문서에도 티어가 있다» 로 읽힌다.
   title: `산출물 추적성 검사 — ${basename(DIR)}  (tier: ${docs.research && Object.keys(docs).length === 1 ? '—' : TIER}, 문서 ${Object.keys(docs).length}개, ID ${ALL.size}개)`,
-  notes, problems, strict: STRICT, ruleDoc: '`conventions.md` 의 «티어» · «ID 접두» · «상태와 승인» 절에 있다.',
+  notes, problems, strict: STRICT, ruleDoc: '`conventions.md` 의 «Tiers» · «ID prefixes» · «States and approval» 절에 있다.',
 }))

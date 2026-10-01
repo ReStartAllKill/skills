@@ -29,13 +29,13 @@ description: '저장소에 SDLC 프로필·승인 가드·산출물 검사·CI �
    프로필이 Git 밖에 있으면 사람마다 다른 규칙으로 검사받고 CI는 아무것도 보지 않는다.
    `owner`는 여럿이 쓰는 레포에서는 비운다. 비우면 각자의 `git config user.name`이 들어가지만,
    적어 두면 남이 승인한 문서에도 그 이름이 적힌다. 자세한 것은 `references/profile.md`의
-   「커밋과 사람」이다.
+   「Committed and local settings」이다.
    PR 키(`pr_base`·`pr_workspace_dirs`·`pr_split_dir`·`pr_split_hint`·`pr_review_focus`)는
    `/create-pr`을 쓸 때만 필요하다. 워크스페이스 설정과 CI의 라벨·경로 규칙에서 근거를 찾고,
    찾지 못하면 비운다 — 없으면 해당 신호를 내지 않을 뿐 스킬은 돈다.
 2. **레포 경계:** 문서와 코드가 다른 저장소로 갈리는지 확인한다. 갈리면 `repo`를 적고,
    코드 저장소에는 `upstream_repo`를, 문서 저장소에는 `spec_consumers`를 적는다
-   (규약 「변경이 여러 레포에 걸치면」). 갈리지 않으면 세 키 모두 두지 않는다 —
+   (규약 「Changes spanning multiple repositories」). 갈리지 않으면 세 키 모두 두지 않는다 —
    단일 레포에서는 경계 검사가 할 일이 없다.
    `upstream_repo`를 적었으면 `spec_dir`가 gitignore되지 않는지 확인한다. 벤더한 사본과
    `upstream.lock.json`이 커밋돼야 상류 핀이 성립한다.

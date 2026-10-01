@@ -22,9 +22,9 @@ description: '승인된 intent.md를 바탕으로 동작 명세와 수용 기준
 4. 코드로 확인할 수 없는 도메인 정책·운영 판단·동작만 묻는다. 질문은 한 번에 3개 이내로 묶는다.
    기획 담당자가 작성하는 spec은 시나리오·FR의 동작 문장·우선순위까지 작성한다. 상세 AC·EDGE·
    NFR·인터페이스 계약·데이터 정의 중 확인되지 않은 내용은 `SQ-*`로 남기고, 엔지니어가
-   `/iterate-spec`으로 보완한다(규약 「누가 쓰고 누가 완성하나」).
+   `/iterate-spec`으로 보완한다(규약 「Authors and completion owners」).
    변경이 여러 코드 저장소에 걸쳐도 **spec은 한 벌**이다. 수용 기준마다 어느 저장소가 만드는지를
-   `` `scope: <repo>` ``로 적는다(규약 「변경이 여러 레포에 걸치면」). 프로필에 `spec_consumers`가
+   `` `scope: <repo>` ``로 적는다(규약 「Changes spanning multiple repositories」). 프로필에 `spec_consumers`가
    있으면 배정되지 않은 Must 수용 기준을 검사기가 막는다.
 5. `assets/<lang>/spec-template.md`로 작성한다. FR/NFR의 `근거:`에 OUT/CON을 연결하고,
    정상·오류·경계 동작을 검증 가능한 수용 기준으로 쓴다.
@@ -43,7 +43,7 @@ description: '승인된 intent.md를 바탕으로 동작 명세와 수용 기준
    spec을 이 레포에서 쓰는 경우에만 락의 `files["intent.md"].sha`를 쓴다(그 자리에서 `body:`는
    거부된다 — 사본의 본문은 상류가 앞서간 것을 못 본다).
 7. `SD-*`에는 이번 변경의 외부 동작에 관한 결정을 기록한다. `<sdlc_runtime>/references/adr.md`의
-   「판정」 기준에 해당하는 결정은 `/create-adr`로 작성하고 `decisions:`에 버전을 고정해 참조한다.
+   「What qualifies as an ADR」 기준에 해당하는 결정은 `/create-adr`로 작성하고 `decisions:`에 버전을 고정해 참조한다.
 8. 공통 절차에 따라 검사하고 승인을 처리한다. 다음 단계는 `/create-plan <경로>`다.
 
 ## 보고
