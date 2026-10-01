@@ -821,11 +821,15 @@ if (!TEMPLATE) {
 
 
 if (!TEMPLATE) {
-  checkPins(docs, { seam: SEAM }, (level, doc, msg, hint) => problems.push({ level, doc, msg, hint }))
+  // A note from a closed set must reach the report: `report` prints errors, warnings and notes,
+  // and an `info` pushed into problems would vanish — the check would look as if it had passed.
+  const toReport = (level, doc, msg, hint) =>
+    level === 'info' ? notes.push(`${doc} — ${msg}${hint ? ` ${hint}` : ''}`) : problems.push({ level, doc, msg, hint })
+  checkPins(docs, { seam: SEAM }, toReport)
   // ADR 은 v5 가 들인 다섯째 산출물이다. 그 전 버전의 산출물 세트는 결정 기록이 없던 때에 썼으므로
   // 여기서 새로 빨개지지 않는다 — 핀의 상태 검사(checkPins)는 핀이 적혀 있을 때만 돌아 버전 문이 필요 없다.
   if (docs.plan && (schemaVersion(docs.plan.fm) ?? 0) >= 5) {
-    checkTaskScope(docs, { seam: SEAM }, (level, doc, msg, hint) => problems.push({ level, doc, msg, hint }))
+    checkTaskScope(docs, { seam: SEAM }, toReport)
   }
 }
 

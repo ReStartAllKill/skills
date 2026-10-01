@@ -1711,6 +1711,99 @@ decisions: [${pins}]
   assert(said(rep, /매니페스트가 `pull-adr` 가 쓴 것과 다르다/), `a hand-edited manifest passed:\n${rep.raw}`)
 })
 
+// A finished set is judged against the decisions in force when it closed, read from git: the edit
+// that writes `completed` is checked with `completed` already in it, so «closed» alone would let a
+// set close on top of a dead decision.
+function closedRepo() {
+  const d = temp('sdlc-closed-set')
+  put(join(d, '.claude/spec-profile.yml'), 'sdlc_version: 7\nspec_dir: ".sdlc/specs"\nadr_dir: "docs/adr"\n')
+  put(join(d, 'src/a/x.ts'), 'export const x = 1\n')
+  git(d, 'init', '-q'); git(d, 'config', 'user.email', 'eval@local'); git(d, 'config', 'user.name', 'eval')
+  return d
+}
+const closedPlan = (status, pins) => `---
+artifact: plan
+schema_version: 7
+status: ${status}
+decisions: [${pins}]
+---
+
+# Plan
+
+## 작업
+
+- [x] **WP-001 — 첫 변경**
+  - files: \`src/a/x.ts\`
+  - depends: 없음
+  - covers: FR-001 (AC-001)
+  - tests: 첫 변경이 된다
+  - verify: true
+`
+const adrAt = (d, id, slug, status, extra = '') => {
+  let text = bindAdr(id, slug, `scope: ["src/a"]\nconfirms: []${extra}`)
+  if (status !== 'accepted') text = text.replace('status: accepted', `status: ${status}`)
+  if (status === 'superseded') text = text.replace('superseded_by: null', 'superseded_by: "ADR-002"')
+  put(join(d, `docs/adr/${id}-${slug}.md`), text)
+}
+const setCheck = (d) => {
+  const r = run(process.execPath, [tool('check-artifacts.mjs'), join(d, '.sdlc/specs/s'), '--json'])
+  try { return { ...JSON.parse(r.out), raw: r.out } } catch { throw new Error(`check-artifacts did not print JSON:\n${r.out}`) }
+}
+const pinError = (rep, id) => rep.problems.find((p) => p.level === 'error' && p.msg.includes(`핀한 ${id} 의 상태가`))
+
+await test('a closed set keeps a pin to a decision superseded after it closed, and only that', () => {
+  // Superseded after the set closed: history, so a note.
+  let d = closedRepo()
+  adrAt(d, 'ADR-001', 'store', 'accepted')
+  put(join(d, '.sdlc/specs/s/plan.md'), closedPlan('completed', '"ADR-001"'))
+  git(d, 'add', '-A'); git(d, 'commit', '-qm', 'close the set')
+  adrAt(d, 'ADR-001', 'store', 'superseded')
+  adrAt(d, 'ADR-002', 'store-again', 'accepted')
+  git(d, 'add', '-A'); git(d, 'commit', '-qm', 'supersede')
+  let rep = setCheck(d)
+  assert(!pinError(rep, 'ADR-001'), `a set closed under a live decision turned red when the decision was superseded later:\n${rep.raw}`)
+  assert(rep.notes.some((n) => /끝난 세트가 핀한 ADR-001 는 .* `accepted` 였고 그 뒤 `superseded`/.test(n)), `the later supersession went unsaid:\n${rep.raw}`)
+
+  // Closed on top of a decision already superseded: the error stands, and says why.
+  d = closedRepo()
+  adrAt(d, 'ADR-001', 'store', 'superseded')
+  adrAt(d, 'ADR-002', 'store-again', 'accepted')
+  git(d, 'add', '-A'); git(d, 'commit', '-qm', 'supersede first')
+  put(join(d, '.sdlc/specs/s/plan.md'), closedPlan('completed', '"ADR-001"'))
+  git(d, 'add', '-A'); git(d, 'commit', '-qm', 'close the set on a dead decision')
+  rep = setCheck(d)
+  assert(/이미 `superseded` 였다/.test(pinError(rep, 'ADR-001')?.hint ?? ''), `a set closed on a dead decision passed as history:\n${rep.raw}`)
+
+  // The closing edit itself, not yet committed — what the hook sees.
+  d = closedRepo()
+  adrAt(d, 'ADR-001', 'store', 'superseded')
+  adrAt(d, 'ADR-002', 'store-again', 'accepted')
+  put(join(d, '.sdlc/specs/s/plan.md'), closedPlan('in_progress', '"ADR-001"'))
+  git(d, 'add', '-A'); git(d, 'commit', '-qm', 'open set')
+  put(join(d, '.sdlc/specs/s/plan.md'), closedPlan('completed', '"ADR-001"'))
+  rep = setCheck(d)
+  assert(/커밋되지 않았거나/.test(pinError(rep, 'ADR-001')?.hint ?? ''), `writing completed let a dead pin through:\n${rep.raw}`)
+})
+
+await test('a closed plan is not asked to pin a decision accepted after it closed', () => {
+  const scopeWarn = (rep) => rep.problems.some((p) => p.level === 'warn' && /의 files 가 ADR-003/.test(p.msg))
+  let d = closedRepo()
+  put(join(d, '.sdlc/specs/s/plan.md'), closedPlan('completed', ''))
+  git(d, 'add', '-A'); git(d, 'commit', '-qm', 'close the set')
+  adrAt(d, 'ADR-003', 'later', 'accepted')
+  git(d, 'add', '-A'); git(d, 'commit', '-qm', 'a decision after the plan')
+  let rep = setCheck(d)
+  assert(!scopeWarn(rep) && rep.notes.some((n) => /ADR-003 의 범위에 들지만.*없었다/.test(n)), `a finished plan was told to pin a decision that came after it:\n${rep.raw}`)
+
+  d = closedRepo()
+  adrAt(d, 'ADR-003', 'earlier', 'accepted')
+  git(d, 'add', '-A'); git(d, 'commit', '-qm', 'the decision first')
+  put(join(d, '.sdlc/specs/s/plan.md'), closedPlan('completed', ''))
+  git(d, 'add', '-A'); git(d, 'commit', '-qm', 'close the set')
+  rep = setCheck(d)
+  assert(scopeWarn(rep), `a plan that closed past a decision already in force was excused:\n${rep.raw}`)
+})
+
 await test('Execution log ignores change-history task IDs in either language', async () => {
   const { SECTION, sectionBlock, RE_CHANGE_LOG } = await import('../tools/keywords.mjs')
   for (const heading of ['Change log', 'Changelog', '변경 기록']) {

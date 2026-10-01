@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **A finished set no longer turns red when a decision it pinned is superseded later.** Pins
+  were judged against today's ADR statuses, and `check-all` walks every set, so superseding an
+  ADR failed CI on every completed set that had pinned it — history nobody can rewrite. A closed
+  set (plan `completed`, or plan or intent `superseded` or `rejected`) is now judged against the
+  decision's status at the commit that closed it, read from git; a decision in force then and
+  dead now is a note. «Closed» alone was rejected as the test: the edit that writes `completed`
+  is checked with `completed` already in it, so a set could close on top of a dead decision and
+  pass. A set closed on a decision already dead, an uncommitted closing edit, and history too
+  shallow to find the commit all stay errors. The task-scope warning follows the same rule: a
+  closed plan is not asked to pin a decision accepted after it closed, and still is for one
+  accepted before. Notes from these checks now reach the report; an `info` pushed into problems
+  used to vanish.
+
 ## 0.10.0 — 2026-09-30
 
 ### Changed

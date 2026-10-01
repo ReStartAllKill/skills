@@ -1,6 +1,7 @@
-import { existsSync } from 'node:fs'
-import { resolve, relative } from 'node:path'
-import { ADR_FILENAME, idsIn, stripComments, isNull, loadAdrDir, wpFiles } from './artifact-parse.mjs'
+import { existsSync, realpathSync } from 'node:fs'
+import { resolve, relative, dirname } from 'node:path'
+import { execFileSync } from 'node:child_process'
+import { ADR_FILENAME, idsIn, stripComments, isNull, loadAdrDir, wpFiles, frontmatter } from './artifact-parse.mjs'
 import { SECTION, CHOSEN, hasAlias, canonical, ADR_STATUS_ALIASES, LEGACY_STATUS_ROW } from './keywords.mjs'
 import { locale } from './locale.mjs'
 import { ADR_DEAD, adrSeam, loadManifest, loadBindings, boundForFiles, collect, touches } from './adr-bindings.mjs'
@@ -213,14 +214,69 @@ export function checkAdr(doc, { seam, siblings = [] }, push) {
 
 const PIN = /^(?:(?<owner>[\w.-]+)\/(?<repo>[\w.-]+)#)?(?<id>ADR-\d{3,4})(?:@(?<sha>[0-9a-f]{7,40}))?$/
 
+/** A set that has finished — a completed plan, or a set someone replaced or turned down — is a
+ *  record of work done under the decisions in force at the time. Judging it against today's
+ *  decisions turns history red the day an ADR it pinned is superseded, and `check-all` walks every
+ *  set, so CI fails on a change nobody can make: the set is not to be rewritten.
+ *
+ *  «Closed» alone cannot excuse a pin, though. The edit that writes `completed` is checked with
+ *  `completed` already in it, so a set closed on top of a dead decision would pass the one check
+ *  meant to stop it. What decides is the decision's status at the commit that closed the set,
+ *  read from git. An uncommitted closing edit, or a history too shallow to show the commit, yields
+ *  nothing, and the caller then judges as if the set were open. */
+const CLOSED = ['completed', 'superseded', 'rejected']
+const git = (cwd, args) => {
+  try { return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) } catch { return null }
+}
+export function closedHistory(docs, seam) {
+  const d = [docs.plan, docs.intent].find((x) => x?.path && CLOSED.includes(String(x.fm?.status ?? '')))
+  if (!d) return null
+  const top = git(dirname(d.path), ['rev-parse', '--show-toplevel'])?.trim()
+  if (!top) return { closed: true, commit: null }
+  // git answers with the resolved path; a checkout reached through a symlink (macOS /var →
+  // /private/var) would otherwise yield `../..` paths that name nothing in any commit.
+  const real = (p) => { try { return realpathSync(p) } catch { return p } }
+  const relTo = (p) => relative(top, real(p))
+  const rel = relTo(d.path)
+  const statusIn = (h, p) => { const t = git(top, ['show', `${h}:${p}`]); return t == null ? null : t }
+  let commit = null
+  let wasClosed = false
+  for (const h of (git(top, ['log', '--format=%H', '--reverse', '--', rel]) ?? '').split('\n').filter(Boolean)) {
+    const t = statusIn(h, rel)
+    const now = !!t && CLOSED.includes(String(frontmatter(t)?.status ?? ''))
+    if (now && !wasClosed) commit = h
+    wasClosed = now
+  }
+  // The working tree must agree with the last commit: a set closed in history but reopened since is
+  // open, and a set closed only in the working tree has not been through CI yet.
+  if (!wasClosed) commit = null
+  const manifestAt = (() => {
+    if (!commit || !seam?.manifest) return null
+    try { return JSON.parse(statusIn(commit, relTo(seam.manifest)) ?? 'null') } catch { return null }
+  })()
+  /** The decision's status when the set closed, or null when that cannot be read. */
+  const statusAt = (id, adrPath) => {
+    if (!commit) return null
+    if (adrPath) {
+      const t = statusIn(commit, relTo(adrPath))
+      if (t == null) return null
+      const fm = frontmatter(t)
+      return (fm ? String(fm.status ?? '') : legacyMeta({ text: t }).status) || null
+    }
+    return String(manifestAt?.decisions?.find((x) => String(x.id) === id)?.status ?? '') || null
+  }
+  return { closed: true, commit, statusAt }
+}
+
 export function checkPins(docs, { seam }, push) {
   if (!seam?.configured) return
   const local = seam.dir ? loadAdrDir(seam.dir).docs : []
   const manifest = seam.dir ? null : loadManifest(seam.manifest)
   const byId = new Map(local.length
-    ? local.map((d) => [String(d.fm?.id ?? ''), { status: String(d.fm?.status ?? ''), superseded_by: d.fm?.superseded_by }])
+    ? local.map((d) => [String(d.fm?.id ?? ''), { status: String(d.fm?.status ?? ''), superseded_by: d.fm?.superseded_by, path: d.path }])
     : (manifest?.decisions ?? []).map((d) => [String(d.id), { status: String(d.status ?? ''), superseded_by: d.superseded_by }]))
   const haveSource = local.length > 0 || manifest != null
+  const history = closedHistory(docs, seam)
 
   for (const d of Object.values(docs)) {
     const pins = [].concat(d.fm?.decisions ?? []).map(String).filter((v) => !isNull(v))
@@ -241,10 +297,18 @@ export function checkPins(docs, { seam }, push) {
       const target = byId.get(m.groups.id)
       if (!target) { err(`핀한 ${m.groups.id} 가 없다`, `${seam.dir ? relative(seam.root ?? '', seam.dir) : (manifest?.source ?? '매니페스트')} 에서 못 찾았다. 오타이거나, 소비 레포라면 매니페스트가 낡았다.`); continue }
       const st = String(target.status ?? '')
-      if (ADR_DEAD.includes(st)) {
+      const then = ADR_DEAD.includes(st) && history ? history.statusAt(m.groups.id, target.path) : null
+      if (ADR_DEAD.includes(st) && then && !ADR_DEAD.includes(then)) {
+        push('info', d.name, `끝난 세트가 핀한 ${m.groups.id} 는 세트를 닫은 ${history.commit.slice(0, 7)} 에서 \`${then}\` 였고 그 뒤 \`${st}\` 가 됐다${st === 'superseded' && target.superseded_by ? ` (→ ${target.superseded_by})` : ''}`,
+          '이 세트는 그 결정 아래에서 끝났다. 이어 가는 작업은 새 세트를 쓰고 효력 있는 결정을 핀한다.')
+      } else if (ADR_DEAD.includes(st)) {
+        const why = !history ? ''
+          : then ? ` 세트를 닫은 ${history.commit.slice(0, 7)} 에서 이미 \`${then}\` 였다 — 효력 없는 결정 위에서 끝낸 세트다.`
+          : history.commit ? ' 세트를 닫을 때의 상태를 git 에서 읽지 못했다 — 그때 효력이 있었는지 모르므로 오류로 둔다.'
+          : ' 세트를 닫는 변경이 아직 커밋되지 않았거나 git 이력이 얕다(CI 는 fetch-depth: 0) — 닫은 시점을 모르므로 오류로 둔다.'
         err(`핀한 ${m.groups.id} 의 상태가 \`${st}\` 다`,
-          st === 'superseded' ? `${target.superseded_by ?? '후속 ADR'} 이 대체했다. 그쪽을 읽고 이 산출물 세트가 여전히 유효한지 확인한 뒤 핀을 옮긴다.`
-                              : '효력이 없는 결정을 전제하고 있다. 이 산출물 세트가 여전히 유효한지 확인한다.')
+          (st === 'superseded' ? `${target.superseded_by ?? '후속 ADR'} 이 대체했다. 그쪽을 읽고 이 산출물 세트가 여전히 유효한지 확인한 뒤 핀을 옮긴다.`
+                               : '효력이 없는 결정을 전제하고 있다. 이 산출물 세트가 여전히 유효한지 확인한다.') + why)
       } else if (['draft', 'in_review'].includes(st)) {
         warn(`핀한 ${m.groups.id} 가 아직 \`${st}\` 다`, '승인 안 된 결정을 전제하고 구현하면, 결정이 바뀔 때 산출물 세트 전체의 추적 관계가 어긋난다.')
       }
@@ -281,11 +345,23 @@ export function checkTaskScope(docs, { seam }, push) {
   for (const w of wps) {
     const files = wpFiles(w)
     const hits = local
-      ? adrsForFiles(local, files, seam.self).map((d) => ({ id: String(d.fm?.id ?? d.name), title: String(d.fm?.title ?? '') }))
+      ? adrsForFiles(local, files, seam.self).map((d) => ({ id: String(d.fm?.id ?? d.name), title: String(d.fm?.title ?? ''), path: d.path }))
       : boundForFiles(manifest, bindings, files).map((d) => ({ id: String(d.id), title: String(d.title ?? '') }))
     for (const a of hits) {
       if (pinned.has(a.id)) continue
       ;(byAdr.get(a.id) ?? byAdr.set(a.id, { ...a, wps: [] }).get(a.id)).wps.push(w.id)
+    }
+  }
+  // A closed plan's files meeting a decision that was not yet in force when the set closed is code
+  // that predates the decision, not a plan that skipped it. Only that case becomes a note: a
+  // decision already in force at closing was there to be read, and the warning stands.
+  const history = closedHistory(docs, seam)
+  for (const a of [...byAdr.values()]) {
+    const then = history?.commit ? history.statusAt(a.id, a.path) : null
+    if (history?.commit && then !== 'accepted') {
+      push('info', 'plan.md', `${a.wps.join('·')} 의 files 가 ${a.id} 의 범위에 들지만, 세트를 닫은 ${history.commit.slice(0, 7)} 에서 그 결정은 ${then ? `\`${then}\` 였다` : '없었다'}`,
+        '끝난 계획보다 뒤에 선 결정이다. 이 코드를 다시 고치는 새 세트가 그 결정을 핀한다.')
+      byAdr.delete(a.id)
     }
   }
   for (const a of byAdr.values()) {
