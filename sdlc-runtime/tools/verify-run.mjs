@@ -5,7 +5,7 @@ import { resolve, join, relative, basename } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { loadDir } from './artifact-parse.mjs'
-import { taskFingerprint, repositoryFingerprint, repositoryFiles, taskFiles } from './task-evidence.mjs'
+import { taskFingerprint, repositoryFingerprint, repositoryFiles, taskFiles, FINGERPRINT_VERSION } from './task-evidence.mjs'
 
 const argv = process.argv.slice(2)
 const sep = argv.indexOf('--')
@@ -114,6 +114,9 @@ writeFileSync(file, [
   `tasks: ${TASKS.join(' ')}`,
   ...(LABEL ? [`label: ${LABEL}`] : []),
   `command: ${JSON.stringify(command)}`,
+  // The algorithm both fingerprints were taken with; plan-progress recomputes with the same one.
+  // Its absence means version 1, which every log written before this key existed used.
+  `fingerprint: ${FINGERPRINT_VERSION}`,
   `fingerprints: ${JSON.stringify(before)}`,
   `repository: ${repositoryBefore}`,
   `stable: ${stable}`,

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /** Verify task attribution, completion evidence, approval guards, hook installation, and runtime integration in temporary repositories. */
-import { appendFileSync, chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,6 +10,8 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, '..')
 import { findSkill } from './skills.mjs'
 import { driftInReport } from '../tools/rules.mjs'
+import { taskFingerprint, repositoryFingerprint, taskFingerprintV1, repositoryFingerprintV1 } from '../tools/task-evidence.mjs'
+import { loadDir } from '../tools/artifact-parse.mjs'
 const tool = (name) => join(ROOT, 'tools', name)
 const results = []
 
@@ -2041,6 +2043,100 @@ status: in_progress
   assert(r.code !== 0 && /저장소가 바뀌었다/.test(r.out) && !/먼저 돌린다/.test(r.out), `mark 가 실행 뒤 바뀐 저장소를 말하지 않는다:\n${r.out}`)
   r = run(process.execPath, [tool('plan-progress.mjs'), c.spec])
   assert(/최신 verify 로그가 완료 증거가 못 된다 — verify 뒤에 저장소가 바뀌었다/.test(r.out), `plan-progress 텍스트 보고에 이유가 없다:\n${r.out}`)
+})
+
+await test('the v2 fingerprint of a working tree equals that of its commit, and only a real change moves it', () => {
+  // verify-run fingerprints the working tree; plan-progress recomputes a completed set from its
+  // commit. The two must agree for an unchanged tree, including for content git rewrites on the way
+  // in (a CRLF file under a `text` rule), a symlink, an executable and a path git has to quote.
+  const d = temp('sdlc-fp2')
+  git(d, 'init', '-q'); git(d, 'config', 'user.email', 'eval@local'); git(d, 'config', 'user.name', 'eval')
+  put(join(d, '.gitattributes'), '*.txt text\n')
+  put(join(d, 'crlf.txt'), 'a\r\nb\r\n')
+  put(join(d, 'run.sh'), '#!/bin/sh\n', 0o755)
+  symlinkSync('crlf.txt', join(d, 'link'))
+  put(join(d, 'we"ird\nname.js'), 'x\n')
+  put(join(d, 'src/a.js'), '1\n')
+  put(join(d, '.sdlc/verify/s/L1.log'), 'excluded\n')
+  put(join(d, '.git/info/exclude'), 'ignored.log\n')
+  const dirs = { specDir: '.sdlc/specs', logDir: '.sdlc/verify' }
+  const task = { fields: new Map([['files', '`src/`, `crlf.txt`, `link`, `run.sh`, `missing.js`']]) }
+  const tree = repositoryFingerprint(d, dirs), taskTree = taskFingerprint(d, task)
+  git(d, 'add', '-A'); git(d, 'commit', '-qm', 'tree')
+  const head = git(d, 'rev-parse', 'HEAD')
+  assert(repositoryFingerprint(d, dirs, head) === tree, '같은 트리의 작업 트리 지문과 커밋 지문이 다르다')
+  assert(taskFingerprint(d, task, head) === taskTree, '같은 트리의 작업 지문이 작업 트리와 커밋에서 다르다')
+  const moves = (label, change, undo) => {
+    change()
+    const moved = repositoryFingerprint(d, dirs) !== tree
+    undo?.()
+    return moved
+  }
+  assert(moves('byte', () => appendFileSync(join(d, 'src/a.js'), '2'), () => writeFileSync(join(d, 'src/a.js'), '1\n')), '한 바이트 변경을 놓쳤다')
+  assert(moves('mode', () => chmodSync(join(d, 'run.sh'), 0o644), () => chmodSync(join(d, 'run.sh'), 0o755)), '실행 비트 변경을 놓쳤다')
+  assert(moves('rename', () => renameSync(join(d, 'src/a.js'), join(d, 'src/b.js')), () => renameSync(join(d, 'src/b.js'), join(d, 'src/a.js'))), '이름 바꾸기를 놓쳤다')
+  assert(moves('untracked', () => put(join(d, 'new.js'), ''), () => rmSync(join(d, 'new.js'))), '새 파일을 놓쳤다')
+  assert(repositoryFingerprint(d, dirs) === tree, '되돌린 트리의 지문이 처음과 다르다')
+  assert(!moves('ignored', () => put(join(d, 'ignored.log'), 'x')), 'git 이 무시하는 파일이 지문을 바꿨다')
+  assert(!moves('log', () => put(join(d, '.sdlc/verify/s/L2.log'), 'x')), 'verify_log_dir 의 파일이 지문을 바꿨다')
+})
+
+await test('a completed set keeps v1 log evidence, and checking a v2 one costs a constant number of git calls', () => {
+  // Recomputing at a ref used to run two git processes per file of the repository: 151 s for one
+  // completed set in a repository of 1,500 files. A log names its algorithm; one without the key is
+  // version 1, and a completed set's old logs are never rewritten, so they must keep verifying.
+  const completed = (prefix, extra, rewrite) => {
+    const d = temp(prefix)
+    const spec = join(d, 'specs/a'), plan = join(spec, 'plan.md')
+    put(join(d, '.claude/spec-profile.yml'), 'sdlc_version: 4\nspec_dir: specs\nverify: "true"\n')
+    put(plan, '---\nartifact: plan\nschema_version: 4\nstatus: in_progress\n---\n\n## 작업\n\n- [x] **WP-001 — 변경**\n  - files: `app.cjs`, `lib/`\n  - depends: 없음\n  - covers: FR-001\n  - tests: 결과가 참이다\n  - verify: true\n\n## 실행 기록\n\n- WP-001 완료\n')
+    put(join(d, 'app.cjs'), '// 결과가 참이다\n')
+    put(join(d, 'lib/b.cjs'), 'module.exports = 0\n')
+    for (let i = 0; i < extra; i++) put(join(d, `assets/f${i}.txt`), `${i}\n`)
+    git(d, 'init', '-q'); git(d, 'config', 'user.name', 'eval'); git(d, 'config', 'user.email', 'eval@local')
+    git(d, 'add', '.'); git(d, 'commit', '-qm', 'born')
+    put(join(d, 'lib/b.cjs'), 'module.exports = 1\n')
+    git(d, 'add', '.'); git(d, 'commit', '-qm', 'work', '-m', 'SDLC-Task: WP-001\nSDLC-Plan: specs/a/plan.md')
+    assert(run(process.execPath, [tool('verify-run.mjs'), spec, '--level', '1', '--tasks', 'WP-001', '--', 'true']).code === 0, '검증 실행 실패')
+    const logDir = join(d, '.sdlc/verify/a')
+    const log = join(logDir, readdirSync(logDir)[0])
+    assert(/^fingerprint: 2$/m.test(readFileSync(log, 'utf8')), `새 로그가 지문 방식을 적지 않았다:\n${readFileSync(log, 'utf8')}`)
+    rewrite?.(d, spec, log)
+    put(plan, readFileSync(plan, 'utf8').replace('in_progress', 'completed'))
+    git(d, 'add', '.'); git(d, 'commit', '-qm', 'completed')
+    return { d, spec }
+  }
+  const row = (spec, env) => JSON.parse(run(process.execPath, [tool('plan-progress.mjs'), spec, '--json'], env ? { env } : {}).out).rows[0]
+
+  // A log as the previous verify-run wrote it: no `fingerprint:` key, version-1 hashes.
+  const v1 = completed('sdlc-fp-v1', 3, (d, spec, log) => {
+    const task = [...loadDir(spec, () => {}).plan.ents.values()].find((e) => e.id === 'WP-001')
+    const dirs = { specDir: 'specs', logDir: '.sdlc/verify' }
+    writeFileSync(log, readFileSync(log, 'utf8')
+      .replace(/^fingerprint: 2\n/m, '')
+      .replace(/^fingerprints: .*$/m, `fingerprints: ${JSON.stringify({ 'WP-001': taskFingerprintV1(d, task) })}`)
+      .replace(/^repository: .*$/m, `repository: ${repositoryFingerprintV1(d, dirs)}`))
+  })
+  let r = row(v1.spec)
+  assert(r.verified.length === 1 && r.unverified === null, `v1 로그를 가진 완료 세트가 증거를 잃었다: ${JSON.stringify(r.unverified)}`)
+
+  // Count the git processes, not the seconds: a timing bound is either loose enough to pass on a
+  // slow CI runner or tight enough to catch the regression, rarely both. The same set in a
+  // repository of 3 and of 300 files must cost the same number of calls.
+  const real = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim()
+  const spawned = (extra) => {
+    const set = completed(`sdlc-fp-v2-${extra}`, extra)
+    const shim = temp('sdlc-fp-shim'), calls = join(shim, 'calls')
+    put(join(shim, 'git'), `#!/bin/sh\necho "$*" >> "${calls}"\nexec "${real}" "$@"\n`, 0o755)
+    const got = row(set.spec, { ...process.env, PATH: `${shim}:${process.env.PATH}` })
+    assert(got.verified.length === 1 && got.unverified === null, `v2 로그를 가진 완료 세트가 증거가 못 된다: ${JSON.stringify(got.unverified)}`)
+    return readFileSync(calls, 'utf8').trim().split('\n')
+  }
+  const small = spawned(3), large = spawned(300)
+  assert(large.length === small.length && large.length < 100,
+    `완료 세트 하나를 보는 git 호출이 파일 3개에서 ${small.length}번, 300개에서 ${large.length}번이다 — 파일 수에 비례한다:\n${large.slice(0, 12).join('\n')}`)
+  const trees = large.map((c) => /ls-tree -r -z ([0-9a-f]{40})$/.exec(c)?.[1]).filter(Boolean)
+  assert(trees.length && new Set(trees).size === trees.length, `같은 커밋의 트리를 여러 번 읽었다:\n${trees.join('\n')}`)
 })
 
 

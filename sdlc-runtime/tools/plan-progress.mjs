@@ -2,7 +2,7 @@
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { resolve, join, relative, basename } from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { taskFingerprint, repositoryFingerprint } from './task-evidence.mjs'
+import { fingerprinter } from './task-evidence.mjs'
 import { loadDir, stripComments, idsIn, schemaVersion, wpField, scopeOf } from './artifact-parse.mjs'
 import { parseCommitRecords, ownsTaskCommit } from './commit-records.mjs'
 import { taskFiles } from './task-paths.mjs'
@@ -90,14 +90,27 @@ const verifyLogs = (() => {
     try { fingerprints = JSON.parse(kv.fingerprints ?? '{}'); command = JSON.parse(kv.command ?? 'null') } catch {}
     // `changed` is absent from stable runs and from every log written before verify-run recorded it.
     try { changed = kv.changed ? { paths: JSON.parse(kv.changed), total: Number(kv.changed_total ?? 0) } : null } catch {}
-    return { level: Number(kv.level), date: kv.date ?? '', repository: kv.repository, spec: kv.spec, head: kv.head, stable: kv.stable === 'true', changed, fingerprints, command, file: relative(ROOT, path), tasks: (kv.tasks ?? '').split(/\s+/).filter(Boolean), exit: Number(kv.exit ?? 1), label: kv.label ?? null }
+    // `fingerprint` is absent from every log written before verify-run named its algorithm: version 1.
+    const version = kv.fingerprint === undefined ? 1 : Number(kv.fingerprint)
+    return { level: Number(kv.level), date: kv.date ?? '', version, repository: kv.repository, spec: kv.spec, head: kv.head, stable: kv.stable === 'true', changed, fingerprints, command, file: relative(ROOT, path), tasks: (kv.tasks ?? '').split(/\s+/).filter(Boolean), exit: Number(kv.exit ?? 1), label: kv.label ?? null }
   })
 })()
 const verifyCommand = ROOT ? yml('verify', resolve(ROOT, '.claude/spec-profile.yml')) : ''
-const repository = ROOT && inGit ? repositoryFingerprint(ROOT, {
-  specDir: yml('spec_dir', resolve(ROOT, '.claude/spec-profile.yml')) || '.sdlc/specs',
-  logDir: yml('verify_log_dir', resolve(ROOT, '.claude/spec-profile.yml')) || '.sdlc/verify',
-}, evidenceRef) : null
+/** The repository fingerprint a log is compared with, by the algorithm the log names and at the ref
+ * it is compared at: evidenceRef (null for the working tree) for completion, the log's own HEAD for a
+ * scoped run. Computed on first use and once per pair: it is the most expensive value here, the
+ * checks below are lazy so that a log failing an earlier condition never asks for it, and a set
+ * with several tasks would otherwise recompute the same value for each. */
+const repositories = new Map()
+const repositoryAt = (version, ref) => {
+  if (!(ROOT && inGit)) return null
+  const key = `${version}:${ref ?? ''}`
+  if (!repositories.has(key)) repositories.set(key, fingerprinter(version).repository(ROOT, {
+    specDir: yml('spec_dir', resolve(ROOT, '.claude/spec-profile.yml')) || '.sdlc/specs',
+    logDir: yml('verify_log_dir', resolve(ROOT, '.claude/spec-profile.yml')) || '.sdlc/verify',
+  }, ref))
+  return repositories.get(key)
+}
 const newest = (ls) => [...ls].sort((a, b) => b.date.localeCompare(a.date) || b.file.localeCompare(a.file))[0] ?? null
 
 /** Why a log is not evidence, in words a person can act on.
@@ -121,6 +134,9 @@ const common = (task, commits, l) => ({
   exit: [() => l.exit !== 0, () => ({ code: 'exit', msg: `최신 로그가 실패했다 (exit ${l.exit})`, hint: '실패를 고친 뒤 다시 돌린다 — 더 오래된 통과 로그는 새 실패를 대신하지 않는다.' })],
   tasks: [() => !l.tasks.includes(task.id), () => ({ code: 'tasks', msg: `최신 로그의 --tasks 에 ${task.id} 가 없다 (${l.tasks.join(' ') || '없음'})`, hint: `--tasks 에 ${task.id} 를 넣어 다시 돌린다.` })],
   legacy: [() => !l.repository || !(task.id in l.fingerprints), () => ({ code: 'legacy', msg: '최신 로그에 작업·저장소 지문이 없다 — 지문을 남기기 전의 verify-run 이 쓴 로그다', hint: RERUN })],
+  // Recomputing with an algorithm the log was not written with would read as «changed after verify».
+  algorithm: [() => !fingerprinter(l.version), () => ({ code: 'fingerprint-version',
+    msg: `최신 로그의 지문 방식 (fingerprint: ${l.version}) 을 이 도구가 모른다 — 더 새 verify-run 이 쓴 로그다`, hint: `도구를 갱신하거나 ${RERUN}` })],
   stable: [() => !l.stable, () => {
     const paths = l.changed?.paths ?? []
     const more = l.changed && l.changed.total > paths.length ? ` 외 ${l.changed.total - paths.length}개` : ''
@@ -163,13 +179,13 @@ const verifiedBy = (task, commits) => {
   if (!l) return { files: [], reason: nearestMiss(verifyLogs.filter((x) => !x.label), verifyLogs.filter((x) => x.label)) }
   const c = common(task, commits, l)
   const reason = firstFailure(l, [
-    c.exit, c.tasks, c.legacy, c.stable,
+    c.exit, c.tasks, c.legacy, c.algorithm, c.stable,
     [() => !verifyCommand, () => nearestMiss([l], [])],
     c.headFormat, c.headGone, c.commits, c.contains,
-    [() => l.fingerprints[task.id] !== taskFingerprint(ROOT ?? DIR, task, evidenceRef), () => ({ code: 'task-changed',
+    [() => l.fingerprints[task.id] !== fingerprinter(l.version).task(ROOT ?? DIR, task, evidenceRef), () => ({ code: 'task-changed',
       msg: `verify 뒤에 ${task.id} 의 files 내용이나 작업 정의가 바뀌었다`, hint: RERUN })],
-    [() => !repository, () => ({ code: 'repository', msg: '저장소 지문을 계산할 수 없다 — git 저장소가 아니다', hint: 'git 저장소 안에서 돌린다.' })],
-    [() => l.repository !== repository, () => ({ code: 'repository-changed',
+    [() => !repositoryAt(l.version, evidenceRef), () => ({ code: 'repository', msg: '저장소 지문을 계산할 수 없다 — git 저장소가 아니다', hint: 'git 저장소 안에서 돌린다.' })],
+    [() => l.repository !== repositoryAt(l.version, evidenceRef), () => ({ code: 'repository-changed',
       msg: 'verify 뒤에 저장소가 바뀌었다 — 다른 파일 편집, 새로 생긴 파일, rebase, 커밋 안 된 변경 중 하나다', hint: `증거는 실행한 그 저장소 상태에만 묶인다. ${RERUN}` })],
   ])
   return { files: reason ? [] : [l.file], reason }
@@ -177,27 +193,19 @@ const verifiedBy = (task, commits) => {
 
 // Scoped runs authorize moving to the next level, never final completion. Compare
 // their committed snapshot so later dependent tasks can legitimately change shared files.
-const snapshotHashes = new Map()
 const integratedBy = (task, commits) => {
   const scoped = ROOT ? yml('verify_scoped', resolve(ROOT, '.claude/spec-profile.yml')) : ''
   const l = newest(verifyLogs.filter((x) => x.spec === rel(DIR) && x.tasks.includes(task.id) &&
     (scoped ? x.label === 'scoped' && x.command === scoped : !x.label && x.command === verifyCommand)))
   if (!l) return { files: [], reason: null }
-  const snapshot = () => {
-    if (!snapshotHashes.has(l.head)) snapshotHashes.set(l.head, repositoryFingerprint(ROOT, {
-      specDir: yml('spec_dir', resolve(ROOT, '.claude/spec-profile.yml')) || '.sdlc/specs',
-      logDir: yml('verify_log_dir', resolve(ROOT, '.claude/spec-profile.yml')) || '.sdlc/verify',
-    }, l.head))
-    return snapshotHashes.get(l.head)
-  }
   const c = common(task, commits, l)
   const reason = firstFailure(l, [
     c.exit, c.stable, c.commits,
     [() => !l.repository, () => c.legacy[1]()],
-    c.headFormat, c.headGone, c.contains,
-    [() => l.repository !== snapshot(), () => ({ code: 'uncommitted',
+    c.algorithm, c.headFormat, c.headGone, c.contains,
+    [() => l.repository !== repositoryAt(l.version, l.head), () => ({ code: 'uncommitted',
       msg: `실행할 때의 작업 트리가 검증한 HEAD ${short(l.head)} 커밋과 달랐다 — 커밋 안 된 변경이 있는 채로 돌렸다`, hint: `변경을 커밋한 뒤 ${RERUN}` })],
-    [() => l.fingerprints[task.id] !== taskFingerprint(ROOT, task, l.head), () => ({ code: 'task-uncommitted',
+    [() => l.fingerprints[task.id] !== fingerprinter(l.version).task(ROOT, task, l.head), () => ({ code: 'task-uncommitted',
       msg: `실행할 때의 ${task.id} files 가 검증한 HEAD ${short(l.head)} 커밋과 달랐다`, hint: `변경을 커밋한 뒤 ${RERUN}` })],
   ])
   return { files: reason ? [] : [l.file], reason }
