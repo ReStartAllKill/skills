@@ -112,6 +112,8 @@ Until frontmatter is added, however, the approval guard cannot protect the decis
 
 Pair every `ASM-*` with an `RV-*` that detects when the assumption becomes false. Write `RV-*` as a condition with a truth value, not a calendar reminder; “review in six months” is not a condition. The checker warns on the reminder shapes — a review verb next to a point in time («6개월 뒤 재검토», "revisit next quarter", "periodic review") or a point in time alone — and not on a duration that is part of what is measured: “error rate stays above 1% for 3 days” is a condition.
 
+Nothing reads an `RV-*` automatically. No tool watches `revisit:`, and a finding routes only to a patch, an intent or a dismissal, never to an ADR. An `RV-*` is a condition a person, or a finding's diagnosis, can cite by ID; when it becomes true, the response is a successor ADR, reached through an intent like any other change. The frontmatter list and the body must still agree, because that ID is what the citation names.
+
 ## Status and immutability
 
 Use the standard artifact statuses rather than ADR conventions such as `proposed`, because `guard-approval.sh` and the checker must recognize a status to enforce transitions.
@@ -216,6 +218,32 @@ The two ID spaces overlap — `ADR-005` here and `ADR-005` upstream are differen
 | any other `<owner>/<repo>#ADR-005@<sha>` | a third repository | SHA shape only |
 
 A local pin never satisfies an upstream requirement or the reverse, and the warning for a missing pin suggests the form for its source. A prose mention follows the same rule: a bare `ADR-005` in the body is this repository's decision, and the upstream one is written `acme/docs#ADR-005`. Reading a bare mention as «either» was rejected; it would let an upstream pin silence the citation of a local decision. With only one of the two keys there is one space, and every pin reads against it as before.
+
+## When a decision changes
+
+Retiring a decision changes the footing of every set that rests on it, and the save hook checks only the folder that was edited. Ask first what the change touches:
+
+```sh
+node <sdlc_runtime>/tools/adr-impact.mjs <repo-root> ADR-005             # this repository's decision
+node <sdlc_runtime>/tools/adr-impact.mjs <repo-root> acme/docs#ADR-005   # an upstream decision, in a consumer
+```
+
+It is a read-only report and exits 0 whatever it finds. It lists the sets that pin the decision, open apart from closed, the open plans whose task `files` touch its `scope` or binding `paths` and whether they pin it, the sets whose prose names it without a pin, the binding in a consumer, and what each would need if the decision were retired. Pins and mentions are read as the checker reads them, ID space included.
+
+**In the repository that holds the decision:**
+
+1. Run `adr-impact` and read the open sets it names.
+2. Write the successor and accept it.
+3. Retire the predecessor — one edit of `status` and `superseded_by`.
+4. In each open set, read the successor, decide whether the design (`TD-*`) and tasks still stand, and move the pin (`/iterate-spec`). A running plan goes back to `in_review` first. Closed sets are history and are not edited.
+
+**In a consumer repository:**
+
+1. Re-pull with `pull-adr.mjs` and read what it prints or what `adr-bindings.mjs` then reports — `binding-dead` for a retired decision, `binding-stale` for one whose text changed.
+2. Re-read the decision, or its successor; then raise the binding's `at`, or move the binding to the successor.
+3. Run `adr-impact` and move the pins of the open sets it names (`decision-pin-behind` warns on an `@body:` pin left behind).
+
+Work does not continue across the change unnoticed. `plan-resume.mjs` returns `blocked` when the set has a decision-pin error — a pin to a decision no longer in force (`pin-dead`), to one that does not exist (`decision-pin-unknown`), or one it cannot read (`decision-pin-unreadable`) — and names the decision and its successor. `task-brief.mjs` refuses the same set: it prints the reason on stderr, nothing on stdout, and exits 1, because the decisions it injects are matched against what is in force now, and level N+1 would be briefed under a different decision than level N. Warnings, such as a pin behind the manifest's text or a pin to a draft, stop neither.
 
 ## Profile seam
 

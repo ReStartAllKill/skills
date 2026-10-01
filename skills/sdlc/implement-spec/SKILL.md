@@ -36,6 +36,9 @@ disable-model-invocation: false
    node <sdlc_runtime>/tools/check-artifacts.mjs <명세 디렉터리>
    node <sdlc_runtime>/tools/plan-levels.mjs <명세 디렉터리>
    ```
+5. 프로필에 `adr_repo`가 있으면 `node <sdlc_runtime>/tools/adr-bindings.mjs <저장소 루트>`도
+   실행한다. 상류 체크아웃이 보이면 매니페스트가 낡았는지까지 대조하고, 없으면 대조하지 못했다고
+   알린다. 오류가 있으면 구현을 시작하지 않고 `pull-adr.mjs`와 `/iterate-spec`으로 먼저 고친다.
 
 ## 1. 작업 트리와 진행 상태 확인
 
@@ -61,7 +64,7 @@ node <sdlc_runtime>/tools/plan-resume.mjs <명세 디렉터리>
 | `review_completion` | 3의 감사·필수 수동 검증을 확인하고 완료 처리 |
 | `commit_completion` | 완료 상태의 plan과 이 세트의 검증 로그만 명시적으로 스테이징해 커밋 |
 | `complete` | 증거를 확인해 완료 보고 |
-| `blocked` | 이유에 나온 상태나 미커밋 변경을 확인하고 해결한 뒤 다시 조회 |
+| `blocked` | 이유에 나온 상태나 미커밋 변경을 확인하고 해결한 뒤 다시 조회. 핀한 결정이 효력을 잃었다는 이유면 구현을 멈추고 `/iterate-spec`을 안내 |
 
 중간 scoped 로그와 미커밋 완료 기록은 정상적인 재개 입력이다. 소스 등 다른 변경은 도구가
 차단하므로 소유자와 목적을 확인한다. 귀속 커밋만 있는 작업은 구현된 상태이며 완료된 상태는 아니다.
@@ -96,7 +99,9 @@ node <sdlc_runtime>/tools/task-worktree.mjs <명세 디렉터리> add WP-003
 node <sdlc_runtime>/tools/task-brief.mjs <명세 디렉터리> WP-003 --worktree <워크트리 경로> [--snippets <파일>]
 ```
 
-출력된 프롬프트를 수정하지 않고 프로필의 `writer_agent`에게 전달한다. 프롬프트에는
+출력된 프롬프트를 수정하지 않고 프로필의 `writer_agent`에게 전달한다. 종료 코드가 0이 아니면
+프롬프트가 없다 — 구현 에이전트를 띄우지 않는다. 핀한 결정이 효력을 잃어 거부한 것이면 stderr의
+이유를 보고하고 `/iterate-spec`을 안내한 뒤 멈춘다. 프롬프트에는
 `<sdlc_runtime>/references/writer-prompt.md`를 바탕으로 AC 문장, 적용되는 `.claude/rules`,
 병렬 작업 제약, 커밋 금지 규칙이 포함된다.
 

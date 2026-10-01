@@ -95,7 +95,8 @@ revisit: ["RV-001"]
 ### RV-001 — <재검토 조건>
 
 <!-- A condition that is true or false, not a date. «Revisit in six months» is not a condition.
-     `/create-finding` can wake this ID from an operational signal. -->
+     Nothing watches it: a person, or a finding's diagnosis, cites this ID when it comes true, and
+     the response is a successor ADR, reached through an intent like any change. -->
 
 <이것이 참이 되면 이 결정을 다시 연다.>
 

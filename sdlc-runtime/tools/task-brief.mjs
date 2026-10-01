@@ -3,7 +3,7 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { resolve, join, relative, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { loadDir, levelsOf, wpFiles, wpField, frontmatter, loadAdrDir } from './artifact-parse.mjs'
-import { adrSeam, adrDigest, adrsForFiles, loadManifest } from './adr-check.mjs'
+import { adrSeam, adrDigest, adrsForFiles, loadManifest, pinBlockers } from './adr-check.mjs'
 import { loadBindings, boundForFiles } from './adr-bindings.mjs'
 import { FIELD } from './keywords.mjs'
 const FIELD_LINE = new RegExp(`^\\s*(?:${[...FIELD.basis, ...FIELD.acceptance].join('|')})\\s*:`, 'i')
@@ -90,6 +90,17 @@ if (rulesDir && existsSync(rulesDir)) {
 }
 
 const seam = { ...adrSeam(ROOT), root: ROOT }
+// A set pinning a decision no longer in force must not get a brief: the injection below matches the
+// task's files against what is accepted now, so the writer would be handed the successor's text, or
+// no decision at all, under a plan designed against the old one — and nothing would say so until CI.
+// Exit 1 with no prompt on stdout, so a runner that passes stdout verbatim dispatches nothing.
+const dead = pinBlockers(docs, seam)
+if (dead.length) {
+  console.error('이 세트가 핀한 결정이 효력을 잃었다 — 프롬프트를 만들지 않았다:')
+  for (const p of dead) console.error(`  ${p.doc}: ${p.msg}${p.hint ? `\n    ${p.hint}` : ''}`)
+  console.error('/iterate-spec 으로 후속 결정을 읽고 핀을 옮긴 뒤 다시 실행한다.')
+  process.exit(1)
+}
 const adrLines = []
 if (seam.configured && seam.dir) {
   const all = loadAdrDir(seam.dir).docs

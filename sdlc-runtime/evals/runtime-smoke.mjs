@@ -2952,6 +2952,123 @@ await test('a binding to a decision retired for a draft says no decision is in f
   assert(dead && /ADR-003\(draft\)/.test(dead.hint) && /효력 있는 결정이 없다/.test(dead.hint), `the binding hint sent the reader to a draft as if it held:\n${rep.raw}`)
 })
 
+// ── A decision that changes under work already planned ───────────────────────────────────────
+await test('adr-impact lists who pins, touches and mentions a decision, open sets apart from closed', () => {
+  const d = closedRepo()
+  adrAt(d, 'ADR-001', 'store', 'accepted')
+  const plan = (dir, status, pins, file, prose = '') =>
+    put(join(d, '.sdlc/specs', dir, 'plan.md'), closedPlan(status, pins).replace('src/a/x.ts', file).replace('# Plan\n', `# Plan\n${prose}`))
+  plan('open', 'draft', '"ADR-001"', 'src/b/y.ts')
+  plan('running', 'in_progress', '', 'src/a/x.ts')
+  plan('done', 'completed', '"ADR-001"', 'src/a/x.ts')
+  plan('talk', 'draft', '', 'src/c/z.ts', '\nThe store follows ADR-001.\n')
+  const impact = (...a) => run(process.execPath, [tool('adr-impact.mjs'), d, ...a])
+  const j = impact('ADR-001', '--json')
+  assert(j.code === 0, `a report exited non-zero:\n${j.out}`)
+  const rep = JSON.parse(j.out)
+  const sets = (rows) => rows.map((r) => r.set).sort().join(',')
+  assert(sets(rep.pinned.open) === '.sdlc/specs/open' && sets(rep.pinned.closed) === '.sdlc/specs/done', `pins were not split open from closed:\n${j.out}`)
+  assert(rep.touching.length === 1 && rep.touching[0].set === '.sdlc/specs/running' && rep.touching[0].running && !rep.touching[0].pinned && rep.touching[0].tasks.join() === 'WP-001',
+    `the running plan that touches the scope unpinned was not named, or a closed one was:\n${j.out}`)
+  assert(sets(rep.mentioned) === '.sdlc/specs/talk', `a prose-only mention was missed, or a pinning set counted as one:\n${j.out}`)
+  assert(rep.in_force === 'ADR-001' && rep.paths.join() === 'src/a', `the decision itself was misread:\n${j.out}`)
+  const t = impact('ADR-001')
+  assert(t.code === 0 && /핀한 세트 — 열린 것 \(1\)\n  \.sdlc\/specs\/open/.test(t.out) && /핀한 세트 — 닫힌 것 \(1\)\n  \.sdlc\/specs\/done/.test(t.out)
+    && /범위를 만지는 열린 계획 \(1\)\n  \.sdlc\/specs\/running .*핀 없음/.test(t.out) && /본문에서만 부르는 세트 \(1\)\n  \.sdlc\/specs\/talk/.test(t.out)
+    && /후속 ADR 을 먼저 승인하고/.test(t.out) && /닫힌 세트 1개는 이력이다/.test(t.out), `the text report did not match the JSON:\n${t.out}`)
+  assert(impact('ADR-009').code === 2, 'an unknown ID read as a decision nothing depends on')
+  assert(run(process.execPath, [tool('adr-impact.mjs'), temp('sdlc-no-profile'), 'ADR-001']).code === 2, 'a repository without a profile read as one with nothing to report')
+
+  // After the retirement: the chain is followed to the decision in force, and the running plan is
+  // still found, though `adrsForFiles` would no longer see a superseded decision.
+  adrAt(d, 'ADR-001', 'store', 'superseded')
+  adrAt(d, 'ADR-002', 'store-again', 'accepted')
+  const after = JSON.parse(impact('ADR-001', '--json').out)
+  assert(after.superseded_by.join() === 'ADR-002' && after.in_force === 'ADR-002' && after.touching.length === 1, `the report lost track once the decision was retired:\n${JSON.stringify(after)}`)
+})
+
+await test('adr-impact reads an upstream decision in a consumer with its binding', () => {
+  const up = bindUpstream(), d = bindConsumer()
+  assert(run(process.execPath, [tool('pull-adr.mjs'), d, '--from', up]).code === 0, 'pull-adr failed')
+  put(join(d, '.claude/adr-bindings.yml'), bindingsYml(git(up, 'rev-parse', 'HEAD')))
+  put(join(d, '.sdlc/specs/pool/plan.md'), dualPlan('"acme/docs#ADR-001"'))
+  const r = run(process.execPath, [tool('adr-impact.mjs'), d, 'acme/docs#ADR-001', '--json'])
+  assert(r.code === 0, r.out)
+  const rep = JSON.parse(r.out)
+  assert(rep.space === 'up' && rep.shown === 'acme/docs#ADR-001' && rep.paths.join() === 'src/vault', `the upstream decision was not read through its binding:\n${r.out}`)
+  assert(rep.binding?.current === true && rep.binding.paths.join() === 'src/vault', `the binding was not reported:\n${r.out}`)
+  assert(rep.pinned.open[0]?.set === '.sdlc/specs/pool' && rep.touching.some((t) => t.pinned && t.tasks.includes('WP-001') && t.tasks.includes('WP-003')), `the pinning plan was not found:\n${r.out}`)
+  assert(run(process.execPath, [tool('adr-impact.mjs'), d, 'acme/docs#ADR-009']).code === 2, 'an upstream ID the manifest lacks was not refused')
+})
+
+/** A plan running under one decision, at a point where plan-resume would say `implement`. */
+function resumeRepo(pins) {
+  const d = temp('sdlc-resume-adr')
+  put(join(d, '.claude/spec-profile.yml'), 'sdlc_version: 5\nspec_dir: .sdlc/specs\nadr_dir: docs/adr\nworktree_dir: .wt\ntask_branch: "task/{slug}-{task}"\nverify: true\n')
+  put(join(d, '.gitignore'), '.wt/\n')
+  put(join(d, 'src/a/x.ts'), 'export const x = 1 // test_Store\n')
+  put(join(d, 'docs/adr/ADR-001-store.md'), bindAdr('ADR-001', 'store', 'scope: ["src/a"]\nconfirms: ["test_Store"]'))
+  put(join(d, 'docs/adr/ADR-003-draft.md'), bindAdr('ADR-003', 'draft', 'scope: ["src/z"]\nconfirms: []').replace('status: accepted', 'status: draft').replace('approved_by: "human"', 'approved_by: null'))
+  put(join(d, '.sdlc/specs/s/plan.md'), `---
+artifact: plan
+schema_version: 5
+status: in_progress
+decisions: [${pins}]
+---
+
+## 릴리스 영향
+
+target_branch: feat/s
+pr_strategy: 단일 PR
+
+## 작업
+
+- [ ] **WP-001 — 저장소를 고친다**
+  - files: \`src/a/x.ts\`
+  - depends: 없음
+  - covers: FR-001 (AC-001)
+  - tests: 저장된다
+  - verify: true
+
+## 실행 기록
+
+해당 없음 — 아직 실행 전.
+`)
+  git(d, 'init', '-q', '-b', 'main'); git(d, 'config', 'user.email', 'eval@local'); git(d, 'config', 'user.name', 'eval')
+  git(d, 'add', '-A'); git(d, 'commit', '-qm', 'plan born')
+  git(d, 'switch', '-qc', 'feat/s')
+  return d
+}
+const resume = (d) => {
+  const r = run(process.execPath, [tool('plan-resume.mjs'), join(d, '.sdlc/specs/s'), '--json'])
+  try { return { ...JSON.parse(r.out), raw: r.out } } catch { throw new Error(`plan-resume did not print JSON:\n${r.out}`) }
+}
+const brief = (d) => spawnSync(process.execPath, [tool('task-brief.mjs'), join(d, '.sdlc/specs/s'), 'WP-001'], { encoding: 'utf8' })
+
+await test('plan-resume and task-brief stop on a pinned decision superseded mid-plan, and only on that', () => {
+  const d = resumeRepo('"ADR-001"')
+  let next = resume(d)
+  assert(next.action === 'implement', `the fixture is not at an implement step:\n${next.raw}`)
+  let b = brief(d)
+  assert(b.status === 0 && /Price at 1:1 on the first epoch/.test(b.stdout), `a live pin changed the brief:\n${b.stdout}${b.stderr}`)
+
+  put(join(d, 'docs/adr/ADR-001-store.md'), bindAdr('ADR-001', 'store', 'scope: ["src/a"]\nconfirms: ["test_Store"]').replace('status: accepted', 'status: superseded').replace('superseded_by: null', 'superseded_by: "ADR-002"'))
+  put(join(d, 'docs/adr/ADR-002-store-again.md'), bindAdr('ADR-002', 'store-again', 'scope: ["src/a"]\nconfirms: ["test_Store"]').replace('supersedes: null', 'supersedes: "ADR-001"')
+    .replace('Price at 1:1 on the first epoch.', 'Price at a premium.'))
+  git(d, 'add', '-A'); git(d, 'commit', '-qm', 'supersede between levels')
+  next = resume(d)
+  assert(next.action === 'blocked' && /ADR-001/.test(next.reason) && /ADR-002/.test(next.reason) && /\/iterate-spec/.test(next.reason),
+    `a plan pinned to a superseded decision resumed:\n${next.raw}`)
+  b = brief(d)
+  assert(b.status !== 0 && b.stdout === '' && /ADR-001/.test(b.stderr), `task-brief briefed a writer under the successor's text:\nstdout:${b.stdout}\nstderr:${b.stderr}`)
+
+  // A warning — a pin to a decision still in draft — is reported by the checker, not by resume.
+  const w = resumeRepo('"ADR-001", "ADR-003"')
+  next = resume(w)
+  assert(next.action === 'implement', `a warning-level pin stopped resume:\n${next.raw}`)
+  assert(brief(w).status === 0, 'a warning-level pin stopped task-brief')
+})
+
 await test('Execution log ignores change-history task IDs in either language', async () => {
   const { SECTION, sectionBlock, RE_CHANGE_LOG } = await import('../tools/keywords.mjs')
   for (const heading of ['Change log', 'Changelog', '변경 기록']) {

@@ -323,3 +323,4 @@ node <sdlc_runtime>/tools/check-set.mjs <산출물 폴더> [--strict]
 
 중단된 구현은 `plan-resume.mjs <세트>`로 다음 행동을 확인한다. 중간 검증이 끝났어도
 최종 전체 검증 전에는 체크박스를 켜지 않는다. 실패·부분 진행 기록도 미체크 상태를 유지한다.
+핀한 결정이 효력을 잃은 세트는 핀을 옮길 때까지 거기서 `blocked`이고 `task-brief.mjs`도 거부한다.

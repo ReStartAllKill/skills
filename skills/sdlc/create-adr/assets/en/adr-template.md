@@ -96,7 +96,8 @@ the device that holds every alternative to one yardstick.
 ### RV-001 — <the condition that reopens it>
 
 <!-- A condition that is true or false, not a date. «Revisit in six months» is not a condition.
-     `/create-finding` can wake this ID from an operational signal. -->
+     Nothing watches it: a person, or a finding's diagnosis, cites this ID when it comes true, and
+     the response is a successor ADR, reached through an intent like any change. -->
 
 <When this becomes true, the decision is reopened.>
 

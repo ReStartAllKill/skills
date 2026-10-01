@@ -40,6 +40,38 @@
   notes, which would stop CI from catching the documents they are right about; and waiving
   `lint-prose` rules, which already have the `lint_warnings` policy. The eval runner gained a
   `notes` match in `expected.json`, since a waived warning leaves the counts and shows only there.
+- **`adr-impact.mjs` says what retiring or replacing a decision touches before it is done, and a
+  plan in progress stops instead of crossing a decision change unnoticed.** The checkers judged a
+  changed decision correctly, but only after the fact: the save hook checks the folder that was
+  edited, so the sets pinning a superseded ADR, the open plans whose tasks reach its scope and a
+  consumer's binding to it surfaced as CI failures. `/create-adr` said to supersede and nothing
+  about what depended on the decision. `adr-impact.mjs <repo-root> <ADR-id | owner/repo#ADR-id>`
+  is a read-only report — exit 0 for any readable repository, 2 for an unknown ID or no profile —
+  listing the sets that pin the decision, open apart from closed, the open plans whose task
+  `files` touch its `scope` or binding `paths` and whether they pin it, the sets that only mention
+  it, the binding in a consumer, and what each would need. It reads pins and mentions through the
+  checker's own `idSpaces`/`keyOf` and a mention helper now shared with `checkPins`, so local and
+  upstream IDs are told apart the same way; it matches task files with `touches` directly rather
+  than `adrsForFiles`, which keeps only accepted decisions and would find nothing once the
+  decision was retired. Separately, `plan-resume` built its verdict from `plan-levels` and
+  `plan-progress` alone, so a pinned decision superseded between two levels read as `implement`,
+  and `task-brief` then injected whatever was accepted now — the successor's text, or nothing —
+  so the next level was built under a different decision than the last. Both now stop on the
+  decision-pin errors (`pin-dead`, `decision-pin-unknown`, `decision-pin-unreadable`):
+  `plan-resume` returns `blocked` naming the decision and its successor and pointing to
+  `/iterate-spec`; `task-brief` prints the reason on stderr, nothing on stdout, and exits 1, so a
+  runner passing its output verbatim dispatches no writer. Warnings stop neither. `checkPins` is
+  called directly rather than `check-artifacts --json` filtered by rule, which would also have
+  stopped resume on unrelated errors that `/implement-spec` step 0 already handles. The skills
+  follow: `/create-adr` runs `adr-impact` before retiring a decision and states the order «accept
+  the successor, then retire the predecessor»; `/iterate-spec` has a row for a pinned decision
+  that changed; `/implement-spec` runs `adr-bindings` before work in a consumer and knows what a
+  non-zero `task-brief` exit means; `references/adr.md` gains «When a decision changes». The ADR
+  templates and the `adr-revisit-unlisted` hint no longer claim that `/create-finding` wakes an
+  `RV-*` — nothing reads `revisit:` but the checker, and a finding routes only to a patch, an
+  intent or a dismissal. A finding→ADR route would be a new contract and was not added; the
+  documents now say what is true: an `RV-*` is a condition a person or a finding's diagnosis
+  cites, and the response is a successor ADR reached through an intent.
 
 ### Fixed
 

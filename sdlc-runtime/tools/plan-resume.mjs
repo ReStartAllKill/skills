@@ -5,6 +5,8 @@ import { existsSync } from 'node:fs'
 import { resolve, dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
+import { loadDir } from './artifact-parse.mjs'
+import { adrSeam, pinBlockers } from './adr-check.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const args = process.argv.slice(2)
@@ -42,6 +44,15 @@ try {
     if (!ROOT || !progress.born) return action('blocked', [], null, '프로필과 커밋된 plan 이 필요하다.')
     if (errors.length) return action('blocked', [], null, errors.join('\n'))
     if (!['accepted', 'in_progress', 'completed'].includes(plan.status)) return action('blocked', [], null, '먼저 plan 을 검토하고 승인한다.')
+    // plan-levels and plan-progress read tasks and evidence, not decisions. A pinned decision
+    // superseded between two levels would otherwise read as `implement`, and the next level would be
+    // briefed under whatever is in force now. See `pinBlockers` for which problems stop here.
+    const dead = pinBlockers(loadDir(DIR, () => {}), adrSeam(ROOT))
+    if (dead.length) {
+      return action('blocked', [], null, '이 세트가 핀한 결정이 효력을 잃었다 — 다음 레벨을 그 결정 아래에서 지을 수 없다.\n' +
+        dead.map((p) => `${p.doc}: ${p.msg} — ${p.hint ?? ''}`.trim()).join('\n') +
+        `\n/iterate-spec 으로 후속 결정을 읽고 설계와 작업이 여전히 서는지 본 뒤 핀을 옮긴다. 영향 범위: node ${join(HERE, 'adr-impact.mjs')} ${ROOT} <ADR-id>`)
+    }
     if (git('branch', '--show-current') !== plan.target_branch) return action('blocked', [], null, `target_branch ${plan.target_branch} 에서 재개한다.`)
     // Pending logs and checkbox records are expected after interruption; unrelated edits are not.
     const raw = git('status', '--porcelain=v1', '-z', '--untracked-files=all', '--no-renames')

@@ -21,7 +21,9 @@ When the profile has no `sdlc_runtime`, discovery order is the repository's `.cl
 | `plan-levels.mjs` | Calculate dependencies and execution levels |
 | `task-worktree.mjs` | Create worktrees and commit, merge, and clean up tasks |
 | `task-worktree.mjs finish` | Commit, merge, and remove one task in one call, stopping at the first failure |
-| `task-brief.mjs` | Generate a writer-agent prompt |
+| `task-brief.mjs` | Generate a writer-agent prompt; refuses, exit 1 with nothing on stdout, when the set pins a decision no longer in force |
+| `plan-resume.mjs` | Name the next implementation step after an interruption; `blocked` on a decision-pin error |
+| `adr-impact.mjs` | Report what pins, touches, mentions or binds one decision, before it is retired or replaced (read-only) |
 | `guard-approval.sh` | Guard approval transitions and edits to approved documents |
 | `gate-artifacts.sh` | Check edited artifacts, record their token usage, and summarize duplicate warnings |
 | `sdlc-lib.sh` | Resolve profiles and paths for hooks |

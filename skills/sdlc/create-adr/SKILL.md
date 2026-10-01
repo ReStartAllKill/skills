@@ -33,7 +33,17 @@ node <sdlc_runtime>/tools/adr-index.mjs <저장소 루트> --next
 
 기존 ADR 목록과 다음 번호를 확인한다. `git log origin/main..`로 현재 브랜치의 번호 사용도 확인한다.
 기존 ADR이 같은 결정을 다루면 중복 작성하지 않는다. 결론을 바꾸려면 후속 ADR을 작성하고
-기존 문서를 `superseded`로 전환한다. 순서는 **후속을 승인하고, 그다음 선행을 전환한다** — 후속이
+기존 문서를 `superseded`로 전환한다. 폐기(`deprecated`)도 같다. 선행을 돌리기 **전에** 그 결정에
+걸린 것을 확인한다.
+
+```sh
+node <sdlc_runtime>/tools/adr-impact.mjs <저장소 루트> <ADR-id>
+```
+
+핀한 열린 세트, 범위를 만지는 열린 계획, 그중 실행 중인(`in_progress`) 계획을 보고에 적는다 —
+전환 뒤 그 세트들은 `/iterate-spec`으로 핀을 옮겨야 하고, 실행 중인 계획은 `plan-resume`과
+`task-brief`가 멈춘다. 닫힌 세트는 이력이라 고치지 않는다.
+순서는 **후속을 승인하고, 그다음 선행을 전환한다** — 후속이
 `draft`인 채로 선행을 먼저 돌리면 그 사이 그 범위에 효력 있는 결정이 없어 구현 에이전트가 아무
 결정도 받지 못하고, 검사기가 경고한다. 승인된 ADR의 본문을 수정해 기존 결론을 바꾸지 않는다.
 선행을 `superseded`·`deprecated`로 바꾸는 편집과 `accepted`·`superseded`·`deprecated`·`rejected`
@@ -88,4 +98,5 @@ node <sdlc_runtime>/tools/adr-index.mjs <저장소 루트>
 
 파일 경로, 상태, 채택안과 기각한 대안, `scope`와 `confirms`, 인덱스 갱신 여부,
 검사기·린터의 오류와 경고 수를 보고한다. 관련 산출물이 있으면 `decisions:`에 ADR의 버전을
-고정해 참조하도록 안내한다.
+고정해 참조하도록 안내한다. 결정을 대체·폐기했으면 `adr-impact`가 보고한 열린 세트와 실행 중인
+계획을 나열하고 각각 `/iterate-spec`으로 핀을 옮기도록 안내한다.

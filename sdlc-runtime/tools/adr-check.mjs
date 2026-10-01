@@ -115,7 +115,7 @@ export function checkAdr(doc, { seam, siblings = [] }, push) {
   }
   const declared = [].concat(fm.revisit ?? []).map(String).filter((v) => !isNull(v))
   for (const id of declared) if (!rvs.includes(id)) warn(`\`revisit: ${id}\` 가 본문에 없다`, '«확인과 재검토» 에 `### RV-NNN — 조건` 으로 정의한다.', R('adr-revisit-undefined'))
-  for (const id of rvs) if (declared.length && !declared.includes(id)) warn(`${id} 가 \`revisit:\` 에 없다`, '프런트매터가 기계가 읽는 목록이다 — 빠지면 finding 이 그 조건을 못 깨운다.', R('adr-revisit-unlisted'))
+  for (const id of rvs) if (declared.length && !declared.includes(id)) warn(`${id} 가 \`revisit:\` 에 없다`, '프런트매터 목록과 본문이 같아야 사람이나 finding 의 진단이 인용하는 ID 가 한 조건을 가리킨다. 조건이 참이 되면 intent 를 거쳐 후속 ADR 을 쓴다 — 이 목록을 자동으로 지켜보는 도구는 없다.', R('adr-revisit-unlisted'))
   for (const rv of [...doc.ents.values()].filter((e) => e.id.startsWith('RV-'))) {
     if (locale().deadlineOnly.test(rv.title)) {
       warn(`${rv.title} 이 시한으로 쓰였다`, 'RV-* 는 참·거짓이 판정되는 조건이다. «6개월 뒤 재검토» 는 아무도 판정하지 않는다.', R('adr-revisit-deadline'))
@@ -212,7 +212,7 @@ export function checkAdr(doc, { seam, siblings = [] }, push) {
 /** `@` takes a commit SHA or, for the manifest's repository, the decision's content hash
  *  (`@body:<hex>`, `decisionHash`). The two groups are separate so a pin into a repository with no
  *  manifest is still asked for its SHA, as it always was: `body:` is only checkable against one. */
-const PIN = /^(?:(?<owner>[\w.-]+)\/(?<repo>[\w.-]+)#)?(?<id>ADR-\d{3,4})(?:@(?:body:(?<body>[0-9a-f]{12,64})|(?<sha>[0-9a-f]{7,40})))?$/
+export const PIN = /^(?:(?<owner>[\w.-]+)\/(?<repo>[\w.-]+)#)?(?<id>ADR-\d{3,4})(?:@(?:body:(?<body>[0-9a-f]{12,64})|(?<sha>[0-9a-f]{7,40})))?$/
 
 /** A set that has finished — a completed plan, or a set someone replaced or turned down — is a
  *  record of work done under the decisions in force at the time. Judging it against today's
@@ -224,7 +224,7 @@ const PIN = /^(?:(?<owner>[\w.-]+)\/(?<repo>[\w.-]+)#)?(?<id>ADR-\d{3,4})(?:@(?:
  *  meant to stop it. What decides is the decision's status at the commit that closed the set,
  *  read from git. An uncommitted closing edit, or a history too shallow to show the commit, yields
  *  nothing, and the caller then judges as if the set were open. */
-const CLOSED = ['completed', 'superseded', 'rejected']
+export const CLOSED = ['completed', 'superseded', 'rejected']
 const git = (cwd, args) => {
   try { return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) } catch { return null }
 }
@@ -286,7 +286,7 @@ const historyOf = (docs, seam) => {
  *  repository's folder, `<owner>/<repo>#` the manifest's repository (or this repository, when it
  *  names `repo`). Reducing a pin to its bare ID, as every caller once did, let a local pin satisfy
  *  an upstream requirement and checked an upstream pin against the local folder. */
-function idSpaces(seam) {
+export function idSpaces(seam) {
   const localDocs = seam.dir ? loadAdrDir(seam.dir).docs : []
   const manifest = seam.repo ? loadManifest(seam.manifest) : null
   const dual = !!(seam.dir && seam.repo)
@@ -322,9 +322,25 @@ function idSpaces(seam) {
   }
   return { local, up, manifest, dual, upRepo, spaceOf, keyOf }
 }
-const pinKeys = (ids, docs) => new Set(Object.values(docs)
+export const pinKeys = (ids, docs) => new Set(Object.values(docs)
   .flatMap((d) => [].concat(d.fm?.decisions ?? []).map(String))
   .map((p) => PIN.exec(p.trim())?.groups).filter(Boolean).map(ids.keyOf))
+
+/** The decisions a document's text names, keyed as a pin of the same form would be, mapped to how
+ *  each was written. A mention is read as a pin is: with two ID spaces a bare `ADR-005` in prose is
+ *  this repository's, and the upstream one is written `<owner>/<repo>#ADR-005`. Reading a bare
+ *  mention as «either» was rejected — it lets an upstream pin silence a local citation, the same
+ *  conflation the pin check refuses. A waiver's basis justifies an opt-out and is not the document
+ *  resting on anything it names, as the ID-reference scan in check-artifacts already reads it. The
+ *  rest of the frontmatter stays in: `decisions:` only names what is pinned, and `title` or
+ *  `generated_from` naming a decision is the writer citing it. Shared with `adr-impact.mjs`, so «the
+ *  set mentions it» means the same there as in the warning. */
+export function mentionsIn(ids, d) {
+  const waiving = waiveLines(d.lines)
+  const text = stripComments(d.lines.map((l, i) => (waiving.has(i) ? '' : l)).join('\n'))
+  return new Map([...text.matchAll(/(?:\b(?<owner>[\w.-]+)\/(?<repo>[\w.-]+)#)?\b(?<id>ADR-\d{3,4})\b/g)]
+    .map((x) => [ids.keyOf(ids.dual ? x.groups : { id: x.groups.id }), ids.dual ? x[0] : x.groups.id]))
+}
 
 /** The decisions that replaced the one under `key`, nearest first, following `superseded_by` through
  *  every decision that is itself `superseded`; `{ space, ids }`, or null when the key's space is
@@ -336,7 +352,7 @@ const pinKeys = (ids, docs) => new Set(Object.values(docs)
  *  old manifest reads the same. When the two disagree, `adr-supersede-unreciprocated` warns on the
  *  folder. Only bare IDs are followed: a successor written `<owner>/<repo>#ADR-NNN` lives in another
  *  space, and the chain does not cross spaces. */
-function successorsOf(ids, key) {
+export function successorsOf(ids, key) {
   const at = key.indexOf(':')
   const space = at > 0 ? key.slice(0, at) : null
   const src = space ? ids[space] : null
@@ -441,20 +457,8 @@ export function checkPins(docs, { seam }, push) {
       }
     }
 
-    // A mention is read as a pin of the same form would be: with two ID spaces a bare `ADR-005` in
-    // prose is this repository's, and the upstream one is written `<owner>/<repo>#ADR-005`. Reading a
-    // bare mention as «either» was rejected — it lets an upstream pin silence a local citation, the
-    // same conflation the pin check refuses.
-    // A waiver's basis justifies an opt-out and is not the document resting on anything it names, as
-    // the ID-reference scan in check-artifacts already reads it. The rest of the frontmatter stays
-    // in: `decisions:` only names what is pinned, and `title` or `generated_from` naming a decision
-    // is the writer citing it.
     const pinned = pinKeys(ids, { d })
-    const waiving = waiveLines(d.lines)
-    const text = stripComments(d.lines.map((l, i) => (waiving.has(i) ? '' : l)).join('\n'))
-    const mentioned = new Map([...text.matchAll(/(?:\b(?<owner>[\w.-]+)\/(?<repo>[\w.-]+)#)?\b(?<id>ADR-\d{3,4})\b/g)]
-      .map((x) => [ids.keyOf(ids.dual ? x.groups : { id: x.groups.id }), ids.dual ? x[0] : x.groups.id]))
-    for (const [key, shown] of mentioned) {
+    for (const [key, shown] of mentionsIn(ids, d)) {
       if (pinned.has(key)) continue
       // Naming the decision a change migrates away from is history, not reliance, once the document
       // pins what replaced it: the pin's status is watched, and the old one cannot come back into
@@ -471,6 +475,25 @@ export function checkPins(docs, { seam }, push) {
         (ids.dual && !shown.includes('#') ? ` 앞에 레포가 없는 ID 는 이 레포의 ${ids.local.where} 로 읽는다 — ${ids.upRepo} 의 결정이면 \`${ids.upRepo}#${shown}\` 로 쓴다.` : ''), R('adr-mention-unpinned'))
     }
   }
+}
+
+/** The pin errors after which work on a set must not go on: a pinned decision no longer in force,
+ *  one that does not exist, or a pin nobody can read. `plan-resume` and `task-brief` stop on these.
+ *  Between two levels of a running plan a pinned decision can be superseded, and `task-brief` then
+ *  injects what is accepted now for the task's files — the successor's text, or nothing — so level
+ *  N+1 would be built under a different decision than level N with nothing saying so until CI.
+ *  `checkPins` is called directly rather than `check-artifacts --json` filtered by rule: the full
+ *  checker would also stop resume on errors unrelated to decisions, which `/implement-spec` step 0
+ *  already handles, and costs a process per call. Warnings — a pin behind the manifest's text, a
+ *  pin to a draft — do not stop work; the checker reports them where they are fixed. A closed set
+ *  whose decision lost force after it closed yields a note in `checkPins`, so it stops nothing. */
+export const PIN_BLOCKING = ['pin-dead', 'decision-pin-unknown', 'decision-pin-unreadable']
+export function pinBlockers(docs, seam) {
+  const out = []
+  checkPins(docs, { seam }, (level, doc, msg, hint, rule) => {
+    if (level === 'error' && PIN_BLOCKING.includes(rule)) out.push({ doc, rule, msg, hint })
+  })
+  return out
 }
 
 /** A plan whose tasks touch code an accepted ADR constrains must pin that ADR. `task-brief` does

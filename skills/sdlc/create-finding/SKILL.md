@@ -33,6 +33,8 @@ finding의 `accepted`는 사람의 승인이 아니라 경로 확정을 뜻한�
 | intent | 구조적 문제·여러 서비스의 공통 문제·제품 판단이 필요하다 | 대상 intent가 없으면 `in_review`, `routed_to: null` |
 | dismiss | 오탐이거나 검토 결과 조치하지 않는다 | `rejected`, `routed_to: dismiss:<사유>` |
 
+진단이 어느 ADR의 재검토 조건(`RV-*`)이 참이 됐음을 보이면 그 ID를 인용하고 intent로 분류한다.
+finding이 ADR로 바로 가는 경로는 없다 — 결정을 바꾸는 일은 intent를 거쳐 후속 ADR로 한다.
 처리 경로를 판단하기 어려우면 intent로 분류하고 `/create-intent <finding 경로>`를 안내한다.
 intent가 생기면 양쪽 상대 경로를 연결하고 finding을 `accepted`로 바꾼 뒤 다시 검사한다.
 PR 링크가 아직 없는 patch도 경로 확정 전 상태로 남긴다. 이 스킬이 PR 생성 권한을 부여하지는 않는다.

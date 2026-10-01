@@ -24,6 +24,15 @@ description: '기존 의도·명세·계획에 피드백, 리뷰 결과, 요구�
 | 외부 동작 | spec | 관련 FR/NFR을 구현하는 작업 |
 | 구현 방법 | plan의 설계 결정 | 관련 작업 |
 | 작업 분할·순서 | plan의 작업 | 의존 관계와 실행 레벨 |
+| 핀한 결정이 바뀜 (`pin-dead`·`decision-pin-behind`·`binding-dead`·`binding-stale`, `plan-resume`의 `blocked`) | 각 문서의 `decisions:` | 결정에 기댄 `TD-*`와 작업 |
+
+**핀한 결정이 바뀌었으면** 먼저 `node <sdlc_runtime>/tools/adr-impact.mjs <저장소 루트> <ADR-id>`로
+이 세트 말고도 걸린 세트를 확인한다. 후속 결정(`adr-impact`의 «효력»)을 읽고, 설계 결정(`TD-*`)과
+작업이 그 안에 여전히 서는지 판단한다. 서면 핀만 옮기고, 서지 않으면 해당 `TD-*`와 작업을 위 표대로
+고친다. 후속이 아직 효력이 없으면 핀을 옮기지 않고 결정 쪽 승인을 기다리게 보고한다. 소비 레포에서는
+`pull-adr.mjs`로 다시 끌어오고, 결정을 다시 읽은 뒤 바인딩의 `at`을 올리거나 후속으로 옮기고, 그다음
+핀을 옮긴다. 승인된 문서의 `decisions:` 편집은 승인 다이얼로그가 뜨고, 실행 중인 plan은 아래처럼
+상태부터 되돌린다. 변경 기록에 옮긴 핀과 그 이유를 남긴다.
 
 폴더에 `upstream.lock.json`이 있으면 `intent.md`·`spec.md`는 **벤더한 사본**이다. 여기서 고치지
 않는다 — 상류 문서 레포에서 `/iterate-spec`으로 고치고, 소비 레포에서

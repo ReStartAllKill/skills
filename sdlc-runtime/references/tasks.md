@@ -79,7 +79,9 @@ The final full verification passes every task ID in the plan to `--tasks`, and i
 Run `plan-resume.mjs <set> [--json]` before choosing the next action. It distinguishes
 pending implementation, commits waiting in a task branch, integrated code, final full
 verification, pending completion records, and completion review. `plan-levels` reports
-static dependencies and checkbox completion; it is not a recovery cursor.
+static dependencies and checkbox completion; it is not a recovery cursor. It also returns
+`blocked` when a decision the set pins has lost force or cannot be found, naming the decision
+and its successor; see «When a decision changes» in `references/adr.md`.
 
 A scoped passing log allows the next level to run but never checks a task off. The log
 must match its committed snapshot and contain the task's commits. Later dependent commits

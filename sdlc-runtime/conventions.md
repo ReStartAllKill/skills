@@ -348,4 +348,5 @@ the digest. Other tiers and profiles retain document-by-document approval.
 
 Use `plan-resume.mjs <set>` after an interruption. A scoped passing integration check advances
 the next level without checking the task off; only final full verification permits completion.
-Failed and partial attempts also leave the task unchecked.
+Failed and partial attempts also leave the task unchecked. A set whose pinned decision has lost
+force is `blocked` there, and `task-brief.mjs` refuses it, until the pin is moved.
