@@ -4,6 +4,24 @@
 
 ### Fixed
 
+- **The Bash approval guard refuses approval rewrites of artifacts instead of ordinary commands.**
+  It matched tool words as substrings of the whole command, so `superseded`, `closed` and `based`
+  read as `sed` and `committee` as `tee`, and a commit message or a read-only `grep` that
+  mentioned `status: accepted` was refused — while `echo 'approved_by: "lee"' >> plan.md` and a
+  `cat` heredoc into an artifact passed, the quoted value and `cat` both escaping the rule. The
+  decision moved into `approval-bash.mjs` and now needs three facts together: a command word in
+  command position that can write, or an output redirection — an interpreter only when the
+  command carries its program (inline flag, heredoc, here-string, pipe into a bare interpreter),
+  since a named script that rewrote an approval would hold the words in its file, out of the
+  guard's sight, and counting it refused `node tools/pin.mjs … && grep "status: accepted" …`; the approval pattern as before, now
+  also with a quoted value; and a path that is an artifact by the same rule the Edit branch uses
+  (intent, spec or plan under `spec_dir`, an ADR under `adr_dir`, task worktrees included). A
+  writer and the pattern with no recognisable file at all, as in `sed -i … "$f"`, or a writer
+  fed its files by `xargs` or `find -exec`, is still refused as an unknown target; passing it was rejected because it would make a variable a
+  silent way round the guard that the old rule did not have. A repository with no profile is no
+  longer guarded on Bash, as it was not on Edit. Variable paths beside a named harmless one, `cd`
+  before a relative path and files written by a script the command only names stay uncovered,
+  and say so in `references/runtime.md`.
 - **A finished set no longer turns red when a decision it pinned is superseded later.** Pins
   were judged against today's ADR statuses, and `check-all` walks every set, so superseding an
   ADR failed CI on every completed set that had pinned it — history nobody can rewrite. A closed

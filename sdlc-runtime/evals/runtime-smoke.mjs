@@ -1080,6 +1080,92 @@ await test('the approval guard protects ADRs even though they live outside artif
   assert(r.code === 0 && !asks(r), 'adr_dir 이 없는데도 ADR 경로를 붙잡았다')
 })
 
+await test('the Bash approval guard blocks approval rewrites of artifacts and nothing else', () => {
+  // The old guard matched tool words as substrings of the whole command: «superseded» and
+  // «closed» contain sed, and a commit message or a read-only grep that mentioned the approval
+  // fields was refused. Every row is one command and the verdict it must get.
+  const repo = (adr) => {
+    const d = temp('sdlc-guard-bash')
+    put(join(d, '.claude/spec-profile.yml'),
+      `sdlc_version: 7\nsdlc_runtime: "${ROOT}"\nspec_dir: ".sdlc/specs"\n${adr ? 'adr_dir: "docs/adr"\n' : ''}`)
+    return d
+  }
+  const verdict = (d, command, { project = d, cwd = d } = {}) => {
+    const env = { ...process.env }
+    if (project) env.CLAUDE_PROJECT_DIR = project; else delete env.CLAUDE_PROJECT_DIR
+    const r = run(tool('guard-approval.sh'), [], { env, input: JSON.stringify({ tool_name: 'Bash', tool_input: { command }, cwd }) })
+    if (r.code === 2 && r.out.includes('승인 필드를 Bash 로 바꾸려는')) return 'block'
+    return r.code === 0 ? 'pass' : `exit ${r.code}: ${r.out}`
+  }
+  const sedTo = (target) => `sed -i '' 's/status: in_review/status: accepted/' ${target}`
+  const heredocCommit = 'git commit -m "$(cat <<\'EOF\'\nfix(sdlc): a closed set keeps its pin; status accepted\n\n'
+    + 'sed -i was what wrote .sdlc/specs/s/intent.md\nEOF\n)"'
+  const rows = [
+    ['pass', 'git commit -m "docs(adr): ADR-005 supersedes ADR-004; status accepted after review"'],
+    ['pass', 'git commit -m "fix: closed set keeps its pin when the decision status is no longer accepted"'],
+    ['pass', heredocCommit],
+    ['pass', `grep -rn "status: accepted" .sdlc/specs | awk -F: '{print $1}'`],
+    ['pass', 'git log --oneline | grep -i "approved_by: hanjiwoo"; echo done'],
+    ['pass', 'grep "status: accepted" .sdlc/specs/s/intent.md > /tmp/hits.txt 2>/dev/null'],
+    ['pass', `perl -ne 'print if /approved_by: lee/' .sdlc/specs/s/intent.md`],
+    ['pass', 'echo "status: accepted"'],
+    // An interpreter running a named script is not a writer: if the script rewrote an approval,
+    // the words would be in the file, not here. Skills run exactly these shapes.
+    ['pass', 'node sdlc-runtime/tools/pin.mjs .sdlc/specs/s/intent.md && grep -n "status: accepted" .sdlc/specs/s/spec.md'],
+    ['pass', 'node sdlc-runtime/tools/check-artifacts.mjs .sdlc/specs/s/plan.md | grep "status: accepted"'],
+    ['pass', 'python3 scripts/report.py .sdlc/specs/s/plan.md --filter "status: accepted"'],
+    ['pass', sedTo('/tmp/x/fixture.md')],
+    ['pass', sedTo('skills/sdlc/create-spec/evals/cases/clean-spec/docs/spec.md')],
+    // finding's accepted is a routing decision, not an approval; the Edit branch exempts it too.
+    ['pass', `sed -i '' 's/status: open/status: accepted/' .sdlc/specs/s/finding.md`],
+    // A value starting with a metacharacter is sed's search side; resetting to null is no approval.
+    ['pass', `sed -i '' 's/approved_by: .*/approved_by: null/' .sdlc/specs/s/intent.md`],
+    ['pass', `printf 'status: accepted\\n' | tee docs/adr/ADR-005-dual-store.md`],
+    ['block', sedTo('.sdlc/specs/2026-09-06-x/intent.md')],
+    ['block', sedTo('.claude/worktrees/wp-1/.sdlc/specs/s/plan.md')],
+    ['block', `echo 'approved_by: "hanjiwoo"' >> .sdlc/specs/2026-09-06-x/plan.md`],
+    // The same value written inside double quotes arrives with its quotes escaped.
+    ['block', `echo "approved_by: \\"hanjiwoo\\"" >> .sdlc/specs/2026-09-06-x/plan.md`],
+    ['pass', `sed -i '' 's/approved_by: \\(.*\\)/approved_by: null/' .sdlc/specs/s/intent.md`],
+    ['block', `python3 -c "open('.sdlc/specs/s/spec.md','w').write('status: accepted')"`],
+    ['block', `perl -pi -e 's/approved_by: null/approved_by: lee/' .sdlc/specs/s/intent.md`],
+    ['block', `node -e "require('fs').writeFileSync('.sdlc/specs/s/intent.md', 'approved_by: lee\\n')"`],
+    ['block', `python3 - <<'EOF'\nopen('.sdlc/specs/s/spec.md','w').write('status: accepted\\n')\nEOF`],
+    ['block', `python3 <<< "open('.sdlc/specs/s/spec.md','w').write('status: accepted')"`],
+    // A pipe into a bare interpreter runs whatever the pipe carries; that cannot be told apart.
+    ['block', 'cat patch.txt | python3 # status: accepted for .sdlc/specs/s/plan.md'],
+    // The null of the search side must not excuse the value written.
+    ['block', `sed -i '' 's/approved_by: null/approved_by: 이름/' .sdlc/specs/s/intent.md`],
+    ['block', 'cat > .sdlc/specs/s/intent.md <<EOF\n---\nstatus: accepted\n---\nEOF'],
+    ['block', `bash -c "${sedTo('.sdlc/specs/s/intent.md')}"`],
+    ['block', `f=.sdlc/specs/s/intent.md; ${sedTo('"$f"')}`],
+    // A writer and the pattern with no file named at all: the target is unknown, so refused as before.
+    ['block', sedTo('"$f"')],
+    // Files handed over by xargs or find are just as unknown, whatever else the command names.
+    ['block', `xargs ${sedTo('')} < list.txt`],
+    ['block', `find .sdlc/specs -name intent.md -exec ${sedTo('{}')} \\;`],
+  ]
+  const plain = repo(false)
+  const failures = []
+  for (const [want, command] of rows) {
+    const got = verdict(plain, command)
+    if (got !== want) failures.push(`${want} 이어야 하는데 ${got}: ${command}`)
+  }
+  assert(verdict(plain, sedTo(`'${join(plain, '.sdlc/specs/s/plan.md')}'`)) === 'block', '절대 경로로 쓴 산출물 승인을 통과시켰다')
+
+  const withAdr = repo(true)
+  if (verdict(withAdr, `printf 'status: accepted\\n' | tee docs/adr/ADR-005-dual-store.md`) !== 'block') failures.push('adr_dir 이 있는데 ADR 승인을 통과시켰다')
+  if (verdict(withAdr, `printf 'status: accepted\\n' | tee docs/adr/notes.md`) !== 'pass') failures.push('ADR 이 아닌 문서를 막았다')
+
+  // Without CLAUDE_PROJECT_DIR the repository comes from the hook's cwd through git.
+  git(withAdr, 'init', '-q')
+  if (verdict(withAdr, sedTo('.sdlc/specs/s/intent.md'), { project: null }) !== 'block') failures.push('CLAUDE_PROJECT_DIR 없이 cwd 로 저장소를 찾지 못했다')
+  // A repository with no profile has nothing for the guard to protect.
+  const bare = temp('sdlc-guard-bash-bare')
+  if (verdict(bare, sedTo('.sdlc/specs/s/intent.md')) !== 'pass') failures.push('프로필 없는 저장소를 막았다')
+  assert(!failures.length, failures.join('\n'))
+})
+
 await test('the shim prefers the runtime selected by the profile over the installed copy', () => {
   const d = temp('sdlc-shim-profile')
   run(process.execPath, [tool('install-hook.mjs'), d])

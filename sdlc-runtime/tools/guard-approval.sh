@@ -12,7 +12,7 @@ export SDLC_HOOK_JSON
 tool="$(sdlc_hook_field tool_name)"
 
 # 모델이 Bash로 우회하면 tool_name=Bash로 들어온다. 셸 전체를 해석할 수 없으므로
-# 승인 필드를 바꾸는 대표적인 명령만 막는다. 보안 경계가 아니라 로컬 방어층이다.
+# 산출물의 승인 필드를 쓰는 알아볼 수 있는 명령만 막는다. 보안 경계가 아니라 로컬 방어층이다.
 if [ "$tool" = "Bash" ]; then
   cmd="$(sdlc_hook_field tool_input.command)"
   case "$cmd" in
@@ -21,31 +21,16 @@ if [ "$tool" = "Bash" ]; then
       exec "$NODE" "$(dirname "$0")/approve-set-hook.mjs"
       ;;
   esac
-  case "$cmd" in
-    *sed*|*perl*|*python*|*ruby*|*awk*|*tee*|*printf*|*echo*|*apply_patch*)
-      block=false
-      case "$cmd" in *status*accepted*) block=true ;; esac
-      # approved_by가 나오는 자리를 하나씩 본다. 명령 어딘가의 null을 통과 근거로 삼으면
-      # s/approved_by: null/approved_by: 이름/ 이 검색어의 null 때문에 빠져나간다.
-      # 값의 첫 글자가 정규식·셸 메타문자면 그 자리는 값이 아니라 sed의 검색어다.
-      _v='[^[:space:].*^$/\,;)}"'"'"']'
-      if printf '%s' "$cmd" \
-         | grep -oE "approved_by[[:space:]]*:[[:space:]]*${_v}[^[:space:],;)}\"'/\\]*" \
-         | grep -qvE ':[[:space:]]*(null|~)$'; then block=true; fi
-      if [ "$block" = true ]; then
-        cat >&2 <<'EOF'
-승인 필드를 Bash 로 바꾸려는 모델 호출을 막았다.
-
-승인 전이는 Edit 도구로 시도한다 — 그러면 가드가 승인 다이얼로그를 띄우고 사람이 그 자리에서
-승인하거나 거절한다. 사용자가 승인 명령을 손으로 칠 필요는 없다. 셸 한 줄은 다이얼로그에
-보여줄 편집 내용이 없어 여기서는 언제나 막는다. 셸 전체를 판정하는 보안 경계는 아니므로
-CI 의 구조 검사와 리뷰를 함께 쓴다.
-EOF
-        exit 2
-      fi
-      ;;
-  esac
-  exit 0
+  # 승인 패턴의 두 낱말이 없으면 판정할 것이 없다. 모든 Bash 호출마다 node 를 한 번 더 띄우지 않으려는
+  # 거름망이다 — 실제 판정(쓰는 명령 · 승인 패턴 · 이 저장소의 산출물 경로)은 approval-bash.mjs 가 한다.
+  # 명령 문자열 전체에서 sed·tee 같은 낱말을 찾던 옛 규칙은 superseded·closed·committee 를 쓰는
+  # 커밋 메시지와 읽기 전용 grep 까지 막아서 버렸다.
+  case "$cmd" in *accepted*|*approved_by*) ;; *) exit 0 ;; esac
+  # node 가 없으면 여기까지 오지 않는다 — 명령을 읽는 sdlc_hook_field 가 node 로 돌고, 못 찾으면
+  # «미검사» 를 말하고 빈 명령을 낸다. 그때 Bash 를 모두 막으면 세션의 셸이 통째로 멈추므로 옛 가드와
+  # 똑같이 통과시킨다. 아래 분기는 그 사이에 node 가 사라진 경우만 받는다.
+  NODE="$(sdlc_node)" || { sdlc_say "node 를 못 찾았다 — Bash 승인 검사를 건너뛴다. 통과가 아니라 미검사다."; exit 0; }
+  exec "$NODE" "$(dirname "$0")/approval-bash.mjs"
 fi
 
 file="$(sdlc_hook_field tool_input.file_path)"
