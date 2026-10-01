@@ -212,8 +212,17 @@ an error. No frontmatter key is needed.
   approval edit, the guard returns `ask` and the person approves or rejects there, without typing
   a command. Interactive sessions show the dialog regardless of permission mode; non-interactive
   `-p` sessions reject the transition.
+- The same dialog guards what was approved. It asks for any edit of an accepted intent, spec, or
+  plan except pulling it back to `in_review`, `rejected`, or `superseded`. For a plan in
+  `in_progress` or `completed` it asks for any edit except a checkbox, an addition to the execution
+  log, `in_progress → completed`, or a pull-back, each as a status-only edit. Entering
+  `in_progress` or `completed` from anywhere but `accepted` and `in_progress` asks too, because it
+  skips the re-approval. An ADR is not pulled back: any edit that takes it out of `accepted`, and
+  any edit of an `accepted`, `superseded`, `deprecated`, or `rejected` ADR, asks; only `draft` and
+  `in_review` are free. The dialog's reason names the kind of edit being approved.
 - Under an autonomy route the approver is `policy:<route-id>`, and a document beyond the
   delegation stays in `in_review` with `approved_by` empty. Human sessions cannot use `policy:`.
+  No route delegates a decision, so a route's edit that would ask on an ADR is refused.
   `references/autonomy.md` has the rules.
 - A finding's `accepted` means its route was decided, not that it was approved, so it does not
   require `approved_by`.

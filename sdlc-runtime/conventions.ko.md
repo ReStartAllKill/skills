@@ -198,8 +198,16 @@ research의 상태는 따로다 — `draft → in_review → reviewed`. `reviewe
 - 승인 전이는 **승인 다이얼로그**로 간다 — 에이전트가 승인 편집을 시도하면 가드가 `ask`를 내고
   사람이 그 자리에서 명령을 치지 않고 승인하거나 거절한다. 대화형에서는 권한 모드와 무관하게
   다이얼로그가 뜨고, 비대화형 `-p`에서는 거부된다.
+- 같은 다이얼로그가 승인된 내용을 지킨다. 승인된 intent·spec·plan의 편집은 `in_review`·`rejected`·
+  `superseded`로 되돌리는 것 말고는 모두 묻는다. `in_progress`·`completed` plan은 체크박스, 실행 기록에
+  덧붙이기, 상태만 바꾸는 `in_progress → completed`와 되돌리기 말고는 모두 묻는다. `accepted`·
+  `in_progress`가 아닌 상태에서 `in_progress`·`completed`로 가는 편집도 재승인을 건너뛰는 것이라
+  묻는다. ADR은 되돌리지 않는다 — `accepted`에서 내리는 편집과 `accepted`·`superseded`·`deprecated`·
+  `rejected` ADR의 편집은 모두 묻고, `draft`·`in_review`만 자유롭다. 다이얼로그의 이유는 무슨 편집을
+  승인하는지 말한다.
 - 자율 경로의 승인자는 `policy:<경로 id>`이고, 위임을 넘는 문서는 `approved_by`를 비운 채
-  `in_review`로 남는다. 사람 세션에서는 `policy:`를 쓸 수 없다. 규칙은
+  `in_review`로 남는다. 사람 세션에서는 `policy:`를 쓸 수 없다. 어떤 경로도 결정을 위임받지 않으므로
+  ADR에서 물을 편집을 자율 경로가 하면 거부된다. 규칙은
   `references/autonomy.md`에 있다.
 - finding의 `accepted`는 승인 대신 경로 확정이므로 `approved_by`를 요구하지 않는다.
 - research는 결정이 아니라 증거라서 승인하지 않는다. 누가 읽었는지는 `reviewed_by`가 적고,

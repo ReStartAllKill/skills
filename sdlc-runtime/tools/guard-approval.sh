@@ -38,6 +38,9 @@ sdlc_resolve "$file" || exit 0
 
 # finding의 accepted는 승인 대신 처리 경로 확정을 뜻하므로 제외한다. 그 자리는 routed_to가 지킨다.
 case "$file" in *"/finding.md") exit 0 ;; esac
+# ADR 인지는 경로가 아니라 프로필의 adr_dir 이 정한다. 넘기지 않으면 판정기가 파일 이름으로 짐작하고,
+# 결정을 intent 처럼 다루면 accepted 에서 내리는 편집이 «되돌리기» 로 읽혀 조용히 통과한다.
+export SDLC_KIND
 
 # JSON 직렬화와 승인 상태 해석은 검사기와 같은 Node 파서가 맡는다.
 if ! NODE="$(sdlc_node)"; then

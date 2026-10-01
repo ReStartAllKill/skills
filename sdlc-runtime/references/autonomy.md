@@ -54,6 +54,7 @@ The dispatcher's prompt begins with “자율 실행이다” and sets `SDLC_AUT
 
 The guard permits only the policy approval matching the run's `SDLC_AUTONOMY_ROUTE`.
 The checker compares policy existence, expiry, maximum tier, and final stage. Do not use `policy:` approval in a human session.
+An ADR is outside every route: the guard refuses a route's approval of a decision and any edit that would retire one or change an accepted or closed one, whatever the approver. Draft and in-review ADRs are not guarded.
 
 When the work exceeds the delegation or lacks enough information for a decision, leave `approved_by` empty and the status `in_review`. Record open questions and actions not taken. A person decides when to run `/implement-spec`.
 

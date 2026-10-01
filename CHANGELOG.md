@@ -75,6 +75,30 @@
   repositories the binding to the retired decision was already an error; its hint no longer sends
   the reader to move the binding onto a draft.
 
+- **Retiring a decision, editing a closed one, and changing a running plan now go to the approval
+  dialog.** The guard asked only for an approval and for edits of an `accepted` document, and it
+  exempted pulling a document back to `in_review`, `rejected` or `superseded` — the right exemption
+  for an intent or a spec, which must be approved again before anything proceeds, and the wrong one
+  for an ADR. An accepted ADR could be moved to `superseded` or `in_review` with its decision
+  sentence rewritten in the same edit and nobody asked; a `superseded`, `deprecated` or `rejected`
+  ADR's text could be rewritten silently; and a plan stopped being protected the moment it went
+  `in_progress`, so a task's `files`, a removed task or a new `decisions:` pin passed while the same
+  edit one status earlier asked. `in_review → in_progress` passed too, so a plan pulled back for a
+  change could re-enter execution without its re-approval. The guard now learns that a file is an
+  ADR from `sdlc_resolve`'s `SDLC_KIND` and asks for every edit that takes an ADR out of `accepted`
+  and every edit of an `accepted` or closed one; `draft` and `in_review` stay free. For a plan in
+  `in_progress` or `completed` it asks for everything except a checkbox, an addition to the
+  execution log, and a status-only `in_progress → completed` or pull-back; entering `in_progress` or
+  `completed` other than from `accepted` and `in_progress` asks. «Status only» now means only
+  `status` and `updated` changed, so `accepted → in_progress` with a new pin in the frontmatter asks
+  where it used to pass on an equal body. No autonomy route delegates a decision, so a route's
+  ADR edit that would ask — including an approval with its own `policy:` — is refused rather than
+  allowed by policy. The dialog's reason now says what is being approved (approval, retiring a
+  decision, editing a closed decision, editing a running plan, skipping the re-approval) instead of
+  «accepted → accepted». Exempting a pull-back with a body change for a running plan, as for an
+  accepted one, was rejected: `/iterate-spec` now reverts the status alone first, which keeps the
+  meaning change to a single dialog, the re-approval.
+
 ### Fixed
 
 - **Every section a skill or a tool message tells you to read now exists under that name.**

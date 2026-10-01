@@ -1299,6 +1299,165 @@ await test('adding a waiver to an accepted ADR goes to the approval dialog', () 
   assert((r.out ?? '').includes('"permissionDecision":"ask"'), `accepted ADR 에 면제를 더하는 편집이 다이얼로그 없이 통과했다:\n${r.out}`)
 })
 
+// The guard used to protect only `accepted`, with the intent/spec exemptions for everything: pulling
+// a document back to in_review or superseded passed silently. For an ADR that is the act of retiring
+// a decision — and the same edit could rewrite its text — and a plan stopped being protected the
+// moment it went in_progress. Every row is one edit and the verdict it must get; each «ask» row that
+// is new passed silently before.
+await test('the approval guard asks for retiring a decision, editing its history, and changing a running plan', () => {
+  const d = temp('sdlc-guard-matrix')
+  put(join(d, '.claude/spec-profile.yml'), `sdlc_version: 7\nsdlc_runtime: "${ROOT}"\nspec_dir: ".sdlc/specs"\nadr_dir: "docs/adr"\n`)
+  const adr = join(d, 'docs/adr/ADR-005-object-store.md')
+  const plan = join(d, '.sdlc/specs/2026-09-05-a/plan.md')
+  const intent = join(d, '.sdlc/specs/2026-09-05-a/intent.md')
+  const ADR = (status, { by = 'human' } = {}) => `---\nartifact: adr\nid: "ADR-005"\nstatus: ${status}\ngenerated_by: "agent"\napproved_by: "${by}"\nsuperseded_by: null\n---\n\n## 결정\n\n본문은 오브젝트 스토어에만 적재한다.\n`
+  const PLAN = (status, { by = 'human' } = {}) => `---\nartifact: plan\nstatus: ${status}\ngenerated_by: "agent"\napproved_by: "${by}"\nupdated: 2026-09-01\ntier: light\n---\n\n# Plan\n\n## 작업\n\n`
+    + '- [x] **WP-001 — 첫 작업**\n  - files: src/a.js\n  - depends: 없음\n  - covers: FR-001 (AC-001)\n'
+    + '- [ ] **WP-002 — 둘째 작업**\n  - files: src/b.js\n  - depends: WP-001\n  - covers: FR-001 (AC-001)\n\n'
+    + '## 실행 기록\n\n- 2026-09-02 WP-001 — 완료 · PR 없음 · 계획과의 차이: 없음\n'
+  const INTENT = (status) => `---\nartifact: intent\nstatus: ${status}\ngenerated_by: "agent"\napproved_by: "human"\n---\n\n# Intent\n\n승인된 의미\n`
+  const s = (from, to) => ({ old_string: `status: ${from}\n`, new_string: `status: ${to}\n` })
+  const decisionText = { old_string: '오브젝트 스토어에만', new_string: '아무 데나' }
+  const taskFiles = { old_string: 'files: src/b.js', new_string: 'files: src/c.js' }
+  const removeTask = { old_string: '- [ ] **WP-002 — 둘째 작업**\n  - files: src/b.js\n  - depends: WP-001\n  - covers: FR-001 (AC-001)\n', new_string: '' }
+  const pinDecision = { old_string: 'tier: light\n', new_string: 'tier: light\ndecisions: ["ADR-005"]\n' }
+  const box = { old_string: '- [ ] **WP-002', new_string: '- [x] **WP-002' }
+  const bump = { old_string: 'updated: 2026-09-01', new_string: 'updated: 2026-09-03' }
+  const changeLog = { old_string: '계획과의 차이: 없음\n', new_string: '계획과의 차이: 없음\n\n### 변경 기록\n\n- 2026-09-03 WP-002 의 범위를 줄였다 — 리뷰 RV-001\n' }
+  const rewriteLog = { old_string: '계획과의 차이: 없음', new_string: '계획과의 차이: 대부분 다시 짰다' }
+  const approve = (from) => [s(from, 'accepted'), { old_string: 'approved_by: "human"', new_string: 'approved_by: "lee"' }]
+
+  const verdict = ([file, text], edits, { route, mode = 'default' } = {}) => {
+    put(file, text)
+    const env = { ...process.env, CLAUDE_PROJECT_DIR: d }
+    if (route) env.SDLC_AUTONOMY_ROUTE = route; else delete env.SDLC_AUTONOMY_ROUTE
+    const r = run(tool('guard-approval.sh'), [], { env, input: JSON.stringify({
+      tool_name: 'Edit', permission_mode: mode, tool_input: { file_path: file, edits } }) })
+    if (r.code === 2) return 'deny'
+    if (r.code !== 0) return `exit ${r.code}: ${r.out}`
+    return r.out.includes('"permissionDecision":"ask"') ? 'ask' : 'pass'
+  }
+  const A = (status, o) => [adr, ADR(status, o)], P = (status, o) => [plan, PLAN(status, o)], I = (status) => [intent, INTENT(status)]
+
+  const rows = [
+    // ADR: leaving accepted is the act that needs a person, whatever the target.
+    ['ask', 'accepted ADR → superseded with its decision rewritten', A('accepted'),
+      [s('accepted', 'superseded'), { old_string: 'superseded_by: null', new_string: 'superseded_by: "ADR-009"' }, decisionText]],
+    ['ask', 'accepted ADR → in_review with its decision rewritten', A('accepted'), [s('accepted', 'in_review'), decisionText]],
+    ['ask', 'accepted ADR → in_review, status only', A('accepted'), [s('accepted', 'in_review')]],
+    ['ask', 'accepted ADR → deprecated', A('accepted'), [s('accepted', 'deprecated')]],
+    ['ask', 'accepted ADR → rejected', A('accepted'), [s('accepted', 'rejected')]],
+    ['ask', 'accepted ADR → draft', A('accepted'), [s('accepted', 'draft')]],
+    ['ask', 'accepted ADR: decision text edited', A('accepted'), [decisionText]],
+    // A closed decision is history: rewriting it happens in front of a person or not at all.
+    ['ask', 'superseded ADR: decision text edited', A('superseded'), [decisionText]],
+    ['ask', 'deprecated ADR: decision text edited', A('deprecated'), [decisionText]],
+    ['ask', 'rejected ADR: decision text edited', A('rejected'), [decisionText]],
+    ['ask', 'superseded ADR → accepted (reinstated)', A('superseded'), [s('superseded', 'accepted')]],
+    ['pass', 'draft ADR: decision text edited', A('draft'), [decisionText]],
+    ['pass', 'in_review ADR: decision text edited', A('in_review'), [decisionText]],
+    ['pass', 'in_review ADR → draft', A('in_review'), [s('in_review', 'draft')]],
+    ['ask', 'in_review ADR → accepted (approval)', A('in_review'), approve('in_review')],
+    ['deny', 'accepted ADR → superseded in dontAsk mode', A('accepted'), [s('accepted', 'superseded')], { mode: 'dontAsk' }],
+    ['deny', 'accepted ADR whose approver is its writer → superseded', A('accepted', { by: 'agent' }), [s('accepted', 'superseded')]],
+    // No autonomy route delegates a decision: before, a route could approve or retire one with its
+    // own policy approval.
+    ['deny', 'route: accepted ADR → superseded', A('accepted', { by: 'policy:triage' }), [s('accepted', 'superseded')], { route: 'triage' }],
+    ['deny', 'route: in_review ADR → accepted by policy', A('in_review'),
+      [s('in_review', 'accepted'), { old_string: 'approved_by: "human"', new_string: 'approved_by: "policy:triage"' }], { route: 'triage' }],
+    ['pass', 'route: draft ADR edited', A('draft'), [decisionText], { route: 'triage' }],
+
+    // A running plan: the tasks are what was approved; execution only adds to it.
+    ['ask', 'in_progress plan: task files changed', P('in_progress'), [taskFiles]],
+    ['ask', 'in_progress plan: a task removed', P('in_progress'), [removeTask]],
+    ['ask', 'in_progress plan: decisions pinned in frontmatter', P('in_progress'), [pinDecision]],
+    ['ask', 'in_progress plan: an execution-log entry rewritten', P('in_progress'), [rewriteLog]],
+    ['ask', 'in_progress → in_review with a task changed in the same edit', P('in_progress'), [s('in_progress', 'in_review'), taskFiles]],
+    ['ask', 'in_progress → completed with a task changed in the same edit', P('in_progress'), [s('in_progress', 'completed'), taskFiles]],
+    ['ask', 'completed plan: task files changed', P('completed'), [taskFiles]],
+    ['ask', 'completed → in_progress (reopened)', P('completed'), [s('completed', 'in_progress')]],
+    // Back into execution without the re-approval: in_review → in_progress used to pass.
+    ['ask', 'in_review → in_progress, skipping the re-approval', P('in_review'), [s('in_review', 'in_progress')]],
+    ['ask', 'in_review → completed', P('in_review'), [s('in_review', 'completed')]],
+    ['ask', 'accepted → in_progress with decisions pinned in the same edit', P('accepted'), [s('accepted', 'in_progress'), pinDecision]],
+    ['ask', 'accepted → completed, skipping execution', P('accepted'), [s('accepted', 'completed')]],
+    ['pass', 'in_progress plan: checkbox only', P('in_progress'), [box]],
+    ['pass', 'in_progress plan: change-log entry added under the execution log', P('in_progress'), [changeLog]],
+    ['pass', 'in_progress plan: checkbox and log entry together', P('in_progress'), [box, changeLog]],
+    ['pass', 'accepted → in_progress, status and date only', P('accepted'), [s('accepted', 'in_progress'), bump]],
+    ['pass', 'in_progress → completed, status only', P('in_progress'), [s('in_progress', 'completed'), bump]],
+    ['pass', 'in_progress → in_review, status only', P('in_progress'), [s('in_progress', 'in_review')]],
+    ['pass', 'in_progress → superseded, status only', P('in_progress'), [s('in_progress', 'superseded')]],
+    ['pass', 'completed → rejected, status only', P('completed'), [s('completed', 'rejected')]],
+    ['pass', 'in_review plan: task files changed', P('in_review'), [taskFiles]],
+    ['ask', 'in_review plan → accepted (re-approval)', P('in_review'), approve('in_review')],
+    ['deny', 'in_progress plan: task changed in dontAsk mode', P('in_progress'), [taskFiles], { mode: 'dontAsk' }],
+    ['deny', 'route: human-approved running plan, task changed', P('in_progress'), [taskFiles], { route: 'triage' }],
+    ['pass', 'route: running plan under its own policy approval, task changed', P('in_progress', { by: 'policy:triage' }), [taskFiles], { route: 'triage' }],
+
+    // intent/spec are unchanged: pulling back is the reviewer-friendly direction.
+    ['ask', 'accepted intent: body edited', I('accepted'), [{ old_string: '승인된 의미', new_string: '바뀐 의미' }]],
+    ['pass', 'accepted intent → in_review with its body edited', I('accepted'), [s('accepted', 'in_review'), { old_string: '승인된 의미', new_string: '바뀐 의미' }]],
+    ['pass', 'accepted intent → superseded', I('accepted'), [s('accepted', 'superseded')]],
+    ['pass', 'in_review intent: body edited', I('in_review'), [{ old_string: '승인된 의미', new_string: '바뀐 의미' }]],
+    ['ask', 'in_review intent → accepted', I('in_review'), approve('in_review')],
+  ]
+  const failures = []
+  for (const [want, label, doc, edits, opts] of rows) {
+    const got = verdict(doc, edits, opts)
+    if (got !== want) failures.push(`${want} 이어야 하는데 ${got}: ${label}`)
+  }
+  assert(!failures.length, `승인 가드 판정이 어긋났다:\n  ${failures.join('\n  ')}`)
+
+  // The dialog says what is being approved; «accepted → accepted» told a person nothing.
+  const reason = (doc, edits) => {
+    put(doc[0], doc[1])
+    const r = run(tool('guard-approval.sh'), [], { env: { ...process.env, CLAUDE_PROJECT_DIR: d }, input: JSON.stringify({
+      tool_name: 'Edit', tool_input: { file_path: doc[0], edits } }) })
+    return /"permissionDecisionReason":"([^"]*)"/.exec(r.out)?.[1] ?? r.out
+  }
+  for (const [doc, edits, words] of [
+    [A('accepted'), [s('accepted', 'superseded')], '결정 은퇴'],
+    [A('accepted'), [decisionText], '효력 있는 결정의 내용 변경'],
+    [A('superseded'), [decisionText], '종료된 결정 기록'],
+    [P('in_progress'), [taskFiles], '실행 중인 계획의 내용 변경'],
+    [P('in_review'), [s('in_review', 'in_progress')], '실행 상태로 건너뛰는 전이'],
+    [I('accepted'), [{ old_string: '승인된 의미', new_string: '바뀐 의미' }], '승인된 문서의 내용 변경'],
+    [I('in_review'), approve('in_review'), '승인 — in_review → accepted'],
+  ]) {
+    const got = reason(doc, edits)
+    assert(got.includes(words) && !got.includes('accepted → accepted'), `다이얼로그 이유가 무엇을 묻는지 말하지 않는다 — «${words}» 가 없다:\n${got}`)
+  }
+})
+
+// /iterate-spec on a running plan, edit by edit, in the order the skill now prescribes: exactly one
+// dialog — the re-approval — for the meaning change, not one per edit.
+await test('iterate-spec on a running plan meets one dialog: the re-approval', () => {
+  const d = temp('sdlc-guard-iterate')
+  put(join(d, '.claude/spec-profile.yml'), `sdlc_version: 7\nsdlc_runtime: "${ROOT}"\nspec_dir: ".sdlc/specs"\n`)
+  const plan = join(d, '.sdlc/specs/2026-09-05-a/plan.md')
+  put(plan, '---\nartifact: plan\ngenerated_by: "agent"\nstatus: in_progress\napproved_by: "human"\n---\n\n# Plan\n\n## 작업\n\n'
+    + '- [x] **WP-001 — 첫 작업**\n  - files: src/a.js\n\n## 실행 기록\n\n- 2026-09-02 WP-001 — 완료 · PR 없음 · 계획과의 차이: 없음\n')
+  const env = { ...process.env, CLAUDE_PROJECT_DIR: d }
+  delete env.SDLC_AUTONOMY_ROUTE
+  const steps = [
+    ['status → in_review', 'status: in_progress\n', 'status: in_review\n'],
+    ['new task', '  - files: src/a.js\n', '  - files: src/a.js\n- [ ] **WP-002 — 롤백**\n  - files: src/b.js\n'],
+    ['change log', '계획과의 차이: 없음\n', '계획과의 차이: 없음\n\n### 변경 기록\n\n- 2026-09-03 WP-002 추가 — 리뷰 RV-001\n'],
+    ['re-approval', 'status: in_review\napproved_by: "human"', 'status: accepted\napproved_by: "lee"'],
+    ['restore in_progress', 'status: accepted\n', 'status: in_progress\n'],
+  ]
+  const dialogs = []
+  for (const [label, old_string, new_string] of steps) {
+    const r = run(tool('guard-approval.sh'), [], { env, input: JSON.stringify({
+      tool_name: 'Edit', permission_mode: 'default', tool_input: { file_path: plan, old_string, new_string } }) })
+    assert(r.code === 0, `${label} 가 거부됐다:\n${r.out}`)
+    if (r.out.includes('"permissionDecision":"ask"')) dialogs.push(label)
+    writeFileSync(plan, readFileSync(plan, 'utf8').replace(old_string, new_string))
+  }
+  assert(dialogs.join() === 're-approval', `다이얼로그가 재승인 한 번이 아니다: ${dialogs.join(', ') || '없음'}`)
+})
+
 await test('check-all passes a waived ADR and prints each waiver with its basis', () => {
   const d = temp('sdlc-waiver')
   put(join(d, '.claude/spec-profile.yml'), `sdlc_version: 7\nsdlc_runtime: "${ROOT}"\nspec_dir: ".sdlc/specs"\nadr_dir: "docs/adr"\n`)

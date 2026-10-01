@@ -36,6 +36,9 @@ node <sdlc_runtime>/tools/adr-index.mjs <저장소 루트> --next
 기존 문서를 `superseded`로 전환한다. 순서는 **후속을 승인하고, 그다음 선행을 전환한다** — 후속이
 `draft`인 채로 선행을 먼저 돌리면 그 사이 그 범위에 효력 있는 결정이 없어 구현 에이전트가 아무
 결정도 받지 못하고, 검사기가 경고한다. 승인된 ADR의 본문을 수정해 기존 결론을 바꾸지 않는다.
+선행을 `superseded`·`deprecated`로 바꾸는 편집과 `accepted`·`superseded`·`deprecated`·`rejected`
+ADR을 고치는 편집은 승인 다이얼로그가 뜬다 — 상태 줄과 `superseded_by`만 바꾸는 한 번의 편집으로
+시도하고, 자율 경로에서는 ADR을 고치지 못하므로 사람에게 넘긴다.
 
 작성 전에 같은 참조 문서의 정본 표에 따라 ADR과 명세·계획에 각각 기록할 내용을 구분한다.
 
