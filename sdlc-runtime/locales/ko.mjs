@@ -1,4 +1,5 @@
 /** Korean prose rules and length limits based on measured Korean artifacts. */
+import * as EN from './en.mjs'
 
 /** Detect Korean documents. Report other languages as lang-unsupported. */
 export const script = {
@@ -12,9 +13,14 @@ export const script = {
 
 export const acSentence = /(?:다|다\.)$/
 
+/** Substrings, so a word list entry also matches inside a longer word. 되도록 is the one entry where
+ *  that turned a precise sentence red: the adverb («되도록 한 번에») is vague, but «기록되도록» ·
+ *  «저장되도록» (the passive 되다) and «완료가 되도록» · «0 이 되도록» (a purpose clause) say exactly
+ *  what happens. The pattern takes 되도록 only where it starts a word and does not follow 이 · 가 ·
+ *  게 · 안. Lines with numbers and code spans are exempt, as in every bundle. */
 export const vague = ['빠르게', '빠른', '신속', '적절히', '적절한', '적당히', '쉽게', '편하게',
   '간편하', '사용하기 쉬', '최적화', '개선한다', '개선된다', '향상', '안정적', '효율적',
-  '유연하', '확장 가능', '충분히', '대부분', '종종', '가능한 한', '되도록', '원활',
+  '유연하', '확장 가능', '충분히', '대부분', '종종', '가능한 한', /(?<![가-힣])(?<!(?:[이가게]|안)\s)되도록/, '원활',
   '매끄럽', '직관적', '깔끔', '잘 동작', '문제없', '등등']
 
 export const translationese = [
@@ -62,10 +68,23 @@ export const budget = {
  * in the commit message and the verify log, and copying them here is what makes the section grow. */
 export const limits = { sentences: 4, title: 40, field: 200, ac: 100, logNote: 120 }
 
-/** Detect whether an ADR consequences section names a cost. */
-export const tradeoff = /감수|대가|비용|포기|제약을 진다|trade-?off|cost|give up|sacrifice/i
-/** Detect revisit conditions that specify only a deadline. */
-export const deadlineOnly = /\d\s*(?:개월|달|주|분기|년|months?|weeks?|quarters?|years?)|다음 분기|next quarter|뒤에 재검토|정기 검토|periodic review/i
+/** Detect whether an ADR consequences section names a cost. «받아들인 제약» is the phrase
+ *  `references/adr.md` itself uses, and it failed because only «제약을 진다» was listed. The
+ *  template's label «감수하는 제약:» is matched by 감수. Left out on purpose, because a gain is
+ *  phrased with them as often as a cost: 못 한다 · 불가 («자격 없는 그룹은 조회하지 못한다»),
+ *  더 이상 («더 이상 손으로 밀어 넣지 않는다»), 부담 («운영 부담이 줄어든다»). With them in, the
+ *  seeded costless decision would pass. English words are accepted too, as before. */
+export const tradeoff = new RegExp(`감수|대가|비용|포기|제약|단점|잃는|잃게|느려|손해|희생|맞바꾸|맞바꾼|맞바꿨|${EN.tradeoff.source}`, 'i')
+/** Detect revisit conditions that specify only a deadline: a review verb after a point in time, or a
+ *  point in time on its own. «적재 오류율이 3주 연속 1% 를 넘는다» holds a duration as part of what is
+ *  measured and is a condition; the rule once matched any digit followed by a unit and warned on it.
+ *  The English shapes are accepted too, as before. */
+const N = '(?:\\d+|한|두|세|네|다섯|여섯|아홉|열두|몇)'
+const UNIT = '(?:개월|달|주일?|분기|반기|년|해|일)'
+const WHEN = `(?:${N}\\s*${UNIT}\\s*(?:뒤|후|마다|[이가]\\s*지나|[이가]\\s*지난|경과)|반년\\s*(?:뒤|후|마다)|(?:다음|내년|이번|매)\\s*(?:분기|반기|해|달|주|년|스프린트|릴리스)|분기마다|매년|매달)`
+const REVIEW = '(?:재검토|검토|다시\\s*(?:본|보|연|열)|재평가|점검|돌아본)'
+export const deadlineOnly = new RegExp(
+  `${WHEN}[^.]{0,30}?${REVIEW}|${REVIEW}[^.]{0,30}?${WHEN}|^\\s*${WHEN}\\s*\\.?\\s*$|(?:정기|주기적(?:으로)?)\\s*(?:재?검토|점검)|${EN.deadlineOnly.source}`, 'i')
 
 /** Text written to artifacts when profile.lang is ko. */
 export const written = {

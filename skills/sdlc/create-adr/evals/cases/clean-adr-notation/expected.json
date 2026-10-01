@@ -1,0 +1,7 @@
+{
+  "kind": "negative-control · 표기",
+  "why": "clean-adr 와 같은 결정을 **맞지만 규칙이 거칠게 읽던 표기로** 다시 썼다. 결정 문장에 `Result<Ticket, QueueFull>` 코드 스팬과 제네릭 타입을 담은 코드 블록이 있고(템플릿 자국으로 읽혀 오류였다), 결과 절은 감수·비용·대가 없이 «받아들인 제약:» 하나로 대가를 적었고(adr.md 가 쓰는 그 말인데 «감수하는 제약이 없다» 오류였다), RV-001 은 «3주 연속 1% 를 넘는다» 처럼 기간을 품은 측정 조건이다(«시한으로 쓰였다» 경고였다). 셋 다 올바른 문서이므로 0/0 이어야 하고, 같은 규칙이 진짜 결함을 아직 잡는다는 것은 decision-residue 와 decision-costless 가 보인다.",
+  "cmd": "check-artifacts.mjs · lint-prose.mjs 를 `<case>/docs` 에 돌린다.",
+  "check": { "errors": 0, "warns": 0 },
+  "lint": { "errors": 0, "warns": 0 }
+}

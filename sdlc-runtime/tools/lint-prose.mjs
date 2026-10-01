@@ -2,7 +2,7 @@
 import { existsSync, statSync } from 'node:fs'
 import { resolve, basename, dirname } from 'node:path'
 import {
-  loadDir, isTemplate, idsIn, stripComments, report, P_ALT, SDLC_VERSION, schemaNote, ADR_FILENAME, loadAdrDir,
+  loadDir, isTemplate, idsIn, stripComments, outsideCode, report, P_ALT, SDLC_VERSION, schemaNote, ADR_FILENAME, loadAdrDir,
   SUPPORTED_SCHEMA_VERSIONS, schemaVersion,
 } from './artifact-parse.mjs'
 import { SECTION, RE_DIVERGENCE, RESULT, NO_DIVERGENCE, PRIORITIES, TIERS, STATUSES, hasAlias } from './keywords.mjs'
@@ -169,9 +169,15 @@ for (const d of Object.values(LINTED)) {
       const hay = e.kind === 'ac' ? [e.title] : [e.title, ...prose]
       for (const line of hay) {
         if (/\d/.test(line)) continue // 수치가 있으면 제외한다.
-        const hit = VAGUE.find((w) => hits(w, line))
+        // A code span is a name the author marked as exact — `stable sort` is an algorithm's
+        // property, not a hope. The digit exemption above still reads the whole line, so a number
+        // inside a span exempts it as before; blanking spans there would turn passing lines red.
+        // The word reported is the one the line holds, not the pattern: a pattern with a lookahead
+        // reads as noise in a message meant for the author.
+        const text = outsideCode(line)
+        const hit = VAGUE.map((w) => (w instanceof RegExp ? text.match(w)?.[0] : text.includes(w) ? w : null)).find(Boolean)
         if (!hit) continue
-        add(e.kind === 'ac' ? 'error' : 'warn', d.name, e.line + 1, 'vague', `${e.id} 에 «${shown(hit)}» — 측정 기준이 아니다`,
+        add(e.kind === 'ac' ? 'error' : 'warn', d.name, e.line + 1, 'vague', `${e.id} 에 «${hit}» — 측정 기준이 아니다`,
           e.kind === 'ac' ? '수용 기준은 참·거짓이 갈려야 한다. 수치·백분위·조건으로 바꾼다.'
             : '재는 자리다. «얼마나»를 수치나 조건으로 적는다.')
       }

@@ -65,6 +65,43 @@ export const WP_FIELDS = ['files', 'depends', 'covers', 'tests', 'verify']
 
 export const idsIn = (s) => [...String(s).matchAll(new RegExp(`\\b(${P_ALT})-(\\d{1,4})\\b`, 'g'))].map((m) => `${m[1]}-${m[2]}`)
 export const stripComments = (s) => s.replace(/<!--[\s\S]*?-->/g, '')
+
+/** The text with inline code spans blanked, for rules that read prose. A code span is where the
+ *  author marked a name as exact — `Result<Blob, StoreError>`, `stable sort` — so neither a
+ *  placeholder test nor a word list has anything to say about it. One span shape is kept: a span
+ *  that opens with `<`. The templates write `<path>:<line>` and `<query or command>` inside
+ *  backticks, and blanking those let an uninstantiated line pass as written. The cost is that a
+ *  span holding a bare tag such as `<div>` still reads as a placeholder; writing it inside a longer
+ *  span (`the <div> wrapper`) is the way out. Code written without backticks is prose to this
+ *  function, as it was before. */
+export const outsideCode = (s) => String(s).replace(/`[^`\n]*`/g, (m) => (/^`\s*</.test(m) ? m : ' '))
+
+/** Names outside the harness that sit one edit away from a prefix (see `prefixTypo`). Only names
+ *  that collide belong here: everything else passes the unknown-prefix check without a list. */
+export const NOT_OURS = new Set(['RFC', 'ERC', 'SOC', 'SQL', 'SDK', 'ACP', 'ACL', 'DEV', 'OPS', 'SEC', 'SRE', 'REQ'])
+
+const oneEdit = (a, b) => {
+  if (a === b || Math.abs(a.length - b.length) > 1) return false
+  if (a.length === b.length) {
+    const d = [...a].map((_, i) => i).filter((i) => a[i] !== b[i])
+    return d.length === 1 || (d.length === 2 && d[1] === d[0] + 1 && a[d[0]] === b[d[1]] && a[d[1]] === b[d[0]])
+  }
+  const [s, l] = a.length < b.length ? [a, b] : [b, a]
+  return [...l].some((_, i) => l.slice(0, i) + l.slice(i + 1) === s)
+}
+const common = (a, b) => { const rest = [...b]; let n = 0; for (const c of a) { const i = rest.indexOf(c); if (i >= 0) { n++; rest.splice(i, 1) } } return n }
+
+/** The harness prefix an unknown `XXX-123` was probably meant to be, or null. The unknown-prefix
+ *  check exists for a slip of the hand — `FRR-001`, `ACC-002`, `NRF-001` — and it once warned on
+ *  every uppercase word followed by digits, so a ticket key (`RWA-123`, the normal way a change
+ *  starts) or a standard (`ERC-4626`, `CVE-2026`) failed CI under `--strict`. An allow-list cannot
+ *  keep up with ticket keys; nearness to a prefix can. One edit — insertion, deletion,
+ *  substitution or an adjacent swap — and at least two letters in common: a two-letter word one
+ *  substitution from `FR` (`PR`, `CR`) shares one letter with it and is another word, not a slip. */
+export function prefixTypo(p) {
+  if (PREFIXES[p] || NOT_OURS.has(p)) return null
+  return Object.keys(PREFIXES).find((k) => k.length >= 2 && oneEdit(p, k) && common(p, k) >= 2) ?? null
+}
 export const unquote = (s) => s.trim().replace(/^["']|["']$/g, '')
 export const isNull = (v) => v == null || v === 'null' || v === '' || (Array.isArray(v) && v.length === 0)
 

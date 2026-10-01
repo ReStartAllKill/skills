@@ -71,7 +71,9 @@ Delete an optional section instead of writing “none,” but never remove these
 
 Keep one decision per ADR. Split choices that can be reversed independently. A small naming change needed to explain the chosen option may remain in the Decision section.
 
-The checker rejects a Consequences section with no accepted constraint. A decision without a cost is post-hoc justification. Describe the strengths of rejected alternatives honestly for the same reason.
+The checker rejects a Consequences section with no accepted constraint. A decision without a cost is post-hoc justification. Describe the strengths of rejected alternatives honestly for the same reason. The checker reads the ordinary ways a cost is named — the template's label («What it costs:», «감수하는 제약:»), "constraint", "drawback", "at the expense of", «받아들인 제약», «단점», «잃는다» and the like (`locales/<lang>.mjs`, `tradeoff`). Words a gain is phrased with as often as a cost — "cannot", "no longer", «못 한다», «부담» — do not count, so a section that lists only gains still fails.
+
+The checker also rejects leftover template placeholders (`<What was decided.>`, `ADR-{NNN}`). Text in a code span or a fenced block is code, not a placeholder: `` `Result<Blob, StoreError>` `` in a decision is the signature it settles. A code span that opens with `<` — `` `<path>` ``, the way the template quotes its own placeholders — still counts.
 
 ### Two valid alternative formats
 
@@ -106,7 +108,7 @@ Until frontmatter is added, however, the approval guard cannot protect the decis
 | `ASM-*` | Assumption | Context and forces; same meaning as an intent assumption |
 | `RV-*` | Revisit condition | Review and revisit |
 
-Pair every `ASM-*` with an `RV-*` that detects when the assumption becomes false. Write `RV-*` as a condition with a truth value, not a calendar reminder; “review in six months” is not a condition.
+Pair every `ASM-*` with an `RV-*` that detects when the assumption becomes false. Write `RV-*` as a condition with a truth value, not a calendar reminder; “review in six months” is not a condition. The checker warns on the reminder shapes — a review verb next to a point in time («6개월 뒤 재검토», "revisit next quarter", "periodic review") or a point in time alone — and not on a duration that is part of what is measured: “error rate stays above 1% for 3 days” is a condition.
 
 ## Status and immutability
 

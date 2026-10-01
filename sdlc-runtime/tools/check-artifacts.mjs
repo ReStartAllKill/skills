@@ -8,7 +8,7 @@ import {
   loadDir, isTemplate, report, SDLC_VERSION, schemaNote,
   SUPPORTED_SCHEMA_VERSIONS, schemaVersion, BODY_PIN, bodyHash, bodyPin,
   levelsOf, wpFiles, wpDeps, ADR_FILENAME, loadAdrDir, CHAIN_FILES, scopeOf,
-  RESEARCH_SCHEMA, RE_RESEARCH_CITE, loadResearchIndex } from './artifact-parse.mjs'
+  RESEARCH_SCHEMA, RE_RESEARCH_CITE, loadResearchIndex, outsideCode, prefixTypo } from './artifact-parse.mjs'
 import { adrSeam, checkAdr, checkPins, checkTaskScope } from './adr-check.mjs'
 import { LOCK_FILE, upstreamSeam, loadLock, verifyLock, findUpstream, headOf, sameRepo } from './upstream.mjs'
 import { loadBands, revisedBy } from './bands.mjs'
@@ -31,10 +31,6 @@ if (supportAt >= 0) {
 const STRICT = argv.includes('--strict')
 const DIR = resolve(argv.find((a) => !a.startsWith('--')) ?? '.')
 useLocale(DIR)   // 문체 번들을 프로필의 lang 으로 고른다
-
-const NOT_OURS = new Set(['UTF', 'ISO', 'RFC', 'SHA', 'AES', 'TLS', 'SLA', 'RTO', 'RPO', 'WCAG',
-  'HTTP', 'HTTPS', 'ADR', 'DORA', 'MDM', 'MCP', 'ACP', 'PII', 'API', 'SDK', 'CHG', 'SPEC',
-  'PLAN', 'FND', 'RSH', 'JSON', 'YAML', 'CSV', 'SQL', 'AWS', 'GCP', 'CPU', 'RAM'])
 
 const TIERS = ['light', 'standard', 'full']
 const STATUS = {
@@ -311,11 +307,14 @@ if (!TEMPLATE) {
   }
 }
 
+// A note, not a warning. An empty `generated_by` is what a document written by hand looks like, and
+// the record of that is the empty field itself. As a warning it failed CI under `--strict`, which
+// left a person who wrote a document two choices: fail, or put a name in a field meant for a model.
+// The note keeps it visible in the report and in check-all's output.
 if (!TEMPLATE) {
   for (const d of Object.values(docs)) {
     if (!isNull(d.fm.generated_by)) continue
-    warn(d.name, '`generated_by` 가 비었다',
-      'Agent 가 썼으면 `generated_by` 를 채운다(`generated_from` · `skills_in_force` 는 선택). 사람이 손으로 썼으면 그대로 두고 이 경고를 남긴다 — 그것도 기록이다.')
+    notes.push(`${d.name} — \`generated_by\` 가 비었다: 사람이 손으로 쓴 문서로 읽었다. Agent 가 썼으면 \`generated_by\` 를 채운다(\`generated_from\` · \`skills_in_force\` 는 선택).`)
   }
 }
 
@@ -571,10 +570,14 @@ for (const d of Object.values(docs)) {
     if (need === 'unknown') { warn(d.name, `«${h.title}» 의 표기 \`[${h.marker}]\` 를 못 읽었다`, 'conventions.md 의 표기 넷 중 하나여야 한다 — 모든 티어 필수는 표기 없이 쓴다.'); continue }
     if (!need || !required(need) || h.hasMarkedChild || TEMPLATE) continue
 
-    const body = (from, to) => stripComments(d.lines.slice(from, to).join('\n')).split('\n')
+    const body = (from, to, prose = false) => stripComments(d.lines.slice(from, to).filter((_, k) => !prose || d.live[from + k]).join('\n')).split('\n')
       .filter((l) => l.trim() && !/^\s*```/.test(l))
     let content = body(h.line + 1, h.ownEnd)
-    if (content.length === 0 && h.hasChild) content = body(h.line + 1, h.allEnd).filter((l) => !/^#{2,4}\s/.test(l))
+    let prose = body(h.line + 1, h.ownEnd, true)
+    if (content.length === 0 && h.hasChild) {
+      content = body(h.line + 1, h.allEnd).filter((l) => !/^#{2,4}\s/.test(l))
+      prose = body(h.line + 1, h.allEnd, true).filter((l) => !/^#{2,4}\s/.test(l))
+    }
     const where = `«${h.title}»`
 
     if (content.length === 0) {
@@ -592,7 +595,10 @@ for (const d of Object.values(docs)) {
       }
       continue
     }
-    const ph = content.filter((l) => /<[^<>\n]{1,120}>/.test(l))
+    // Code is not a placeholder: a fenced block and a code span hold `Promise<Quota>` because the
+    // type is the contract. Emptiness above still counts every line — a section that is only a code
+    // block is not empty — so the placeholder count reads the prose lines and compares with all.
+    const ph = prose.filter((l) => /<[^<>\n]{1,120}>/.test(outsideCode(l)))
     if (ph.length === content.length) err(d.name, `${where} 이 placeholder 뿐이다 (미작성)`, `\`${TIER}\` 티어에서 필수다. 채우거나 티어를 낮춘다.`)
     else if (ph.length > 0) warn(d.name, `${where} 에 placeholder ${ph.length}줄이 남았다`, `첫 줄: ${ph[0].trim().slice(0, 60)}`)
   }
@@ -635,9 +641,13 @@ for (const d of Object.values(docs)) {
         pending ? `${FILES[home.doc]} 을 쓸 때 «${home.label}» 에 \`### ${id} — 제목\` 으로 정의한다. 위치: ${d.name}:${i + 1}`
                 : `${FILES[home.doc]} 의 «${home.label}» 에 \`### ${id} — 제목\` 으로 정의하거나 참조를 고친다. 위치: ${d.name}:${i + 1}`)
     }
-    for (const m of line.matchAll(/\b([A-Z]{2,6})-(\d{2,4})\b/g)) {
-      if (PREFIXES[m[1]] || NOT_OURS.has(m[1])) continue
-      warn(d.name, `\`${m[0]}\` — conventions.md 의 ID 접두 표에 \`${m[1]}\` 가 없다`, '오타이거나, 표에 먼저 더해야 하는 새 접두다.')
+    // Only a near miss of a prefix is reported; a ticket key or a standard is another system's name.
+    // A code span is the author marking a name as exact, the way out for one that happens to be near.
+    for (const m of outsideCode(line).matchAll(/\b([A-Z]{2,6})-(\d{2,4})\b/g)) {
+      const like = prefixTypo(m[1])
+      if (!like) continue
+      warn(d.name, `\`${m[0]}\` — \`${m[1]}\` 는 ID 접두가 아니고 \`${like}\` 와 한 글자 다르다`,
+        `\`${like}-${m[2]}\` 의 오타면 고친다. 다른 시스템의 이름(티켓 키·표준 번호)이면 백틱으로 감싼다 — 코드 스팬은 이 검사가 읽지 않는다. 새 접두라면 conventions.md 의 ID 접두 표에 먼저 더한다. 위치: ${d.name}:${i + 1}`)
     }
   })
 }

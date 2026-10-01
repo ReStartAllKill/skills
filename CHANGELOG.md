@@ -4,6 +4,32 @@
 
 ### Fixed
 
+- **Pattern and word-list rules stop failing correct documents.** `check-all` runs
+  `check-artifacts --strict`, so each of these failed CI on a document that was right. A code span
+  or a fenced block holding `Result<Blob, StoreError>` or `Promise<Quota>` was read as a leftover
+  template placeholder — an error in an ADR, a warning in a set. Code is now outside both checks,
+  except a code span that opens with `<`, which is how the templates quote their own placeholders
+  (`` `<path>:<line>` ``), so an uninstantiated template line is still caught. The `vague` lint
+  refused acceptance criteria that said `stable sort` or fast-forward: text in a code span is no
+  longer measured, the English list no longer matches fast-forward, fast-path, fail-fast,
+  slow-path, slow-start, clean up or clean-room, the Korean 되도록 no longer matches the passive
+  («기록되도록») or a purpose clause («완료가 되도록»), and the message quotes the word found
+  instead of the pattern. A general exemption for every hyphenated compound was rejected:
+  `easy-to-use` is as vague as `easy`. Any uppercase name followed by digits — a ticket key
+  (`RWA-123`), a standard (`ERC-4626`, `CVE-2026`) — warned as an unknown ID prefix; the warning
+  now fires only for a name one edit away from a harness prefix (`FRR-001`, `NRF-001`), names the
+  prefix it resembles, and skips code spans. The allow-list shrank to the twelve foreign names that
+  are that close (`SQL`, `SDK`, `RFC`, `ERC`, `DEV`, `OPS` …), because an allow-list cannot keep up
+  with ticket keys and nearness can. An ADR revisit condition containing a duration
+  («적재 오류율이 3주 연속 1% 를 넘는다») warned as a deadline; the rule now matches the calendar
+  shapes — a review verb next to a point in time, or a point in time alone — in both bundles. An
+  ADR whose Consequences named its cost as «받아들인 제약», the phrase `references/adr.md` uses, was
+  an error because only 감수 · 대가 · 비용 · 포기 were read; both lists now take the ordinary names
+  of a cost (제약, 단점, 잃는다, 느려진다, constraint, drawback, at the expense of …). Words a gain
+  is phrased with as often — cannot, no longer, 못 한다, 부담 — were left out, and the seeded
+  costless ADR still fails. An empty `generated_by` is now a note: its hint told a person who wrote
+  a document by hand to leave the warning in place, which under `--strict` meant a red CI.
+
 - **A consumer repository can pull a schema-7 upstream spec.** Upstream at v7 has no lock, so
   `/create-spec` pins the intent by body hash; once `pull-spec.mjs` brought that pair over,
   `check-artifacts` rejected the vendored spec with «`intent_version` 가 본문 해시인데 이 산출물

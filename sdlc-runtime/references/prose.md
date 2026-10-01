@@ -19,7 +19,7 @@
 | `entity-table` | A table whose first column contains IDs |
 | `wide-table` | An intent or spec table with five or more columns |
 | `comment` | Template comments left in a document |
-| `vague` | Vague terms such as “quickly”, “appropriately”, or “sufficiently” where measurement is required |
+| `vague` | Vague terms such as “quickly”, “appropriately”, or “sufficiently” where measurement is required. A line with a number is exempt, and so is text inside a code span: backticks mark a name the author meant exactly (`` `stable sort` ``). Compounds that name one thing — fast-forward, fast-path, fail-fast, slow-path, slow-start, clean up, clean-room; in Korean «기록되도록» or «완료가 되도록» — are not the vague word. The message quotes the word the line holds |
 | `translationese` | Awkward translated constructions |
 | `meta` | Metatext such as “this document explains” |
 | `too-long` | Document, section, item, or AC over its budget |

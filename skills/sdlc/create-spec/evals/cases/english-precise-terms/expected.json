@@ -1,0 +1,6 @@
+{
+  "kind": "negative-control · 정확한 이름",
+  "why": "english-chain 에 **맞는 문서인데 규칙이 거칠어 걸리던 표기**를 모았다. intent 는 티켓 키(RWA-123 · ENG-1234)와 표준 번호(EIP-712 · ERC-4626 · RSA-2048 · CVE-2026)를 부르고 — 모르는 접두 경고였다 — `generated_by` 없이 사람이 썼다 — `--strict` 에서 CI 를 깨는 경고였다. spec 은 계약 타입 `Promise<Page<Doc>>` 을 코드 스팬과 코드 블록에 담았고 — placeholder 경고였다 — 수용 기준이 `stable sort` 와 fast-forward 를 쓴다 — 모호어 오류였다. 전부 0/0 이어야 한다. `generated_by` 가 빈 것은 경고가 아니라 노트로 남는다. 같은 규칙이 진짜 결함을 잡는다는 것은 english-near-miss 가 보인다.",
+  "check": { "errors": 0, "warns": 0 },
+  "lint": { "errors": 0, "warns": 0 }
+}

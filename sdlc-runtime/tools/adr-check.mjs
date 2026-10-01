@@ -1,7 +1,7 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve, relative, dirname } from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { ADR_FILENAME, idsIn, stripComments, isNull, loadAdrDir, wpFiles, frontmatter } from './artifact-parse.mjs'
+import { ADR_FILENAME, idsIn, stripComments, isNull, loadAdrDir, wpFiles, frontmatter, outsideCode } from './artifact-parse.mjs'
 import { SECTION, CHOSEN, hasAlias, canonical, ADR_STATUS_ALIASES, LEGACY_STATUS_ROW } from './keywords.mjs'
 import { locale } from './locale.mjs'
 import { ADR_DEAD, adrSeam, loadManifest, loadBindings, boundForFiles, collect, touches } from './adr-bindings.mjs'
@@ -201,7 +201,10 @@ export function checkAdr(doc, { seam, siblings = [] }, push) {
     }
   }
 
-  const body = stripComments(doc.text)
+  // Fenced blocks and code spans are code, and `Result<Blob, StoreError>` in a decision is the
+  // signature it settles, not a `<placeholder>` left from the template. `outsideCode` keeps a span
+  // that opens with `<`, which is how the template quotes its own placeholders.
+  const body = outsideCode(stripComments(doc.lines.filter((_, i) => doc.live[i]).join('\n')))
   for (const re of RESIDUE) {
     const m = re.exec(body)
     if (m) { err(`템플릿 자국이 남았다 — \`${m[0].slice(0, 40)}\``, '안내 주석과 placeholder 를 전부 지운다.'); break }

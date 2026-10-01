@@ -93,7 +93,9 @@ and metric comparisons.
 - Acceptance criterion: `- [ ] AC-001 — <when>, the system <does what>`.
 - Task: a checkbox followed by five indented fields.
 - Examples inside code fences do not count as definitions.
-- Remove template comments and placeholders from artifacts.
+- Remove template comments and placeholders from artifacts. A `<…>` inside a code span or a
+  fenced block is code (`` `Promise<Quota>` ``), not a placeholder — unless the span opens with
+  `<`, which is how the templates quote theirs (`` `<path>:<line>` ``).
 
 Every string the checker recognizes lives in `tools/keywords.mjs`: English is authoritative,
 Korean is an alias, and both are always accepted regardless of the profile's `lang`.
@@ -160,6 +162,11 @@ reviewer, `PQ` to the implementation owner, `FQ` to the service owner or on-call
 `RQ` to the research owner.
 Never reuse an ID, even after deleting its item.
 
+Other systems' names — ticket keys (`RWA-123`), standards (`ERC-4626`, `CVE-2026-1102`) — may
+appear in prose. The checker warns only on an uppercase name one edit away from a prefix in this
+table (`FRR-001`, `NRF-001`), and names the prefix it resembles. A foreign name that happens to be
+that close is written in a code span, which the check does not read.
+
 ## States and approval
 
 ```text
@@ -222,7 +229,8 @@ an error. No frontmatter key is needed.
 - Investigate questions the code can answer. Ask only for judgments a person must make.
 - Close open questions with decision IDs.
 - When an agent writes the document, populate `generated_by`; `generated_from` and
-  `skills_in_force` are optional.
+  `skills_in_force` are optional. A document a person wrote leaves it empty; the checker reports
+  that as a note, not a warning, so it does not fail `--strict`.
 
 ## Paths and validation
 

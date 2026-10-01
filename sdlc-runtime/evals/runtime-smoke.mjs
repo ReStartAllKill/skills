@@ -1159,6 +1159,65 @@ await test('locale bundles have matching shapes so a missing key cannot silently
 })
 
 
+await test('prose rules leave code, foreign names and measured durations alone and still catch their target', async () => {
+  const [ko, en, parse] = await Promise.all([
+    import(`file://${join(ROOT, 'locales/ko.mjs')}`),
+    import(`file://${join(ROOT, 'locales/en.mjs')}`),
+    import(`file://${join(ROOT, 'tools/artifact-parse.mjs')}`),
+  ])
+  const { outsideCode, prefixTypo } = parse
+  const ph = (s) => /<[^<>\n]{1,120}>/.test(outsideCode(s))
+  assert(!ph('The handler returns `Promise<Quota>`.'), '코드 스팬의 제네릭 타입을 placeholder 로 읽었다')
+  assert(ph('<What was decided.>') && ph('- `<path>:<line>` — what it does now') && ph('reproduce: `<query or command>`'),
+    '템플릿의 placeholder 를 놓쳤다 — 백틱 안에서 `<` 로 시작하는 것도 미작성이다')
+
+  for (const [typo, like] of [['FRR', 'FR'], ['ACC', 'AC'], ['WPP', 'WP'], ['OUTT', 'OUT'], ['NRF', 'NFR']]) {
+    assert(prefixTypo(typo) === like, `${typo} 를 ${like} 의 오타로 못 봤다 (${prefixTypo(typo)})`)
+  }
+  for (const name of ['RWA', 'CVE', 'ERC', 'EIP', 'RSA', 'ENG', 'PR', 'QA', 'SQL', 'DEV', 'FR', 'AC']) {
+    assert(prefixTypo(name) === null, `${name} 을 접두의 오타로 읽었다 (${prefixTypo(name)})`)
+  }
+
+  const vagueHit = (L, s) => L.vague.map((w) => (w instanceof RegExp ? outsideCode(s).match(w)?.[0] : outsideCode(s).includes(w) ? w : null)).find(Boolean)
+  for (const s of ['keeps its place under the `stable sort`.', 'When the branch can fast-forward, the tool merges.', 'The parser is fail-fast on a bad header.', 'The job cleans up the temp directory and the clean-room build stays.']) {
+    assert(!vagueHit(en, s), `정확한 말을 모호어로 읽었다 — «${vagueHit(en, s)}» in ${s}`)
+  }
+  for (const s of ['The search returns fast.', 'It keeps its place under the stable sort.', 'The flow is easy-to-use.']) {
+    assert(vagueHit(en, s), `모호어를 놓쳤다 — ${s}`)
+  }
+  for (const s of ['로그에 기록되도록 한다.', '상태가 완료가 되도록 바꾼다.', '`안정적` 정렬을 쓴다.']) {
+    assert(!vagueHit(ko, s), `정확한 말을 모호어로 읽었다 — «${vagueHit(ko, s)}» in ${s}`)
+  }
+  assert(vagueHit(ko, '되도록 한 번에 처리한다.') === '되도록', '부사 «되도록» 을 놓쳤다')
+
+  for (const [L, cond, reminder] of [
+    [ko, ['적재 오류율이 3주 연속 1% 를 넘는다', '사내 볼륨만 쓰는 워크스페이스가 생긴다'], ['6개월 뒤 재검토', '다음 분기에 다시 본다', '정기 검토', '한 달 뒤 다시 연다']],
+    [en, ['Error rate stays above 1% for 3 days', 'p99 rises above 200 ms within 2 weeks of a release'], ['Revisit in 6 months', 'Review after two quarters', 'Periodic review', 'Next quarter']],
+  ]) {
+    for (const s of cond) assert(!L.deadlineOnly.test(s), `측정 조건을 시한으로 읽었다 — ${s}`)
+    for (const s of reminder) assert(L.deadlineOnly.test(s), `달력 알림을 놓쳤다 — ${s}`)
+  }
+  for (const [L, cost, gainOnly] of [
+    [ko, ['받아들인 제약: 사내 볼륨만 쓰는 워크스페이스는 업로드 앞에서 멈춘다.', '- 감수하는 제약: 기다린다.', '단점: 하루를 기다린다.'],
+      '- 얻는 것: 자격 없는 그룹에는 문서가 안 걸린다.\n- 얻는 것: API 가 멈춰도 열람 판정은 계속 선다.\n- 얻는 것: 운영 부담이 줄어든다.'],
+    [en, ['- What it costs: a day of waiting.', 'Accepted constraint: workspaces stop at upload.', 'The drawback is a day of waiting.'],
+      '- What this buys: an unentitled group cannot see it.\n- What this buys: operators no longer push by hand.'],
+  ]) {
+    for (const s of cost) assert(L.tradeoff.test(s), `대가를 적은 문장을 놓쳤다 — ${s}`)
+    assert(!L.tradeoff.test(gainOnly), `얻는 것만 적은 결과를 대가로 읽었다:\n${gainOnly}`)
+  }
+
+  // A document a person wrote has no `generated_by`. That is a note, not a warning: CI runs
+  // `--strict`, and the hint used to tell the author to leave the warning in place.
+  const d = temp('sdlc-handwritten')
+  put(join(d, '.claude/spec-profile.yml'), 'sdlc_version: 7\nspec_dir: "."\n')
+  put(join(d, 'set/intent.md'), readFileSync(join(findSkill('create-spec', HERE), 'evals/cases/english-precise-terms/docs/intent.md'), 'utf8'))
+  const r = run(process.execPath, [tool('check-artifacts.mjs'), join(d, 'set'), '--strict'])
+  assert(r.code === 0, `손으로 쓴 문서가 --strict 에서 실패했다:\n${r.out}`)
+  assert(r.out.includes('`generated_by` 가 비었다'), `빈 generated_by 가 보고서에서 사라졌다 — 노트로 남아야 한다:\n${r.out}`)
+})
+
+
 await test('the approval guard protects ADRs even though they live outside artifact sets', () => {
   const d = temp('sdlc-guard-adr')
   put(join(d, '.claude/spec-profile.yml'),
