@@ -2456,6 +2456,35 @@ await test('an accepted ADR that applies to this repository and has no binding w
   assert(rep.counts.errors === 0 && rep.counts.warnings === 0 && rep.notes.some((n) => /경로 없이 묶었다/.test(n)), `an explained opt-out was not accepted, or not shown:\n${rep.raw}`)
 })
 
+await test('the skeleton pull-adr prints is a bindings file the checker reads, trailing comments and all', async () => {
+  const up = bindUpstream(), d = bindConsumer()
+  const r = run(process.execPath, [tool('pull-adr.mjs'), d, '--from', up])
+  assert(r.code === 0, r.out)
+  // Pasted as printed: the skeleton is the first bindings file most repositories will have.
+  const skeleton = r.out.slice(r.out.indexOf('source: "')).split('\n\n')[0] + '\n'
+  assert(/ADR-001: +# /.test(skeleton) && /paths: \[\] +# /.test(skeleton), `the skeleton no longer carries the comments this case is about:\n${r.out}`)
+  put(join(d, '.claude/adr-bindings.yml'), skeleton)
+  let rep = bindCheck(d, up)
+  assert(rep.problems.every((p) => p.rule !== 'bindings-parse'), `the checker could not read pull-adr's own skeleton:\n${rep.raw}`)
+  assert(said(rep, /ADR-001 — `paths: \[\]` 인데 `reason` 이 없다/) && rep.counts.errors === 1 && rep.counts.warnings === 0,
+    `the skeleton's empty \`paths\` was not read as an opt-out owing a reason, or ADR-002 was not read clean:\n${rep.raw}`)
+
+  const { parseBindings } = await import('../tools/adr-bindings.mjs')
+  const bare = 'source: "acme/docs"\nbindings:\n  ADR-001:\n    at: "abc1234"\n    paths: ["src/a", "src/b"]\n    confirms:\n      - "test_A"\n    reason: "why"\n'
+  const commented = '# head\nsource: "acme/docs"  # where\nbindings:  # all\n  # between\n  ADR-001:  # title\n    at: "abc1234"  # read\n    paths: ["src/a", "src/b"]  # two\n    confirms:  # names\n      - "test_A"  # one\n    reason: "why"  # because\n'
+  const same = (p) => JSON.stringify({ ...p, bindings: Object.values(p.bindings).map((b) => ({ ...b, line: 0 })) })
+  assert(parseBindings(commented).problems.length === 0 && same(parseBindings(commented)) === same(parseBindings(bare)),
+    `a trailing comment changed what was read:\n${JSON.stringify(parseBindings(commented), null, 1)}`)
+
+  for (const open of ['paths: ["src/a" # one, "src/b"]', 'paths: ["src/a",']) {
+    const p = parseBindings(`bindings:\n  ADR-001:\n    at: "abc1234"\n    ${open}\n`)
+    assert(p.problems.some((x) => /닫히지 않았다/.test(x.msg)) && p.bindings['ADR-001'].paths == null, `a list cut short was read as a whole one — ${open}:\n${JSON.stringify(p)}`)
+  }
+  put(join(d, '.claude/adr-bindings.yml'), `source: "acme/docs"\nbindings:\n  ADR-001:\n    at: "abc1234"\n    paths: ["src/vault",\n`)
+  rep = bindCheck(d, up)
+  assert(rep.problems.some((p) => p.rule === 'bindings-parse' && p.level === 'error'), `an unclosed list reached the checker without a parse error:\n${rep.raw}`)
+})
+
 await test('a repo-prefixed scope is rejected from the schema that introduces bindings — `applies_to` marks it, since an ADR is always schema 5', () => {
   const up = bindUpstream()
   put(join(up, 'docs/adr/ADR-003-both-forms.md'), bindAdr('ADR-003', 'Both forms', 'applies_to: ["acme/contracts"]\nscope: ["contracts:src/vault"]\nconfirms: []'))

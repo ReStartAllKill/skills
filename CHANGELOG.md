@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **The binding skeleton `pull-adr` prints can be pasted as it is printed.** The skeleton opens each
+  binding with `  ADR-004:   # <title>`, and the reader of `.claude/adr-bindings.yml` took comments
+  off scalar values and list items only. The line that opens a binding was matched with its comment
+  still on, so the skeleton failed with `bindings-parse` on that line and on every line under it,
+  and so did a comment after `bindings:` or after a key that opens a block list. Worse, a comment
+  after an inline list was read without complaint: `paths: ["src/a", "src/b"]  # …` gave the path
+  `src/b]`, and the skeleton's own `paths: []   # …` gave the one path `]` — an opt-out that never
+  met the check for a `reason` and was reported as a path yet to be created. A comment now comes
+  off the whole line before anything reads it, so it means the same after every kind of line. An
+  inline list that does not close on its line — a comment inside the brackets, a list continued on
+  the next line — is a `bindings-parse` error, where it was read as a shorter list. A `#` after
+  whitespace inside quotes still starts a comment, as it did for values before; the reader does
+  not track quoting, and `references/adr.md` now says so. Rejected: dropping the comments from the
+  skeleton, which leaves the same failure for a comment written by hand.
+
 ## 0.12.0 — 2026-10-01
 
 ### Added

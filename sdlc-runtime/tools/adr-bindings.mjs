@@ -78,15 +78,20 @@ export function loadManifest(path) {
 export function parseBindings(text) {
   const out = { source: null, bindings: {}, problems: [] }
   const bad = (line, msg) => out.problems.push({ line, msg })
-  const strip = (s) => s.replace(/\s+#.*$/, '').trim().replace(/^["']|["']$/g, '')
+  const strip = (s) => s.trim().replace(/^["']|["']$/g, '')
   const list = (v) => v.trim().replace(/^\[|\]$/g, '').split(',').map(strip).filter(Boolean)
   let inBindings = false
   let cur = null
   let listKey = null
 
   text.split(/\r?\n/).forEach((raw, i) => {
-    const line = raw.replace(/\s*$/, '')
-    if (!line.trim() || /^\s*#/.test(line)) return
+    // A trailing comment comes off the line before anything reads it. It once came off scalar values
+    // and list items only, so `  ADR-004:   # title` — the line `pull-adr` prints in its skeleton —
+    // was a parse error, and `paths: []   # …`, also from the skeleton, was read without complaint
+    // as the one path `]`: an opt-out that never met the `reason` check. As before, a `#` after
+    // whitespace starts a comment inside quotes too; this reader does not track quoting.
+    const line = raw.replace(/(^|\s+)#.*$/, '').replace(/\s*$/, '')
+    if (!line.trim()) return
     const indent = line.length - line.trimStart().length
     const body = line.trim()
 
@@ -121,6 +126,9 @@ export function parseBindings(text) {
       if (key === 'paths' || key === 'confirms' || key === 'confirms_in') {
         if (v.trim() === '') { out.bindings[cur][key] = []; listKey = key; return }
         if (!v.trim().startsWith('[')) return bad(i + 1, `\`${key}\` 는 목록이다: ${body}`)
+        // Whatever cuts a list short — a comment inside the brackets, a list continued on the next
+        // line — would otherwise leave a shorter list that reads as the whole one.
+        if (!v.trim().endsWith(']')) return bad(i + 1, `\`${key}\` 의 \`[\` 가 같은 줄에서 닫히지 않았다: ${body}`)
         out.bindings[cur][key] = list(v)
         return
       }

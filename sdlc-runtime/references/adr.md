@@ -172,6 +172,8 @@ bindings:
 
   `confirms_in` is optional and means what it means on an ADR: where else the `confirms` names are looked for, without widening which tasks the binding reaches. The skeleton `pull-adr` prints leaves it out.
 
+  The file is read by a small reader, not a YAML library: indentation is 0·2·4·6, a list is either `[…]` closed on its own line or a block of `- ` items, and a `#` after whitespace starts a comment on any line — quoted or not, so a value cannot contain ` #`. Anything else is a `bindings-parse` error rather than a guess.
+
 - **The decision text arrives as a manifest.** `node <sdlc_runtime>/tools/pull-adr.mjs [--from <checkout>]` writes `.claude/adr-manifest.json` — status, `applies_to`, the digest `task-brief` injects and, per decision, the content hash `digest` that `at` and a pin's `@body:` are compared with, never a path — with an integrity hash. Commit it; never edit it. It prints a binding skeleton, `at` in the content form, for every accepted decision that applies here and has none, and lists the bindings whose `at` is behind.
 
 `pull-adr` writes no `pulled_at`: a second pull with nothing changed upstream leaves the manifest byte-identical, so two branches that both re-pull do not conflict. When it changed is git's to say. A manifest that still carries the key stays valid and loses it on the next pull.
