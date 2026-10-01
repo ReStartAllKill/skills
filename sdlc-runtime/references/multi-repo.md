@@ -55,8 +55,19 @@ node <sdlc_runtime>/tools/pull-spec.mjs <artifact-directory> [--from <upstream-c
   upstream with `/iterate-spec`, then pull it again.
 - A plan's `spec_version` is **the upstream commit referenced by the lock**, not the commit that
   brought the copy into the code repository. The latter says only when it was received and cannot
-  detect later upstream changes. For the same reason a `body:` pin is rejected while a lock
-  exists: the text of a copy says nothing about how far upstream has moved on.
+  detect later upstream changes. For the same reason a `body:` pin is rejected in a document the
+  consumer writes itself while a lock exists: the text of a copy says nothing about how far
+  upstream has moved on.
+- The lock does **not** override a pin *inside* the vendored pair — the `intent_version` of a
+  pulled `spec.md`. Upstream wrote it against upstream's own history, both files arrive together
+  and each is protected by its hash, so a `body:` pin there is checked against the pulled
+  `intent.md` and a commit SHA against the lock's `intent.md` commit, exactly as upstream checks
+  them. Which documents count as vendored is read from the lock's `files`. A mismatch means
+  upstream's pair disagrees with itself; the copies are read-only, so it is fixed upstream and
+  pulled again. Whether upstream has moved on since the pull is the freshness check (lock commit
+  vs. upstream head), not this pin. When the lock has no commit for `intent.md` (a `--force` pull
+  of an uncommitted draft), a commit-SHA pin there cannot be compared and is reported as a
+  warning rather than measured against this repository's history.
 - Approval happens upstream. Documents not in `accepted` are not pulled. `--force` may be used to
   inspect a draft early, but it must be pulled again after approval.
 

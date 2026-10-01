@@ -186,8 +186,9 @@ Finding states have different meanings.
 A downstream document pins its upstream with `intent_version` or `spec_version`, written as
 `body:<hex>` — the value `node <sdlc_runtime>/tools/pin.mjs <file>` prints for the upstream
 document. A frontmatter-only edit such as an approval leaves the pin valid; a body edit breaks it.
-When `upstream.lock.json` exists the lock's upstream commit governs instead; see
-`references/multi-repo.md`.
+When `upstream.lock.json` exists the lock's upstream commit governs instead for the pin the
+consumer writes (the plan's `spec_version`); a pin inside the vendored copies is upstream's and is
+checked as upstream checks it. See `references/multi-repo.md`.
 
 A research document has its own states, `draft → in_review → reviewed`; `reviewed` means a person
 read it, not that anything was approved. Other documents cite it inline as `RSH-2026-003` or

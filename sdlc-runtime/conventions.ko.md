@@ -176,7 +176,8 @@ finding의 상태는 뜻이 다르다.
 하위 문서는 `intent_version`·`spec_version`으로 상위를 고정하며, 값은 `body:<hex>` —
 `node <sdlc_runtime>/tools/pin.mjs <파일>`이 상위 문서에서 찍어 주는 값이다. 승인처럼
 frontmatter만 바꾸는 편집은 핀을 그대로 두고 본문 편집은 핀을 깨뜨린다. `upstream.lock.json`이
-있으면 락의 상류 커밋이 정본이다(`references/multi-repo.md`).
+있으면 소비자가 쓰는 핀(plan 의 `spec_version`)은 락의 상류 커밋이 정본이고, 벤더한 사본 안의
+핀은 상류 몫이라 상류에서처럼 대조한다(`references/multi-repo.md`).
 
 research의 상태는 따로다 — `draft → in_review → reviewed`. `reviewed`는 사람이 읽었다는 뜻이지
 무엇이 승인됐다는 뜻이 아니다. 다른 문서는 intent·spec·plan·finding·ADR 본문 어디서나

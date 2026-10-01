@@ -1006,6 +1006,88 @@ await test('hashes reject manual copy edits and the checker detects newer upstre
   assert(stale.code !== 0 && stale.out.includes('상류가 이 사본보다 앞서 있다'), `상류 드리프트를 놓쳤다:\n${stale.out}`)
 })
 
+// A schema-7 upstream has no lock, so /create-spec pins the intent by body hash. The consumer
+// pulls that pair verbatim; the lock must not turn the pin inside the pair into an error.
+function v7Consumer() {
+  const r = twoRepos()
+  for (const f of ['intent.md', 'spec.md']) {
+    edit(join(r.upChain, f), (s) => s.replace('schema_version: 6', 'schema_version: 7'))
+  }
+  const pin = run(process.execPath, [tool('pin.mjs'), join(r.upChain, 'intent.md')]).out.trim()
+  edit(join(r.upChain, 'spec.md'), (s) => s.replace(/^intent_version: .*$/m, `intent_version: "${pin}"`))
+  git(r.up, 'add', '-A'); git(r.up, 'commit', '-qm', 'schema 7 with a body pin')
+  const plan = () => {
+    const lock = JSON.parse(readFileSync(join(r.chain, 'upstream.lock.json'), 'utf8'))
+    cpSync(join(CASES, 'plan.md'), join(r.chain, 'plan.md'))
+    edit(join(r.chain, 'plan.md'), (s) => s.replace('schema_version: 3', 'schema_version: 7')
+      .replace('@SPEC_SHA@', lock.files['spec.md'].sha.slice(0, 7))
+      .replace('covers: FR-001 (AC-001, AC-002)', 'covers: AC-001'))
+    git(r.chain, 'add', '-A')
+  }
+  return { ...r, pin, plan }
+}
+const strict = (dir, up) => run(process.execPath, [tool('check-artifacts.mjs'), dir, '--strict'],
+  { env: { ...process.env, SDLC_UPSTREAM: up } })
+
+await test('a consumer accepts the body pin inside a vendored schema-7 pair', () => {
+  const { up, chain, plan } = v7Consumer()
+  assert(check(join(up, 'docs/specs/2026-09-08-archive')).code === 0, '상류 v7 세트가 자기 레포에서 실패했다')
+  run(process.execPath, [tool('pull-spec.mjs'), chain, '--from', up])
+  plan()
+  const r = strict(chain, up)
+  assert(!r.out.includes('본문 해시인데'), `벤더한 spec 의 본문 해시를 락 때문에 거부했다:\n${r.out}`)
+  assert(r.code === 0, `v7 상류를 끌어온 정상 소비자 세트가 실패했다:\n${r.out}`)
+
+  // The consumer's own pin keeps the old rule: a body hash of a copy cannot see upstream move on.
+  edit(join(chain, 'plan.md'), (s) => s.replace(/^spec_version: .*$/m,
+    `spec_version: "${run(process.execPath, [tool('pin.mjs'), join(chain, 'spec.md')]).out.trim()}"`))
+  const own = strict(chain, up)
+  assert(own.code !== 0 && /plan\.md[\s\S]*`spec_version` 가 본문 해시인데/.test(own.out), `소비자 plan 의 본문 해시를 통과시켰다:\n${own.out}`)
+
+  // A draft pulled with --force before upstream ever committed it: the lock has no sha, and the
+  // body pin still checks against the copy next to it. The schema-6 form in the same spot cannot
+  // be compared at all, and must say so rather than measure an upstream SHA against local history.
+  for (const [schema, wantWarn] of [[7, false], [6, true]]) {
+    const { up: up2, upChain: src, code } = schema === 7 ? v7Consumer() : twoRepos()
+    const drafts = join(up2, 'docs/specs/2026-09-09-draft')
+    cpSync(src, drafts, { recursive: true })
+    edit(join(drafts, 'spec.md'), (s) => s.replace('status: accepted', 'status: in_review'))
+    const chain2 = join(code, '.sdlc/specs/2026-09-09-draft')
+    mkdirSync(chain2, { recursive: true })
+    const forced = run(process.execPath, [tool('pull-spec.mjs'), chain2, '--from', up2, '--force'])
+    assert(forced.code === 0 && forced.out.includes('미커밋'), `--force 로 미커밋 초안을 끌어오지 못했다:\n${forced.out}`)
+    git(code, 'add', '-A'); git(code, 'commit', '-qm', 'draft pulled')
+    const draft = check(chain2, up2)
+    assert(!/✗[^\n]*spec\.md[^\n]*intent_version|spec\.md[^\n]*`intent_version` 가/.test(draft.out.split('\n').filter((l) => !l.includes('⚠')).join('\n')),
+      `schema ${schema}: 락 sha 가 없는 초안 짝의 핀을 오류로 냈다:\n${draft.out}`)
+    assert(draft.out.includes('상류 커밋이 없어 `intent_version` 를 대조하지 못했다') === wantWarn,
+      `schema ${schema}: 대조하지 못한 핀을 말하는 방식이 틀렸다:\n${draft.out}`)
+  }
+})
+
+await test('a vendored pair that disagrees upstream is reported as upstream inconsistency', () => {
+  const { up, upChain, chain, plan } = v7Consumer()
+  // Upstream revises the intent after the spec was pinned and pulls happen anyway.
+  edit(join(upChain, 'intent.md'), (s) => s.replace('## 목표 결과', '상류에서 나중에 덧붙인 문장.\n\n## 목표 결과'))
+  git(up, 'add', '-A'); git(up, 'commit', '-qm', 'intent revised after the spec')
+  run(process.execPath, [tool('pull-spec.mjs'), chain, '--from', up])
+  plan()
+  const r = strict(chain, up)
+  assert(r.code !== 0 && r.out.includes('함께 끌어온 intent.md 의 본문과 다르다'), `어긋난 상류 짝을 통과시켰다:\n${r.out}`)
+  assert(r.out.includes('읽기 전용 사본') && r.out.includes('pull-spec.mjs') && !r.out.includes('이 문서를 갱신한 다음'),
+    `읽기 전용 사본을 고치라고 안내했다:\n${r.out}`)
+
+  // The schema-6 form in the same position: the spec's commit SHA is compared with the lock's
+  // intent sha, and a mismatch gets the same read-only hint.
+  const { up: up6, upChain: upChain6, chain: chain6 } = twoRepos()
+  edit(join(upChain6, 'intent.md'), (s) => s.replace('## 목표 결과', '상류에서 나중에 덧붙인 문장.\n\n## 목표 결과'))
+  git(up6, 'add', '-A'); git(up6, 'commit', '-qm', 'intent revised after the spec')
+  run(process.execPath, [tool('pull-spec.mjs'), chain6, '--from', up6])
+  const sha6 = check(chain6, up6)
+  assert(sha6.code !== 0 && /`intent_version` 가 acme\/docs 의 intent\.md 의 현재 커밋과 다르다/.test(sha6.out) && sha6.out.includes('읽기 전용 사본'),
+    `v6 커밋 SHA 핀의 상류 불일치를 놓쳤거나 사본을 고치라고 했다:\n${sha6.out}`)
+})
+
 await test('enabling an upstream profile does not apply assignment checks to older schemas', () => {
   const { upChain } = twoRepos()
   for (const f of ['intent.md', 'spec.md']) {

@@ -31,7 +31,8 @@ description: '승인된 spec.md를 바탕으로 구현 계획과 작업 목록�
    어느 시나리오가 끝나는지 보여 준다.
    UI 자동 검증이 어려우면 분리 가능한 판정 로직을 테스트하고 나머지는 수동 검증에 명시한다.
 5. `spec_version`을 기록한다. `upstream.lock.json`이 있으면 락의 `files["spec.md"].sha`를 쓴다
-   (그 자리에서 `body:`는 거부된다). 락이 없고 스키마 v7 이상이면
+   (그 자리에서 `body:`는 거부된다 — plan은 이 레포가 쓰는 문서라 상류 커밋을 직접 가리켜야 한다.
+   벤더한 spec 안의 `intent_version: body:…`는 상류 몫이라 그대로 통과한다). 락이 없고 스키마 v7 이상이면
    `node <sdlc_runtime>/tools/pin.mjs spec.md`의 출력을 그대로 쓴다 — 본문 핀이라 상위가 아직
    커밋되지 않아도 된다. v7 미만이면 명세 디렉터리에서 `git log -1 --format=%h -- spec.md`를
    실행하고, 커밋이 없으면 버전 값을 만들지 말고 상위 문서를 먼저 커밋한다.

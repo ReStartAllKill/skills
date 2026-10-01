@@ -503,13 +503,19 @@ if (!TEMPLATE) {
     if (!d || isNull(d.fm[key])) continue
     const decl = String(d.fm[key])
     const locked = LOCK?.files?.[up]?.sha ?? null
+    // The lock overrides only a pin the consumer writes itself. A pin inside a vendored copy was
+    // written upstream, against upstream's own history, and the copy is read-only here — rejecting
+    // its `body:` form failed every consumer of a schema-7 upstream with nothing anyone could edit.
+    // Whether upstream has since moved on is the freshness check's job above, not this pin's.
+    const vendored = !LOCK?.broken && !!LOCK?.files?.[d.name]
+    const readOnly = `${d.name} 과 ${up} 은 ${LOCK?.repo} 에서 함께 끌어온 읽기 전용 사본이다. 상류의 짝이 서로 어긋난 것이니 상류에서 \`/iterate-spec\` 으로 고치고 \`pull-spec.mjs\` 로 다시 끌어온다.`
     if (/^body:/i.test(decl)) {
       // 본문 해시는 git 도 락도 없이 이 자리에서 대조된다 — 아래의 커밋 SHA 검사와 달리 건너뛸 조건이 없다.
       const hex = BODY_PIN.exec(decl)?.[1]
       if ((schemaVersion(d.fm) ?? 0) < BODY_PIN_SCHEMA) {
         err(d.name, `\`${key}: ${decl}\` 는 커밋 SHA 도 날짜도 아니다`,
           `본문 해시 고정은 schema ${BODY_PIN_SCHEMA} 부터다. 프런트매터의 schema_version 을 올리거나 ${up} 의 커밋 SHA 를 적는다 — 낮은 버전을 읽는 런타임은 이 값을 조용히 잘못 읽는다.`)
-      } else if (locked) {
+      } else if (locked && !vendored) {
         err(d.name, `\`${key}\` 가 본문 해시인데 이 산출물 세트는 \`${LOCK_FILE}\` 으로 고정돼 있다`,
           `상류 사본은 락이 적은 커밋(${String(locked).slice(0, 7)})을 적는다. 본문 해시는 상류가 앞서간 것을 못 본다.`)
       } else if (!hex) {
@@ -518,19 +524,30 @@ if (!TEMPLATE) {
       } else if (!upDoc) {
         warn(d.name, `${up} 이 없어 \`${key}\` 를 대조하지 못했다`, '상위 문서를 먼저 놓는다.')
       } else if (!bodyHash(upDoc.text).startsWith(hex.toLowerCase())) {
-        err(d.name, `\`${key}\` 가 ${up} 의 현재 본문과 다르다 (선언 ${decl} != 실제 ${bodyPin(upDoc.text)})`,
-          `${up} 의 본문이 이 문서를 쓴 뒤에 바뀌었다. 바뀐 내용을 읽고 이 문서를 갱신한 다음 \`node <sdlc_runtime>/tools/pin.mjs ${up}\` 로 다시 찍는다.`)
+        err(d.name, vendored
+          ? `\`${key}\` 가 함께 끌어온 ${up} 의 본문과 다르다 (선언 ${decl} != 실제 ${bodyPin(upDoc.text)})`
+          : `\`${key}\` 가 ${up} 의 현재 본문과 다르다 (선언 ${decl} != 실제 ${bodyPin(upDoc.text)})`,
+          vendored ? readOnly
+            : `${up} 의 본문이 이 문서를 쓴 뒤에 바뀌었다. 바뀐 내용을 읽고 이 문서를 갱신한 다음 \`node <sdlc_runtime>/tools/pin.mjs ${up}\` 로 다시 찍는다.`)
       }
       continue
     }
     if (!inGit && !LOCK?.files) continue
     if (/^\d{4}-\d{2}-\d{2}$/.test(decl)) { warn(d.name, `\`${key}\` 가 날짜다`, '커밋 SHA 를 쓰면 기계가 대조할 수 있다.'); continue }
     if (!/^[0-9a-f]{7,40}$/i.test(decl)) { err(d.name, `\`${key}: ${decl}\` 는 커밋 SHA 도 날짜도 아니다`, `${up} 을 마지막으로 바꾼 커밋의 SHA 를 적는다.`); continue }
-    const actual = locked ?? (inGit ? lastCommit(up) : null)
-    if (!actual) { warn(d.name, `${up} 의 커밋 이력을 못 읽었다`, '아직 커밋되지 않았을 수 있다.'); continue }
+    // A vendored pin names an upstream commit, so this repository's own history of the copy says
+    // nothing about it: falling back to it when the lock has no sha (`--force` on an uncommitted
+    // draft) compared an upstream SHA with a local one and always failed.
+    const actual = locked ?? (inGit && !vendored ? lastCommit(up) : null)
+    if (!actual) {
+      warn(d.name, vendored ? `락에 ${up} 의 상류 커밋이 없어 \`${key}\` 를 대조하지 못했다` : `${up} 의 커밋 이력을 못 읽었다`,
+        vendored ? `${up} 이 ${LOCK.repo} 에서 아직 커밋되지 않았다. 상류에서 커밋·승인한 뒤 \`pull-spec.mjs\` 로 다시 끌어온다.` : '아직 커밋되지 않았을 수 있다.')
+      continue
+    }
     if (actual.startsWith(decl.toLowerCase())) continue
     err(d.name, `\`${key}\` 가 ${locked ? `${LOCK.repo} 의 ${up}` : up} 의 현재 커밋과 다르다 (선언 ${decl} != 실제 ${actual.slice(0, 7)})`,
-      locked
+      vendored ? readOnly
+        : locked
         ? '락이 가리키는 상류 커밋을 적는다. 상류가 바뀌었으면 `pull-spec.mjs` 로 다시 끌어온 뒤 찍는다.'
         : `${up} 이 이 문서를 쓴 뒤에 바뀌었다. 바뀐 내용을 읽고 이 문서를 갱신한 다음 ${key} 를 다시 찍는다.`)
   }

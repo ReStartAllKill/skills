@@ -4,6 +4,21 @@
 
 ### Fixed
 
+- **A consumer repository can pull a schema-7 upstream spec.** Upstream at v7 has no lock, so
+  `/create-spec` pins the intent by body hash; once `pull-spec.mjs` brought that pair over,
+  `check-artifacts` rejected the vendored spec with «`intent_version` 가 본문 해시인데 이 산출물
+  세트는 `upstream.lock.json` 으로 고정돼 있다» — an error in a read-only copy that the consumer
+  could not fix and upstream had not caused. The rule was written for the pin the consumer writes,
+  the plan's `spec_version`, where a body hash of a copy cannot see upstream move on; it still
+  applies there unchanged. A document listed in the lock's `files` is now treated as upstream's:
+  its `body:` pin is compared with the pulled `intent.md`, its commit-SHA pin with the lock's
+  `intent.md` commit, and a mismatch says the upstream pair disagrees and points at fixing
+  upstream and pulling again instead of telling the consumer to edit the copy. When the lock has
+  no commit for the intent (a `--force` pull of an uncommitted draft), a commit-SHA pin there is
+  now a warning that it was not compared; it used to be measured against the consumer's own
+  history and always failed. Exempting the vendored spec from pin checks altogether was rejected:
+  an upstream pair that disagrees with itself would then pass silently in every consumer.
+
 - **`plan-progress` no longer fails CI over acceptance criteria the plan does not owe.** It warned
   «어느 작업의 covers 에도 없다» for every uncovered criterion, while `check-artifacts` requires
   coverage only for `Must` criteria in this repository's scope, and `check-all` runs
