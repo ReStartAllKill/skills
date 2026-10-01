@@ -151,7 +151,9 @@ if (CMD === 'mark') {
       try { return JSON.parse(r.stdout).acceptance ?? [] } catch { return [] }
     })()
     const met = after.filter((a) => a.done && !before.has(a.id)).map((a) => a.id)
-    const total = after.length
+    // Same denominator as plan-progress's text report: criteria the plan owes or builds anyway. An
+    // older plan-progress without `owed` counts everything, as it always did.
+    const total = after.filter((a) => a.owed !== false || a.covered_by?.length).length
     if (met.length) console.log(`  수용 기준 충족: ${met.join(' · ')}  (${after.filter((a) => a.done).length}/${total} — spec.md 의 박스는 고치지 않는다, plan-progress 가 파생한다)`)
   }
   console.log(`\n레벨의 나머지 작업까지 적었으면: plan-check.mjs ${relative(ROOT, DIR)} commit --level <N>`)

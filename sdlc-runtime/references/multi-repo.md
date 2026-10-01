@@ -71,6 +71,14 @@ A repository cannot detect locally that its entire share is missing; only upstre
 covers another repository's share is also rejected, because duplicate implementations can diverge
 when integrated.
 
+`check-artifacts.mjs` and `plan-progress.mjs` answer «which criteria does this plan owe» from one
+module, `tools/owed.mjs`, so the two cannot disagree. In a consumer, `plan-progress` reports another
+repository's criterion as information («다른 레포 몫이다») and leaves it out of the «수용 기준 N/M»
+denominator; before, it warned that nobody covered it, `check-all` runs it with `--strict`, and a
+consumer that obeyed the rule above could never pass. `--json` marks such a criterion with
+`owed: false` and `reason: "foreign"`. Being another repository's share wins over priority; the
+other cases (`owed`, `deferred`, `unprioritised`) are in `tasks.md` under «Acceptance criteria».
+
 ## Check upstream freshness when a checkout is available
 
 The checker does not use the network. If an upstream checkout is available through `SDLC_UPSTREAM`

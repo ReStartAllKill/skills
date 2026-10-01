@@ -3,10 +3,12 @@ import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { resolve, join, relative, basename } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { taskFingerprint, repositoryFingerprint } from './task-evidence.mjs'
-import { loadDir, stripComments, idsIn, schemaVersion, wpField } from './artifact-parse.mjs'
+import { loadDir, stripComments, idsIn, schemaVersion, wpField, scopeOf } from './artifact-parse.mjs'
 import { parseCommitRecords, ownsTaskCommit } from './commit-records.mjs'
 import { taskFiles } from './task-paths.mjs'
 import { SECTION, sectionBlock, RE_NA, RE_CHANGE_LOG } from './keywords.mjs'
+import { upstreamSeam, loadLock } from './upstream.mjs'
+import { consumerSelf, owes } from './owed.mjs'
 
 const argv = process.argv.slice(2)
 const STRICT = argv.includes('--strict')
@@ -231,12 +233,22 @@ if (PLAN_SCHEMA >= TASK_EVIDENCE_SCHEMA && docs.plan.fm.status === 'completed') 
  * building this» and «this is not built yet» call for different actions.
  *
  * `covers: FR-001 (AC-001, AC-002)` names criteria directly; a bare `FR-001` covers every
- * criterion under that requirement, the reading lint-prose already applies. */
+ * criterion under that requirement, the reading lint-prose already applies.
+ *
+ * Not every criterion is this plan's to build. owed.mjs decides, for this tool and check-artifacts
+ * alike: a criterion under a requirement the spec marks `Should`, `Could` or `Won't` may be left for
+ * later, and in a consumer repository one scoped to another repository must not be built here at
+ * all. Warning about either failed `--strict` — and so check-all — for a set check-artifacts passes.
+ * A criterion with no priority at all still warns: silence is not deferral. `owed`, `reason`,
+ * `priority` and `scope` are added fields; nothing existing was renamed, because plan-check and
+ * plan-resume read this JSON. */
+const SELF = consumerSelf(loadLock(DIR), upstreamSeam(ROOT))
 const acceptance = (() => {
   if (!docs.spec) return null
   const acs = [...docs.spec.ents.values()].filter((e) => e.kind === 'ac')
   if (!acs.length) return []
   const byId = Object.fromEntries(rows.map((r) => [r.id, r]))
+  const req = (a) => (a.parent ? docs.spec.ents.get(a.parent) ?? null : null)
   const covering = new Map(acs.map((a) => [a.id, []]))
   for (const w of wps) {
     const covers = wpField(w, 'covers')
@@ -248,18 +260,35 @@ const acceptance = (() => {
   }
   return acs.map((a) => {
     const by = covering.get(a.id)
+    const parent = req(a)
+    const reason = owes(SELF, a, parent)
     return {
       id: a.id, title: a.title, requirement: a.parent,
       covered_by: by,
       done: by.length > 0 && by.every((id) => byId[id]?.done),
       // What the spec file says, kept so a hand-ticked box is visible as a claim without evidence.
       claimed: /\[[xX]\]/.test(docs.spec.lines[a.line]),
+      // An unprioritised criterion is owed here: nothing in the spec says it may wait, so it warns
+      // and counts, exactly as before. `reason` tells it apart from a `Must`.
+      owed: reason === 'owed' || reason === 'unprioritised',
+      reason,
+      priority: parent?.priority ?? null,
+      scope: scopeOf(a, parent),
     }
   })
 })()
 
+/** A criterion counts towards «N/M» when the plan owes it or builds it anyway. A `Could` a task
+ * picked up is work this plan does; one left for later or built by another repository is not, and
+ * counting it would hold the ratio below 1 for a plan that finished everything it set out to do. */
+const counted = (a) => a.owed || a.covered_by.length > 0
+
 for (const a of acceptance ?? []) {
-  if (!a.covered_by.length) notes.push({ level: 'warn', id: a.id, msg: '어느 작업의 covers 에도 없다', hint: 'spec 의 기준인데 plan 이 짓지 않는다. 작업의 covers 에 더하거나, 기준을 빼는 /iterate-spec 이 필요하다.' })
+  if (!a.covered_by.length && a.owed) notes.push({ level: 'warn', id: a.id, msg: '어느 작업의 covers 에도 없다', hint: 'spec 의 기준인데 plan 이 짓지 않는다. 작업의 covers 에 더하거나, 기준을 빼는 /iterate-spec 이 필요하다.' })
+  if (!a.covered_by.length && a.reason === 'foreign') notes.push({ level: 'info', id: a.id, msg: `다른 레포 몫이다 (scope: ${a.scope.join('·')}) — 이 계획이 짓지 않는다`, hint: `이 레포는 \`${SELF}\` 다. 그 레포의 계획이 덮는다 — 여기서 덮으면 check-artifacts 가 막는다.` })
+  if (!a.covered_by.length && a.reason === 'deferred') notes.push({ level: 'info', id: a.id,
+    msg: `${a.requirement} 이 Must 가 아니다 (${a.priority}) — 미뤘다`,
+    hint: '덮는 작업이 없어도 이 계획은 끝날 수 있다. 이번 변경에서 지을 거면 작업의 covers 에 더한다.' })
   if (a.claimed && !a.done) notes.push({ level: 'warn', id: a.id, msg: 'spec.md 에 손으로 체크돼 있지만 덮는 작업이 다 끝나지 않았다', hint: '체크는 여기서 파생된다. spec 의 박스는 증거가 아니다 — 되돌리고 작업을 끝낸다.' })
 }
 
@@ -281,11 +310,20 @@ for (const r of rows) {
   console.log(`  ${mark(r)} ${r.id}  ${c} · ${f} · ${t}${v}${r.logged ? ' · 기록됨' : ''}${r.dirty.length ? ` · 더티 ${r.dirty.length}` : ''}`)
 }
 if (acceptance?.length) {
-  const met = acceptance.filter((a) => a.done).length
-  console.log(`\n수용 기준 ${met}/${acceptance.length}  (plan 의 체크에서 파생 — spec.md 의 박스는 고치지 않는다)`)
-  for (const a of acceptance) {
+  const mine = acceptance.filter(counted)
+  const rest = acceptance.filter((a) => !counted(a))
+  const met = mine.filter((a) => a.done).length
+  console.log(`\n수용 기준 ${met}/${mine.length}  (plan 의 체크에서 파생 — spec.md 의 박스는 고치지 않는다)`)
+  for (const a of mine) {
     const by = a.covered_by.length ? `← ${a.covered_by.join(' ')}` : '← 덮는 작업 없음'
     console.log(`  ${a.done ? '[x]' : '[ ]'} ${a.id}  ${by}${a.requirement ? `  (${a.requirement})` : ''}`)
+  }
+  if (rest.length) {
+    console.log(`  이 계획 몫이 아닌 기준 ${rest.length}개 — 분모에 넣지 않는다`)
+    for (const a of rest) {
+      const why = a.reason === 'foreign' ? `다른 레포 몫 (${a.scope.join('·')})` : `미뤘다 (${a.priority})`
+      console.log(`   -  ${a.id}  ${why}${a.requirement ? `  (${a.requirement})` : ''}`)
+    }
   }
 } else if (acceptance) {
   console.log('\n수용 기준 — spec.md 에 `- [ ] AC-…` 줄이 없다')

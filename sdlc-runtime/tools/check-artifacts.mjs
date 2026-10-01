@@ -16,6 +16,7 @@ import { historicalPolicy } from './policy-history.mjs'
 import { loadPolicy, routeActive, STAGES } from './autonomy.mjs'
 import { FIELD, MARKER, BLOCKED, SECTION, hasAlias, sectionBlock, RE_NA, RE_NA_WITH_BASIS, RE_BAND_NO_CHANGE } from './keywords.mjs'
 import { useLocale } from './locale.mjs'
+import { isMust, consumerSelf, inScope, owes } from './owed.mjs'
 
 const argv = process.argv.slice(2)
 if (argv.includes('--version')) {
@@ -186,7 +187,6 @@ const ALL = new Map()
 for (const d of Object.values(docs)) for (const [id, e] of d.ents) if (!ALL.has(id)) ALL.set(id, { ...e, doc: d })
 const ent = (id) => ALL.get(id)
 const of = (kind, prefix) => [...(docs[kind]?.ents.values() ?? [])].filter((e) => e.id.startsWith(prefix + '-'))
-const isMust = (e) => /^must$/i.test(e.priority ?? '')
 const field = (e, ...names) => { for (const n of names) if (e.fields.has(n)) return e.fields.get(n); return '' }
 
 
@@ -678,28 +678,24 @@ for (const w of wps) {
   if (idsIn(field(w, 'covers')).some((x) => /^(FR|NFR|AC)-/.test(x))) continue
   err('plan.md', `${w.id} 이 어느 요구사항도 가리키지 않는다`, '어디에도 안 걸린 작업은 이 변경의 일이 아니다. covers 를 채우거나 작업을 뺀다.')
 }
-const CONSUMER = !!(LOCK && !LOCK.broken && UP.self)
-const MINE = (e, parent) => {
-  if (!CONSUMER) return true
-  const sc = scopeOf(e, parent)
-  return sc.length === 0 || sc.some((s) => sameRepo(s, UP.self))
-}
+// owed.mjs, not this file, decides which criteria a plan owes: plan-progress asks the same question
+// and must reach the same answer, or a set clean here fails check-all there.
+const SELF = consumerSelf(LOCK, UP)
 
 if (docs.plan && docs.spec) {
   const done = new Set(wps.flatMap((w) => idsIn(field(w, 'covers'))))
   for (const a of acs) {
     const parent = a.parent ? ent(a.parent) : null
-    if (!parent || !isMust(parent)) continue
     if (done.has(a.id) || done.has(a.parent)) continue
-    if (!MINE(a, parent)) continue
+    if (owes(SELF, a, parent) !== 'owed') continue
     err('plan.md', `${a.id}(${a.parent} 의 수용 기준) 을 덮는 작업이 없다`, '수용 기준이 있는데 그것을 만드는 작업이 없으면 그 기준은 아무도 통과시키지 않는다.')
   }
-  if (CONSUMER) {
+  if (SELF) {
     for (const w of wps) {
       const foreign = idsIn(field(w, 'covers')).map((id) => ent(id)).filter((e) => {
         if (!e || e.kind === 'wp') return false
         const owner = e.kind === 'ac' && e.parent ? ent(e.parent) : null
-        return !MINE(e, owner)
+        return !inScope(SELF, e, owner)
       })
       if (!foreign.length) continue
       err('plan.md', `${w.id} 이 다른 레포 몫을 덮는다: ${foreign.map((e) => `${e.id}(${scopeOf(e, e.kind === 'ac' && e.parent ? ent(e.parent) : null).join('·')})`).join(' · ')}`,

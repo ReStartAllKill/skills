@@ -960,6 +960,28 @@ await test('a consumer repository need cover only Must criteria in its own scope
   assert(foreign.code !== 0 && foreign.out.includes('다른 레포 몫'), `남의 몫을 덮는 작업을 통과시켰다:\n${foreign.out}`)
 })
 
+await test('plan-progress does not warn about a criterion that belongs to another repository', () => {
+  // 소비자 레포에서 남의 몫(AC-002, scope: acme/web)을 덮으면 check-artifacts 가 막는다. 그런데
+  // plan-progress 는 그 기준을 아무도 안 덮는다고 경고했고 check-all 은 그것을 --strict 로 돌려,
+  // 소비자는 check-all 을 영영 통과할 수 없었다.
+  const { up, chain } = twoRepos()
+  run(process.execPath, [tool('pull-spec.mjs'), chain, '--from', up])
+  const lock = JSON.parse(readFileSync(join(chain, 'upstream.lock.json'), 'utf8'))
+  cpSync(join(CASES, 'plan.md'), join(chain, 'plan.md'))
+  edit(join(chain, 'plan.md'), (s) => s.replace('schema_version: 3', 'schema_version: 6')
+    .replace('@SPEC_SHA@', lock.files['spec.md'].sha.slice(0, 7))
+    .replace('covers: FR-001 (AC-001, AC-002)', 'covers: AC-001'))
+  git(chain, 'add', '-A')
+  assert(check(chain, up).code === 0, `정상 소비자 세트가 check-artifacts 에서 실패했다:\n${check(chain, up).out}`)
+
+  const r = run(process.execPath, [tool('plan-progress.mjs'), chain, '--strict'])
+  assert(r.code === 0, `남의 몫 때문에 plan-progress --strict 가 실패했다:\n${r.out}`)
+  assert(/· AC-002\s+다른 레포 몫이다 \(scope: acme\/web\)/.test(r.out), `남의 몫이라고 말하지 않았다:\n${r.out}`)
+  assert(/이 계획 몫이 아닌 기준 1개/.test(r.out) && /AC-002\s+다른 레포 몫 \(acme\/web\)/.test(r.out), `남의 몫을 분모에서 가르지 않았다:\n${r.out}`)
+  const a2 = JSON.parse(run(process.execPath, [tool('plan-progress.mjs'), chain, '--json']).out).acceptance.find((a) => a.id === 'AC-002')
+  assert(a2.owed === false && a2.reason === 'foreign', JSON.stringify(a2))
+})
+
 await test('hashes reject manual copy edits and the checker detects newer upstream content', () => {
   const { up, upChain, chain } = twoRepos()
   run(process.execPath, [tool('pull-spec.mjs'), chain, '--from', up])
@@ -2392,6 +2414,48 @@ await test('acceptance criteria are derived from the plan and never written into
   const a2 = orphan.acceptance.find((a) => a.id === 'AC-002')
   assert(a2 && a2.covered_by.length === 0 && a2.done === false, JSON.stringify(orphan.acceptance))
   assert(orphan.notes.some((n) => n.id === 'AC-002' && /covers 에도 없다/.test(n.msg)), `덮는 작업 없는 기준을 경고하지 않았다:\n${JSON.stringify(orphan.notes)}`)
+})
+
+await test('a criterion of a requirement that is not Must may be left uncovered without failing plan-progress', async () => {
+  // check-artifacts 는 Must 의 기준에만 덮는 작업을 요구하는데 plan-progress 는 모든 기준을 경고했고,
+  // check-all 은 plan-progress 를 --strict 로 돌린다. 그러면 Could 하나 미뤄 둔 세트가 CI 에서 떨어지고
+  // 우선순위는 아무 뜻이 없어진다. 두 도구가 같은 답을 내는지, 그리고 Must 는 여전히 걸리는지 본다.
+  const { bodyPin } = await import('../tools/artifact-parse.mjs')
+  const c = await trimmedChain('sdlc-ac-deferred')
+  const specPath = join(c.dir, 'spec.md')
+  const repin = (spec) => {
+    put(specPath, spec)
+    put(c.plan, readFileSync(c.plan, 'utf8').replace(/^spec_version: ".*"$/m, `spec_version: "${bodyPin(spec)}"`))
+  }
+  const could = readFileSync(specPath, 'utf8').replace('## 오류와 경계',
+    '### FR-002 — 보관 포함 플래그 `Could`\n\n근거: OUT-001\n\n플래그가 켜지면 보관 문서도 결과에 넣는다.\n\n수용 기준:\n\n- [ ] AC-002 — 플래그가 켜지면 보관 문서와 일반 문서가 모두 반환된다\n\n## 오류와 경계')
+  repin(could)
+  const progress = (...a) => run(process.execPath, [tool('plan-progress.mjs'), c.dir, ...a])
+  assert(checked(c.dir).counts.errors === 0, `Could 를 미룬 세트를 check-artifacts 가 막았다:\n${JSON.stringify(checked(c.dir).problems, null, 2)}`)
+  let r = progress('--strict')
+  assert(r.code === 0, `Could 를 미뤘는데 plan-progress --strict 가 실패했다:\n${r.out}`)
+  assert(/AC-002\s+FR-002 이 Must 가 아니다 \(Could\) — 미뤘다/.test(r.out), `미룬 기준을 이유와 함께 말하지 않았다:\n${r.out}`)
+  assert(/수용 기준 0\/1/.test(r.out) && /이 계획 몫이 아닌 기준 1개/.test(r.out), `미룬 기준을 분모에 넣었다:\n${r.out}`)
+  const json = JSON.parse(progress('--json').out)
+  const a2 = json.acceptance.find((a) => a.id === 'AC-002')
+  assert(a2.owed === false && a2.reason === 'deferred' && a2.priority === 'Could' && Array.isArray(a2.covered_by),
+    `JSON 이 미룬 기준을 가르지 않았다: ${JSON.stringify(a2)}`)
+  assert(json.notes.some((n) => n.id === 'AC-002' && n.level === 'info'), JSON.stringify(json.notes))
+
+  // No priority is not deferral: the spec never said FR-002 may wait, so its uncovered criterion
+  // still warns and still counts. check-artifacts requires coverage only for Must and stays clean.
+  repin(could.replace('### FR-002 — 보관 포함 플래그 `Could`', '### FR-002 — 보관 포함 플래그'))
+  assert(checked(c.dir).counts.errors === 0, `우선순위 없는 요구사항을 check-artifacts 가 막았다:\n${JSON.stringify(checked(c.dir).problems, null, 2)}`)
+  r = progress('--strict')
+  assert(r.code === 1 && /⚠ AC-002\s+어느 작업의 covers 에도 없다/.test(r.out) && /수용 기준 0\/2/.test(r.out),
+    `우선순위가 없는 것을 미룬 것으로 읽었다:\n${r.out}`)
+  const bare = JSON.parse(progress('--json').out).acceptance.find((a) => a.id === 'AC-002')
+  assert(bare.owed === true && bare.reason === 'unprioritised', JSON.stringify(bare))
+
+  // The Must requirement's own criterion, left uncovered, still fails exactly as before.
+  repin(could.replace(/(\n- \[ \] AC-001 — [^\n]*)/, '$1\n- [ ] AC-003 — 보관 필드가 없는 문서는 결과에 그대로 남는다'))
+  r = progress('--strict')
+  assert(r.code === 1 && /⚠ AC-003\s+어느 작업의 covers 에도 없다/.test(r.out), `덮이지 않은 Must 기준을 놓쳤다:\n${r.out}`)
 })
 
 await test('frontmatter without created and updated passes at every version', () => {

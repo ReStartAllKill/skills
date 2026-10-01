@@ -4,6 +4,22 @@
 
 ### Fixed
 
+- **`plan-progress` no longer fails CI over acceptance criteria the plan does not owe.** It warned
+  «어느 작업의 covers 에도 없다» for every uncovered criterion, while `check-artifacts` requires
+  coverage only for `Must` criteria in this repository's scope, and `check-all` runs
+  `plan-progress --strict`. A `Could` left for later failed CI, so priorities meant nothing, and a
+  consumer repository could never pass: covering another repository's criterion is an error in
+  `check-artifacts`, not covering it was a warning in `plan-progress`. The decision now lives in
+  `tools/owed.mjs` and both tools import it. A criterion whose requirement the spec marks
+  `Should`, `Could` or `Won't`, or one assigned to another repository, is reported as information
+  saying which — «Must 가 아니다 — 미뤘다» or «다른 레포 몫이다» — and is left out of the
+  «수용 기준 N/M» denominator and listed beneath it; `plan-check mark` uses the same denominator.
+  An uncovered `Must` criterion warns exactly as before; dropping that warning because
+  `check-artifacts` also errors was rejected, since the two tools run separately. So does a
+  criterion whose requirement has no priority: reading a missing marker as «later» was rejected,
+  because a spec that uses no priorities would lose the only check that says a criterion has no
+  task. `--json` keeps every field and adds `owed`, `reason` (`owed`, `deferred`, `unprioritised`
+  or `foreign`), `priority` and `scope` to each `acceptance` entry.
 - **The Bash approval guard refuses approval rewrites of artifacts instead of ordinary commands.**
   It matched tool words as substrings of the whole command, so `superseded`, `closed` and `based`
   read as `sed` and `committee` as `tee`, and a commit message or a read-only `grep` that
